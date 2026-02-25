@@ -305,6 +305,60 @@ td.summary>.et-age-badge {
     font-size: 13px;
 }
 
+/* SP error & retry */
+.et-sp-error {
+    color: #bf2600;
+    font-size: 11px;
+}
+
+.et-sp-retry-btn {
+    background: none;
+    border: 1px solid #dfe1e6;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 1px 5px;
+    margin-left: 4px;
+    color: #0052cc;
+    transition: all 0.2s;
+    vertical-align: middle;
+    line-height: 1;
+}
+
+.et-sp-retry-btn:hover {
+    background: #deebff;
+    border-color: #0052cc;
+}
+
+.et-sp-error-header {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* ---- Velocity Badge (Feature 11) ---- */
+.et-velocity-header {
+    color: #0747A6 !important;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.et-velocity-badge {
+    background: #DEEBFF;
+    color: #0747A6;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    display: inline-block;
+}
+
+.et-velocity-total {
+    color: #0747A6;
+    font-weight: 700;
+    font-size: 13px;
+}
+
 /* ---- Native Issue Table Icons (Feature 10) ---- */
 .et-native-icons {
     display: inline-flex;

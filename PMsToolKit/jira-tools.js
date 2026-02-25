@@ -945,6 +945,23 @@ function injectBoardCardAgeIndicators() {
     });
 }
 
+// ---- Shared: Gadget title detection ----
+
+/**
+ * Returns the user-facing title of a dashboard gadget, given its
+ * content container element (id="gadget-content-...").
+ * Jira structure: gadget frame > header (title) + content (table).
+ */
+function _etGetGadgetTitle(gadgetContainer) {
+    if (!gadgetContainer) return '';
+    // Walk up to the frame element, then search for the title
+    const frame = gadgetContainer.closest('.dashboard-item-frame')
+        || gadgetContainer.parentElement;
+    if (!frame) return '';
+    const titleEl = frame.querySelector('.dashboard-item-title, .gadget-title, h1, h2, h3, h4');
+    return titleEl?.textContent?.trim() || '';
+}
+
 // ---- Feature 9: Story Points en gadgets del Dashboard ----
 
 let _etStoryPointsFieldId = null;
@@ -953,19 +970,20 @@ const _etProcessedGadgets = new Set(); // IDs of already processed gadgets
 
 async function _etEnsureStoryPointsField() {
     if (_etFieldIdFetched) return _etStoryPointsFieldId;
-    _etFieldIdFetched = true;
 
     try {
         const res = await fetch(`${window.location.origin}/rest/api/2/field`, {
             credentials: 'same-origin',
             headers: { 'Accept': 'application/json' }
         });
-        if (!res.ok) return null;
+        if (!res.ok) return null; // leave _etFieldIdFetched false → retries next cycle
         const fields = await res.json();
         const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
         _etStoryPointsFieldId = spField ? spField.id : null;
+        _etFieldIdFetched = true; // only cache after successful fetch
     } catch (e) {
         console.warn('PMsToolKit: Could not detect the Story Points field', e);
+        // _etFieldIdFetched stays false → next call will retry
     }
     return _etStoryPointsFieldId;
 }
@@ -983,6 +1001,17 @@ async function injectStoryPointsSummary() {
         const gadgetId = gadgetContainer?.id || '';
         if (_etProcessedGadgets.has(gadgetId)) continue;
 
+        // Skip gadgets whose title contains "Velocity" — handled by Feature #11
+        const gadgetTitleF9 = _etGetGadgetTitle(gadgetContainer);
+        if (gadgetTitleF9.toLowerCase().includes('velocity')) continue;
+
+        // Idempotency guard: if SP column already injected (e.g. by a previous
+        // successful retry), mark as processed and skip.
+        if (table.querySelector('.et-sp-header')) {
+            _etProcessedGadgets.add(gadgetId);
+            continue;
+        }
+
         // Extract JQL from link in the Total row
         const totalRow = table.querySelector('tr.stats-gadget-final-row');
         if (!totalRow) continue;
@@ -999,8 +1028,6 @@ async function injectStoryPointsSummary() {
             jql = m ? decodeURIComponent(m[1]) : null;
         }
         if (!jql) continue;
-
-        _etProcessedGadgets.add(gadgetId);
 
         // Remove ORDER BY for the API (doesn't affect results)
         const jqlClean = jql.replace(/\s+ORDER\s+BY\s+.*/i, '');
@@ -1114,8 +1141,334 @@ async function injectStoryPointsSummary() {
                 }
             }
 
+            // All SP data injected successfully — mark gadget as processed
+            _etProcessedGadgets.add(gadgetId);
+
         } catch (e) {
             console.warn('PMsToolKit: Error querying Story Points for gadget', e);
+
+            // Show error indicator with Retry button in the header row
+            const errHeaderRow = table.querySelector('tr.stats-gadget-table-header');
+            if (errHeaderRow && !errHeaderRow.querySelector('.et-sp-header')) {
+                const th = document.createElement('th');
+                th.className = 'stats-gadget-numeric et-sp-header et-sp-error-header';
+                th.innerHTML = `<span class="et-sp-error">⚠️ SP</span><button class="et-sp-retry-btn" title="Retry loading Story Points">↻</button>`;
+                th.querySelector('.et-sp-retry-btn').onclick = (ev) => {
+                    ev.preventDefault();
+                    _etProcessedGadgets.delete(gadgetId);
+                    th.remove();
+                    injectStoryPointsSummary();
+                };
+                const countH = errHeaderRow.querySelector('[id$="-stats-count"]');
+                if (countH) countH.insertAdjacentElement('afterend', th);
+                else errHeaderRow.appendChild(th);
+            }
+            // Don't add to _etProcessedGadgets → auto-retry on next DOM mutation
+        }
+    }
+}
+
+// ---- Feature 11: Velocity per Developer on Dashboard Gadgets ----
+
+const ET_VELOCITY_SPRINT_COUNT = 2; // Number of closed sprints to average
+const _etProcessedVelocityGadgets = new Set();
+const _etBoardIdCache = {}; // projectKey → boardId
+
+/**
+ * Returns the first Scrum board ID for the given project key.
+ * Caches the result in-memory.
+ */
+async function _etGetBoardIdForProject(projectKey) {
+    if (_etBoardIdCache[projectKey] !== undefined) return _etBoardIdCache[projectKey];
+
+    try {
+        const res = await fetch(
+            `${window.location.origin}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&type=scrum&maxResults=1`,
+            { credentials: 'same-origin', headers: { 'Accept': 'application/json' } }
+        );
+        if (!res.ok) {
+            console.warn(`PMsToolKit Velocity: Board lookup failed (${res.status}) for project ${projectKey}`);
+            _etBoardIdCache[projectKey] = null;
+            return null;
+        }
+        const data = await res.json();
+        const boardId = data.values?.[0]?.id || null;
+        _etBoardIdCache[projectKey] = boardId;
+        console.debug(`PMsToolKit Velocity: Board ID = ${boardId} for project ${projectKey}`);
+        return boardId;
+    } catch (e) {
+        console.warn('PMsToolKit Velocity: Error fetching board', e);
+        _etBoardIdCache[projectKey] = null;
+        return null;
+    }
+}
+
+/**
+ * Returns the last `count` closed sprints for a board (most recent first).
+ */
+async function _etGetLastClosedSprints(boardId, count = ET_VELOCITY_SPRINT_COUNT) {
+    try {
+        const res = await fetch(
+            `${window.location.origin}/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=50`,
+            { credentials: 'same-origin', headers: { 'Accept': 'application/json' } }
+        );
+        if (!res.ok) {
+            console.warn(`PMsToolKit Velocity: Sprint lookup failed (${res.status})`);
+            return [];
+        }
+        const data = await res.json();
+        const sprints = data.values || [];
+        // API returns in chronological order — take the last N
+        const recent = sprints.slice(-count);
+        console.debug(`PMsToolKit Velocity: Found ${recent.length} closed sprints out of ${sprints.length} total`);
+        return recent;
+    } catch (e) {
+        console.warn('PMsToolKit Velocity: Error fetching sprints', e);
+        return [];
+    }
+}
+
+/**
+ * Fetches completed issues for a sprint and returns an array of
+ * { assigneeName, sp } objects.
+ */
+async function _etFetchCompletedIssuesForSprint(sprintId, storyPointsFieldId) {
+    try {
+        const res = await fetch(`${window.location.origin}/rest/api/3/search/jql`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Atlassian-Token': 'no-check'
+            },
+            body: JSON.stringify({
+                jql: `sprint = ${sprintId} AND statusCategory = Done`,
+                fields: [storyPointsFieldId, 'assignee'],
+                maxResults: 200
+            })
+        });
+        if (!res.ok) {
+            console.warn(`PMsToolKit Velocity: Issue fetch failed for sprint ${sprintId} (${res.status})`);
+            return [];
+        }
+        const data = await res.json();
+        return (data.issues || []).map(issue => ({
+            assigneeName: issue.fields?.assignee?.displayName || 'Unassigned',
+            sp: (issue.fields?.[storyPointsFieldId] != null && !isNaN(issue.fields[storyPointsFieldId]))
+                ? Number(issue.fields[storyPointsFieldId])
+                : 0
+        }));
+    } catch (e) {
+        console.warn(`PMsToolKit Velocity: Error fetching issues for sprint ${sprintId}`, e);
+        return [];
+    }
+}
+
+/**
+ * Main injection function: finds "Velocity" gadgets on the dashboard
+ * and adds a V-Avg column showing average velocity per developer.
+ * API calls bypass the shared concurrency queue for speed.
+ */
+async function injectVelocityPerDeveloper() {
+    const gadgetTables = document.querySelectorAll('table.stats-gadget-table');
+    if (gadgetTables.length === 0) return;
+
+    const fieldId = await _etEnsureStoryPointsField();
+    if (!fieldId) return;
+
+    for (const table of gadgetTables) {
+        // Identify the gadget container
+        const gadgetContainer = table.closest('[id^="gadget-content-"]') || table.closest('[id^="gadget-"]');
+        const gadgetId = gadgetContainer?.id || '';
+
+        // Only process gadgets whose title contains "Velocity" (case-insensitive)
+        const gadgetTitle = _etGetGadgetTitle(gadgetContainer);
+        if (!gadgetTitle.toLowerCase().includes('velocity')) continue;
+
+        // Use a separate processed-set so we don't clash with Feature #9
+        const velGadgetKey = `vel-${gadgetId}`;
+        if (_etProcessedVelocityGadgets.has(velGadgetKey)) continue;
+
+        // Idempotency: if column already injected, skip
+        if (table.querySelector('.et-velocity-header')) {
+            _etProcessedVelocityGadgets.add(velGadgetKey);
+            continue;
+        }
+
+        // Extract JQL from link in the Total row
+        const totalRow = table.querySelector('tr.stats-gadget-final-row');
+        if (!totalRow) continue;
+        const totalLink = totalRow.querySelector('a[href*="jql="]');
+        if (!totalLink) continue;
+
+        let jql;
+        try {
+            const url = new URL(totalLink.href);
+            jql = url.searchParams.get('jql');
+        } catch (e) {
+            const m = totalLink.href.match(/jql=([^&]+)/);
+            jql = m ? decodeURIComponent(m[1]) : null;
+        }
+        if (!jql) continue;
+
+        // Extract project key from JQL (e.g. "project = XYZ" or "project = \"XYZ\"")
+        const projectMatch = jql.match(/project\s*=\s*"?([A-Z0-9]+)"?/i);
+        if (!projectMatch) {
+            console.warn('PMsToolKit Velocity: Could not extract project key from JQL:', jql);
+            continue;
+        }
+        const projectKey = projectMatch[1];
+
+        try {
+            // Step A: Get board ID (direct call — bypass concurrency queue for speed)
+            const boardId = await _etGetBoardIdForProject(projectKey);
+            if (!boardId) {
+                console.warn(`PMsToolKit Velocity: No Scrum board found for project ${projectKey}`);
+                continue;
+            }
+
+            // Step B: Get last closed sprints (direct call)
+            const sprints = await _etGetLastClosedSprints(boardId);
+            if (sprints.length === 0) {
+                console.warn('PMsToolKit Velocity: No closed sprints found');
+                continue;
+            }
+
+            // Step C: Fetch completed issues for ALL sprints in parallel
+            const sprintResults = await Promise.all(
+                sprints.map(async (sprint) => ({
+                    sprintName: sprint.name || `Sprint ${sprint.id}`,
+                    issues: await _etFetchCompletedIssuesForSprint(sprint.id, fieldId)
+                }))
+            );
+
+            // Aggregate: per-assignee, per-sprint SP breakdown
+            // spByAssignee = { displayName: { perSprint: [{name, sp}], totalSp } }
+            const spByAssignee = {};
+            let grandTotalSp = 0;
+            const sprintCount = sprintResults.length;
+
+            for (const { sprintName, issues } of sprintResults) {
+                // Track per-sprint totals per assignee
+                const sprintTotals = {}; // assignee → SP in this sprint
+                issues.forEach(({ assigneeName, sp }) => {
+                    if (!sprintTotals[assigneeName]) sprintTotals[assigneeName] = 0;
+                    sprintTotals[assigneeName] += sp;
+                });
+
+                for (const [name, sp] of Object.entries(sprintTotals)) {
+                    if (!spByAssignee[name]) {
+                        spByAssignee[name] = { totalSp: 0, perSprint: [] };
+                    }
+                    spByAssignee[name].perSprint.push({ name: sprintName, sp });
+                    spByAssignee[name].totalSp += sp;
+                    grandTotalSp += sp;
+                }
+            }
+
+            // Calculate averages & build tooltips
+            const avgByAssignee = {};    // name → avg
+            const tooltipByAssignee = {}; // name → "Sprint A (14 SP) + Sprint B (16 SP)"
+            for (const [name, data] of Object.entries(spByAssignee)) {
+                avgByAssignee[name] = Math.round((data.totalSp / sprintCount) * 10) / 10;
+                tooltipByAssignee[name] = data.perSprint
+                    .map(s => `${s.name} (${s.sp} SP)`)
+                    .join(' + ');
+            }
+            const grandAvg = Math.round((grandTotalSp / sprintCount) * 10) / 10;
+            const grandTooltip = sprintResults
+                .map(sr => {
+                    const total = sr.issues.reduce((sum, i) => sum + i.sp, 0);
+                    return `${sr.sprintName} (${total} SP)`;
+                })
+                .join(' + ');
+
+            // --- Modify the table ---
+
+            // 1. Hide progress bar columns
+            table.querySelectorAll('.stats-gadget-progress-indicator, [headers$="-stats-percentage"]').forEach(cell => {
+                cell.style.display = 'none';
+            });
+            const percentHeader = table.querySelector('[id$="-stats-percentage"]');
+            if (percentHeader) percentHeader.style.display = 'none';
+
+            // 2. Hide the Count column
+            const countHeader = table.querySelector('[id$="-stats-count"]');
+            if (countHeader) countHeader.style.display = 'none';
+            table.querySelectorAll('[headers$="-stats-count"]').forEach(cell => {
+                cell.style.display = 'none';
+            });
+            // Also hide the count cell in the final row
+            totalRow.querySelectorAll('[headers$="-stats-count"]').forEach(cell => {
+                cell.style.display = 'none';
+            });
+
+            // 3. Add "V-Avg" header
+            const headerRow = table.querySelector('tr.stats-gadget-table-header');
+            if (headerRow && !headerRow.querySelector('.et-velocity-header')) {
+                const th = document.createElement('th');
+                th.className = 'stats-gadget-numeric et-velocity-header';
+                th.textContent = 'V-Avg';
+                th.title = `Average velocity over the last ${sprintCount} sprint(s)`;
+                headerRow.appendChild(th);
+            }
+
+            // 4. Add V-Avg to each data row
+            const dataRows = table.querySelectorAll('tbody tr:not(.stats-gadget-final-row)');
+            dataRows.forEach(row => {
+                if (row.querySelector('.et-velocity-cell')) return;
+
+                const nameLink = row.querySelector('[headers$="-stats-category"] a');
+                const assigneeName = nameLink?.textContent?.trim() || '';
+                const avg = avgByAssignee[assigneeName] || 0;
+                const tooltip = tooltipByAssignee[assigneeName] || '';
+
+                const td = document.createElement('td');
+                td.className = 'cell-type-collapsed stats-gadget-numeric et-velocity-cell';
+                const badge = document.createElement('span');
+                badge.className = 'et-velocity-badge et-age-badge';
+                badge.textContent = avg;
+                badge.setAttribute('data-tooltip', tooltip);
+                td.appendChild(badge);
+                row.appendChild(td);
+            });
+
+            // 5. Add total V-Avg to the final row
+            if (totalRow && !totalRow.querySelector('.et-velocity-cell')) {
+                const finalCell = totalRow.querySelector('.final-table-cell');
+                if (finalCell) finalCell.style.display = 'none';
+
+                const td = document.createElement('td');
+                td.className = 'stats-gadget-numeric stats-gadget-final-row-cell et-velocity-cell';
+                const strong = document.createElement('strong');
+                strong.className = 'et-velocity-total et-age-badge';
+                strong.textContent = grandAvg;
+                strong.setAttribute('data-tooltip', grandTooltip);
+                td.appendChild(strong);
+                totalRow.appendChild(td);
+            }
+
+            _etProcessedVelocityGadgets.add(velGadgetKey);
+            console.debug(`PMsToolKit Velocity: Injected V-Avg for gadget "${gadgetTitle}" (${sprintCount} sprints)`);
+
+        } catch (e) {
+            console.warn('PMsToolKit Velocity: Error processing gadget', e);
+
+            // Show error with retry button
+            const errHeaderRow = table.querySelector('tr.stats-gadget-table-header');
+            if (errHeaderRow && !errHeaderRow.querySelector('.et-velocity-header')) {
+                const th = document.createElement('th');
+                th.className = 'stats-gadget-numeric et-velocity-header et-sp-error-header';
+                th.innerHTML = `<span class="et-sp-error">⚠️ V-Avg</span><button class="et-sp-retry-btn" title="Retry loading Velocity">↻</button>`;
+                th.querySelector('.et-sp-retry-btn').onclick = (ev) => {
+                    ev.preventDefault();
+                    _etProcessedVelocityGadgets.delete(velGadgetKey);
+                    th.remove();
+                    injectVelocityPerDeveloper();
+                };
+                errHeaderRow.appendChild(th);
+            }
         }
     }
 }
@@ -1140,6 +1493,7 @@ function etRunAll() {
     injectAgeIndicators();        // Feature 8: age indicator
     injectBoardCardAgeIndicators(); // Feature 8b: age on board cards
     injectStoryPointsSummary();   // Feature 9: SP summary
+    injectVelocityPerDeveloper(); // Feature 11: Velocity per Dev
     injectNativeTableIcons();     // Feature 10: icons in native issue table
 }
 
