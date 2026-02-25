@@ -1,0 +1,344 @@
+/* ============================================
+   PMsToolKit — Shared Styles
+   ============================================ */
+
+/* ---- List-view summary cell layout fix ---- */
+td.summary>.et-notes-container,
+td.summary>button {
+    float: left;
+    margin-top: 3px;
+}
+
+td.summary>p {
+    display: inline;
+}
+
+td.summary>.et-age-badge {
+    margin-top: 3px;
+}
+
+/* ---- Quick Notes ---- */
+.et-notes-container {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.et-notes-btn {
+    background: #f4f5f7;
+    border: 1px solid #dfe1e6;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-right: 4px;
+    padding: 2px 4px;
+    font-size: 10px;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.et-notes-btn:hover {
+    background: #ebecf0;
+    border-color: #c1c7d0;
+}
+
+.et-notes-btn.has-note::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    background: #0052cc;
+    border-radius: 50%;
+}
+
+.et-notes-popup {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 2147483647;
+    background: #ffffff;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(9, 30, 66, 0.15), 0 0 1px rgba(9, 30, 66, 0.31);
+    padding: 8px;
+    width: 260px;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    pointer-events: none;
+}
+
+.et-notes-popup.visible {
+    opacity: 1;
+    transform: translateY(4px);
+    pointer-events: auto;
+}
+
+.et-notes-popup textarea {
+    width: 100%;
+    min-height: 60px;
+    border: 1px solid #dfe1e6;
+    border-radius: 3px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+.et-notes-popup textarea:focus {
+    border-color: #0052cc;
+}
+
+.et-notes-popup .et-notes-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+    font-size: 10px;
+    color: #6b778c;
+}
+
+.et-notes-popup .et-notes-save-indicator {
+    color: #00875a;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.et-notes-popup .et-notes-save-indicator.show {
+    opacity: 1;
+}
+
+.et-notes-save-btn {
+    background: #0052cc;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.et-notes-save-btn:hover {
+    background: #0065ff;
+}
+
+/* ---- Quick Notes in ticket view ---- */
+.et-ticket-notes-panel {
+    margin: 8px 0;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
+    background: #fafbfc;
+    overflow: hidden;
+    transition: all 0.2s;
+}
+
+.et-ticket-notes-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: #42526e;
+    width: 100%;
+    text-align: left;
+}
+
+.et-ticket-notes-toggle:hover {
+    background: #ebecf0;
+}
+
+.et-ticket-notes-body {
+    padding: 0 12px 10px;
+}
+
+.et-ticket-notes-body textarea {
+    width: 100%;
+    min-height: 80px;
+    border: 1px solid #dfe1e6;
+    border-radius: 3px;
+    padding: 8px;
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.et-ticket-notes-body textarea:focus {
+    border-color: #0052cc;
+}
+
+/* ---- Breadcrumb copy button (Feature 7) ---- */
+.et-breadcrumb-copy {
+    background: #f4f5f7;
+    border: 1px solid #dfe1e6;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: 8px;
+    padding: 2px 6px;
+    font-size: 12px;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+}
+
+.et-breadcrumb-copy:hover {
+    background: #ebecf0;
+    border-color: #c1c7d0;
+}
+
+/* ---- Age Indicator (Feature 8) ---- */
+.et-age-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 6px;
+    vertical-align: middle;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    position: relative;
+    pointer-events: auto;
+    cursor: default;
+}
+
+/* Global tooltip (appended to body to avoid overflow clipping) */
+.et-tooltip {
+    position: fixed;
+    background: #172b4d;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 6px 10px;
+    border-radius: 4px;
+    white-space: pre-line;
+    width: max-content;
+    max-width: 240px;
+    box-shadow: 0 4px 12px rgba(9, 30, 66, 0.3);
+    pointer-events: none;
+    z-index: 2147483647;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.et-tooltip.visible {
+    opacity: 1;
+}
+
+.et-age-badge.et-age-green {
+    background: #e3fcef;
+    color: #006644;
+}
+
+.et-age-badge.et-age-yellow {
+    background: #fffae6;
+    color: #974f0c;
+}
+
+.et-age-badge.et-age-red {
+    background: #ffebe6;
+    color: #bf2600;
+}
+
+.et-age-badge.et-age-loading {
+    background: #f4f5f7;
+    color: #97a0af;
+    animation: et-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes et-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+}
+
+/* ---- Age Indicator on Board Cards (Feature 8b) ---- */
+.et-board-age-row {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 0 2px;
+    position: relative;
+    z-index: 10;
+}
+
+.et-board-age {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+/* ---- Story Points Column in Gadgets (Feature 9) ---- */
+.et-sp-header {
+    color: #0052cc !important;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.et-sp-value {
+    color: #0052cc;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.et-sp-total {
+    color: #0052cc;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+/* ---- Native Issue Table Icons (Feature 10) ---- */
+.et-native-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+    flex-shrink: 0;
+    white-space: nowrap;
+    height: 20px;
+}
+
+/* Uniform button sizing inside native table rows */
+.et-native-icons .et-notes-btn {
+    font-size: 11px;
+    padding: 1px 3px;
+    margin-right: 0;
+    /* gap handles spacing */
+    line-height: 1;
+    height: 18px;
+    min-width: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+/* Age badge inside native table — remove the extra margin-left
+   because the flex gap already provides spacing */
+.et-native-icons .et-age-badge {
+    margin-left: 0;
+    font-size: 9px;
+    line-height: 1;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+}

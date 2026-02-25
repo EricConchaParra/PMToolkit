@@ -1,0 +1,8 @@
+# Private key — NEVER publish
+*.pem
+
+# Packaged extension binary
+*.crx
+
+# macOS
+.DS_Store

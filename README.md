@@ -1,0 +1,456 @@
+# PMsToolKit — Chrome Extension for Jira
+
+> **Custom toolkit to enhance project management workflows on Jira Cloud.**
+> Created by **EricConcha**.
+
+A Manifest V3 Chrome extension that injects productivity tools directly into the Jira Cloud UI. It enhances list views, ticket detail pages, board views, and dashboard gadgets with copy-to-Slack links, personal notes, time-in-state indicators, and story point summaries — all without requiring any Jira admin configuration.
+
+---
+
+## Table of Contents
+
+- [Features Overview](#features-overview)
+- [Feature Details](#feature-details)
+  - [🔗 Copy Link for Slack — List View](#-copy-link-for-slack--list-view)
+  - [🔗 Copy Link for Slack — Native Issue Table](#-copy-link-for-slack--native-issue-table)
+  - [🔗 Copy Link in Breadcrumbs — Ticket View](#-copy-link-in-breadcrumbs--ticket-view)
+  - [📝 Quick Notes — List View](#-quick-notes--list-view)
+  - [📝 Quick Notes — Native Issue Table](#-quick-notes--native-issue-table)
+  - [📝 Quick Notes — Ticket View (Detail Panel)](#-quick-notes--ticket-view-detail-panel)
+  - [📝 Quick Notes — Breadcrumb Navigation](#-quick-notes--breadcrumb-navigation)
+  - [📋 View All Notes — Extension Popup](#-view-all-notes--extension-popup)
+  - [⏱️ Time in State — List View](#%EF%B8%8F-time-in-state--list-view)
+  - [⏱️ Time in State — Native Issue Table](#%EF%B8%8F-time-in-state--native-issue-table)
+  - [⏱️ Time in State — Board Cards](#%EF%B8%8F-time-in-state--board-cards)
+  - [⏱️ Time in State — Breadcrumb Navigation](#%EF%B8%8F-time-in-state--breadcrumb-navigation)
+  - [📊 Story Points in Dashboard Gadgets](#-story-points-in-dashboard-gadgets)
+- [Architecture & Technical Details](#architecture--technical-details)
+  - [Manifest & Permissions](#manifest--permissions)
+  - [File Structure](#file-structure)
+  - [Content Script Lifecycle](#content-script-lifecycle)
+  - [safeStorage Wrapper](#safestorage-wrapper)
+  - [Jira REST API Usage](#jira-rest-api-usage)
+  - [Concurrency Queue](#concurrency-queue)
+  - [In-Memory Cache](#in-memory-cache)
+  - [Global Tooltip System](#global-tooltip-system)
+  - [Clipboard API (Rich Text)](#clipboard-api-rich-text)
+- [Installation](#installation)
+
+---
+
+## Features Overview
+
+| # | Feature | Where it appears | Trigger |
+|---|---------|-----------------|---------|
+| 1 | Copy Link for Slack | Legacy list views | 🔗 button per row |
+| 2 | Copy Link for Slack | Native issue table | 🔗 button per row |
+| 3 | Copy Link in Breadcrumbs | Ticket detail pages | 🔗 button in breadcrumb nav |
+| 4 | Quick Notes | Legacy list views | 📝 button per row |
+| 5 | Quick Notes | Native issue table | 📝 button per row |
+| 6 | Quick Notes | Ticket detail pages | Collapsible panel below header |
+| 7 | Quick Notes | Breadcrumb navigation | 📝 button in breadcrumb nav |
+| 8 | View All Notes | Extension popup | Click extension icon |
+| 9 | Time in State | Legacy list views | Auto-injected badge per row |
+| 10 | Time in State | Native issue table | Auto-injected badge per row |
+| 11 | Time in State | Board cards (Kanban/Scrum) | Auto-injected badge per card |
+| 12 | Time in State | Breadcrumb navigation | Auto-injected badge |
+| 13 | Story Points Summary | Dashboard gadgets | Auto-injected SP column |
+
+---
+
+## Feature Details
+
+### 🔗 Copy Link for Slack — List View
+
+**Function:** `injectPMsToolKitJira()`
+
+Adds a **🔗** button to each ticket row in Jira's legacy list views (`tr[data-issuekey]` and `.issuerow` rows).
+
+**Behavior:**
+- Extracts the **issue key** (`data-issuekey` attribute or `.key` element) and the **summary** text from each row.
+- On click, copies the ticket to the clipboard in **two formats simultaneously**:
+  - `text/plain` → `"KEY-123 Summary text"`
+  - `text/html` → `<a href="https://your-instance.atlassian.net/browse/KEY-123">KEY-123 Summary text</a>`
+- This means pasting into Slack, Notion, or any rich-text editor produces a **clickable hyperlink**, while pasting into plain-text fields gives a readable fallback.
+- Visual feedback: the button briefly changes to ✅ with a green background for 1.5 seconds.
+
+**Selectors used:**
+- Rows: `tr[data-issuekey]:not(.et-added)`, `.issuerow:not(.et-added)`
+- Summary: `.summary a`, `[data-field-id="summary"] a`
+- Insertion target: `.key`, `.issuetype`, or first `<td>`
+
+---
+
+### 🔗 Copy Link for Slack — Native Issue Table
+
+**Function:** `injectNativeTableIcons()`
+
+Same copy-to-Slack behavior as above but targeting Jira Cloud's **native issue table** (the newer React-based table with `data-testid` attributes).
+
+**Selectors used:**
+- Rows: `tr[data-testid="native-issue-table.ui.issue-row"]`
+- Issue key: `[data-testid="native-issue-table.common.ui.issue-cells.issue-key.issue-key-cell"]`
+- Summary: `[data-testid="native-issue-table.common.ui.issue-cells.issue-summary.issue-summary-cell"]`
+- Insertion target: Merged cell `[data-testid="native-issue-table.ui.row.issue-row.merged-cell"]`, placed before the issue key element.
+
+---
+
+### 🔗 Copy Link in Breadcrumbs — Ticket View
+
+**Function:** `injectBreadcrumbCopyButton()`
+
+On individual ticket pages (`/browse/XXX-NNN`), injects a **🔗** copy button directly into the breadcrumb navigation bar.
+
+**Breadcrumb detection strategy** (multi-fallback):
+1. `#jira-issue-header nav ol`
+2. `[data-testid="issue.views.issue-base.foundation.breadcrumbs.item"]` → traverses up to closest `<ol>`
+3. Any `nav ol` element whose text content contains the issue key
+
+**Summary detection** for clipboard content:
+- `[data-testid="issue.views.issue-base.foundation.summary.heading"] h1`
+- `#summary-val`
+- `#jira-issue-header + * h1`
+
+The button is wrapped in a `div[role="listitem"]` with `display: flex` to match Jira's breadcrumb structure.
+
+---
+
+### 📝 Quick Notes — List View
+
+**Function:** `injectQuickNotesListView()`
+
+Adds a **📝** button to each ticket row in legacy list views. Clicking it opens an **inline floating popup** with a text area for personal notes.
+
+**Behavior:**
+- Notes are stored in `chrome.storage.local` under the key `notes_{ISSUE_KEY}`.
+- **Auto-save:** Triggers 400ms after the last keystroke via a debounced `input` event handler.
+- **Manual save:** A dedicated "Save" button for explicit saves.
+- **Visual indicator:** A blue dot (`::after` pseudo-element) appears on the 📝 button when a note exists (`.has-note` class).
+- **Save confirmation:** A "✓ Saved" indicator fades in for 1.2 seconds after each save.
+- **Popup management:** Only one popup can be open at a time — opening a new popup closes any previously open ones.
+- **Keyboard:** Press `Escape` to close the popup.
+- **Click outside:** Clicking anywhere outside a notes container closes all open popups (global `click` listener on `document`).
+
+**Storage format:**
+```
+Key:   "notes_KEY-123"
+Value: "Your note text here"
+```
+
+---
+
+### 📝 Quick Notes — Native Issue Table
+
+**Function:** `injectNativeTableIcons()`
+
+Same Quick Notes functionality as the legacy list view, but adapted for Jira Cloud's native issue table. The notes button, popup, auto-save, and visual indicators behave identically.
+
+Injected inside a `.et-native-icons` wrapper alongside the copy and time-in-state elements, positioned before the issue key in the merged cell.
+
+---
+
+### 📝 Quick Notes — Ticket View (Detail Panel)
+
+**Function:** `injectQuickNotesTicketView()`
+
+On individual ticket pages (`/browse/XXX-NNN`), renders a **collapsible panel** below the issue header.
+
+**UI components:**
+- **Toggle button:** Displays "📝 Personal notes" — click to expand/collapse.
+- **Blue dot indicator:** When a note exists, the toggle shows "Personal notes ●".
+- **Text area:** Larger than the list-view popup (`min-height: 80px`), for more comfortable editing.
+- **Manual save button:** Positioned below the textarea.
+- **Auto-save:** Same 400ms debounce as list view.
+- **Save indicator:** "✓ Saved" appears in the toggle bar itself.
+
+**Header detection:**
+- `#jira-issue-header`
+- `[data-testid="issue.views.issue-details.issue-layout.container-left"]`
+
+**Guard:** Won't inject twice — checks for existing `.et-ticket-notes-panel`.
+
+---
+
+### 📝 Quick Notes — Breadcrumb Navigation
+
+**Function:** `injectBreadcrumbCopyButton()` (combined with copy button)
+
+A 📝 notes button is also injected into the breadcrumb bar alongside the copy button, with the same popup, auto-save, and blue dot behaviors. This allows quick access to notes from the ticket view without scrolling down to the panel.
+
+---
+
+### 📋 View All Notes — Extension Popup
+
+**Files:** `popup.html`, `popup.js`
+
+Clicking the extension icon opens a popup that lists **all saved notes** across all tickets.
+
+**Features:**
+- **Notes list:** Shows every `notes_*` entry from `chrome.storage.local`, sorted alphabetically by ticket key.
+- **Search:** Real-time filtering by ticket key or note content (case-insensitive `input` listener).
+- **Clickable links:** Each ticket key is a hyperlink that opens the ticket in a new tab. The Jira hostname is auto-detected from the active tab and cached in `localStorage`.
+- **Copy button:** Copies `"KEY-123: note text"` to clipboard per note.
+- **Delete button:** Removes the note from storage after a `confirm()` dialog.
+- **Empty state:** Shows a 📋 emoji with "You have no saved notes" or "No results" when searching.
+- **Count badge:** Header shows total note count (e.g., "3 notes").
+- **About footer:** "PMsToolKit — Created by EricConcha".
+- **UI:** 380px wide, max 500px tall, with Jira-inspired styling (blue header gradient, Atlassian font stack, hover states).
+- **XSS protection:** Notes are HTML-escaped via `escapeHtml()` before rendering.
+
+---
+
+### ⏱️ Time in State — List View
+
+**Function:** `injectAgeIndicators()`
+
+Injects a **color-coded badge** next to each ticket's key in legacy list views, showing how long the ticket has been in its current status.
+
+**Color coding:**
+| Badge | Duration | CSS Class |
+|-------|----------|-----------|
+| 🟢 Green | 0–2 days | `et-age-green` |
+| 🟡 Yellow | 3–4 days | `et-age-yellow` |
+| 🔴 Red | 5+ days | `et-age-red` |
+| ⏳ Loading | Fetching… | `et-age-loading` (pulse animation) |
+| ⚠️ Error | Failed | No color class |
+
+**Age format:**
+| Duration | Label |
+|----------|-------|
+| Less than 1 day | `<1d` |
+| 1 day | `1d` |
+| 2–6 days | `Xd` |
+| 1–3 weeks | `Xw` |
+| 4+ weeks | `Xm` (months) |
+
+**Tooltip (on hover):** Shows detailed information including:
+- Current status name (e.g., `In "In Progress" since 02/25/2026 10:30 AM`)
+- Who moved it (e.g., `Moved by: John Doe`)
+
+**API calls:** Uses the concurrency queue and in-memory cache (see [Architecture](#concurrency-queue)).
+
+---
+
+### ⏱️ Time in State — Native Issue Table
+
+**Function:** `injectNativeTableIcons()`
+
+Same time-in-state badge behavior, injected into the native issue table rows inside the `.et-native-icons` wrapper. The badge, tooltip, color coding, and age format are identical to the list view.
+
+---
+
+### ⏱️ Time in State — Board Cards
+
+**Function:** `injectBoardCardAgeIndicators()`
+
+Adds a time-in-state badge to each card on **Kanban and Scrum board views**.
+
+**Card detection:**
+- Key container: `[data-testid="platform-card.common.ui.key.key"]`
+- Card root: Closest `[draggable="true"]` ancestor
+- Content target: `[class*="content"]` or `[data-component-selector="platform-card.ui.card.card-content.content-section"]` parent
+
+**Placement:** Creates a new row (`div.et-board-age-row`) at the bottom of the card with `justify-content: flex-end` to right-align the badge.
+
+**Styling:** Uses the `.et-board-age` class with slightly larger font (`10px`) and `border-radius: 3px` for a card-appropriate appearance.
+
+---
+
+### ⏱️ Time in State — Breadcrumb Navigation
+
+**Function:** `injectBreadcrumbCopyButton()` (combined with copy and notes)
+
+A time-in-state badge is also injected into the breadcrumb navigation alongside the copy and notes buttons, using the `.et-breadcrumb-age` class.
+
+---
+
+### 📊 Story Points in Dashboard Gadgets
+
+**Functions:** `injectStoryPointsSummary()`, `_etEnsureStoryPointsField()`
+
+Enhances **stats gadgets** on Jira dashboards by adding a **Story Points (SP) column**.
+
+**Workflow:**
+
+1. **Auto-detect the Story Points field ID:**
+   - Makes a single `GET /rest/api/2/field` call.
+   - Searches for a field named `"Story Points"` or `"Story points"` (case-sensitive match).
+   - Caches the result for the page session (`_etStoryPointsFieldId`).
+
+2. **Extract JQL from each gadget:**
+   - Finds `table.stats-gadget-table` elements.
+   - Locates the "Total" row (`tr.stats-gadget-final-row`).
+   - Extracts the `jql=` parameter from the total link's `href`.
+   - Strips any `ORDER BY` clause before sending to the API.
+
+3. **Fetch all issues via a single API call:**
+   - `POST /rest/api/3/search/jql` with:
+     ```json
+     {
+       "jql": "<extracted JQL>",
+       "fields": ["<storyPointsFieldId>", "assignee"],
+       "maxResults": 200
+     }
+     ```
+   - Includes `X-Atlassian-Token: no-check` header for CSRF bypass.
+
+4. **Aggregate story points by assignee:**
+   - Groups issues by `assignee.displayName` (or `"Unassigned"`).
+   - Calculates per-assignee and grand totals.
+
+5. **Modify the gadget table:**
+   - **Hides** the percentage/progress bar column (`.stats-gadget-progress-indicator`).
+   - **Adds** an "SP" header column after "Count".
+   - **Inserts** an SP value cell per data row, matching assignees by name.
+   - **Adds** the grand total SP in the footer row.
+
+**Guard:** Each gadget is tracked by its DOM ID (`gadget-content-*` or `gadget-*`) in a `Set` to prevent reprocessing.
+
+**Styling:** SP values use Atlassian blue (`#0052cc`) with bold weight for visual distinction.
+
+---
+
+## Architecture & Technical Details
+
+### Manifest & Permissions
+
+| Property | Value |
+|----------|-------|
+| `manifest_version` | `3` |
+| `name` | `PMsToolKit` |
+| `version` | `2.0` |
+| `permissions` | `clipboardWrite`, `storage`, `tabs` |
+| `host_permissions` | `https://*.atlassian.net/*` |
+| `content_scripts.run_at` | `document_idle` |
+| `content_scripts.js` | `jira-tools.js` |
+| `content_scripts.css` | `styles.css` |
+| `action.default_popup` | `popup.html` |
+
+### File Structure
+
+```
+PMsToolKit/
+├── manifest.json        # Extension manifest (MV3)
+├── jira-tools.js        # Main content script (~1150 lines)
+│                        #   - All feature injection functions
+│                        #   - Jira REST API interaction
+│                        #   - Concurrency queue & caching
+│                        #   - MutationObserver-based lifecycle
+│                        #   - Global tooltip system
+├── styles.css           # All custom styles (~344 lines)
+│                        #   - Notes popup & panel styles
+│                        #   - Age badge color coding
+│                        #   - Board card badge layout
+│                        #   - Breadcrumb button styles
+│                        #   - Native issue table icon layout
+│                        #   - Global tooltip styles
+│                        #   - Pulse loading animation
+├── popup.html           # Extension popup UI
+├── popup.js             # Popup logic (notes listing, search, CRUD)
+└── icon.png             # Extension icon (48x48)
+```
+
+### Content Script Lifecycle
+
+The content script uses a **`MutationObserver`** on `document.body` to detect when Jira dynamically loads or re-renders content (Jira Cloud is a SPA):
+
+```javascript
+const observer = new MutationObserver(() => etRunAll());
+observer.observe(document.body, { childList: true, subtree: true });
+etRunAll(); // Initial run
+```
+
+**`etRunAll()`** calls all feature injection functions on every DOM mutation. Each function uses **"already processed" guard classes** (e.g., `.et-added`, `.et-notes-added`, `.et-age-added`, `.et-native-added`, `.et-board-age-added`) to avoid re-injecting into the same elements.
+
+### safeStorage Wrapper
+
+A wrapper around `chrome.storage.local` that catches `"Extension context invalidated"` errors:
+
+```javascript
+const safeStorage = {
+    get(key, cb) {
+        try { chrome.storage.local.get(key, cb); }
+        catch (e) { console.warn('PMsToolKit: context invalidated, please refresh.'); }
+    },
+    set(data) { /* same pattern */ },
+    remove(key) { /* same pattern */ }
+};
+```
+
+This prevents errors when the extension is updated/reloaded while a Jira tab is still open. Instead of crashing, it logs a warning.
+
+### Jira REST API Usage
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/rest/api/2/issue/{key}?fields=status,created` | GET | Get current status and creation date |
+| `/rest/api/2/issue/{key}/changelog?maxResults=50` | GET | Get changelog to find last status transition |
+| `/rest/api/2/issue/{key}/changelog?startAt={N}&maxResults=50` | GET | Paginate changelog for issues with 50+ history entries |
+| `/rest/api/2/field` | GET | Auto-detect the Story Points custom field ID |
+| `/rest/api/3/search/jql` | POST | Fetch issues with story points for dashboard gadgets |
+
+All requests use `credentials: 'same-origin'` to leverage the user's existing Jira session — **no API tokens or authentication setup required**.
+
+### Concurrency Queue
+
+To avoid overwhelming the Jira API (which can throttle or 429), API requests are managed by a concurrency-limited queue:
+
+```
+Max concurrent requests: 3 (ET_MAX_CONCURRENT)
+Queue type: FIFO
+Implementation: Promise-based with _etEnqueue() / _etProcessQueue()
+```
+
+Every time-in-state API call goes through `_etEnqueue()`, which queues a function and returns a `Promise`. The processor ensures no more than 3 requests are in-flight at any time.
+
+### In-Memory Cache
+
+Status data is cached in a plain object (`_etStatusCache`) to avoid redundant API calls:
+
+```
+TTL: 5 minutes (ET_CACHE_TTL = 300,000ms)
+Key: issueKey (e.g., "PROJ-123")
+Value: { statusName, changedDate, changedBy, fetchedAt }
+```
+
+Cache is checked before every API call. Entries older than 5 minutes are ignored and refetched.
+
+### Global Tooltip System
+
+Instead of using native `title` attributes (which conflict with Jira's own tooltip system), the extension uses a **custom tooltip** appended to `document.body`:
+
+- A single `div.et-tooltip` element is created once and reused.
+- `mouseover` on any `.et-age-badge[data-tooltip]` reads the `data-tooltip` attribute and positions the tooltip above the badge using `getBoundingClientRect()`.
+- `mouseout` hides it (checking `e.relatedTarget` to avoid flicker when moving to child elements).
+- Supports multi-line content via `\n` → `<br>` splitting.
+- Uses `z-index: 2147483647` (max 32-bit integer) and `position: fixed` to ensure it's always on top.
+
+### Clipboard API (Rich Text)
+
+The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()`) with `ClipboardItem` to write both `text/plain` and `text/html` MIME types simultaneously:
+
+```javascript
+const data = [new ClipboardItem({
+    'text/plain': new Blob([plainText], { type: 'text/plain' }),
+    'text/html':  new Blob([htmlLink],  { type: 'text/html' })
+})];
+navigator.clipboard.write(data);
+```
+
+This ensures that pasting into rich-text editors (Slack, Confluence, etc.) creates a hyperlink, while pasting into plain-text editors preserves the key and summary.
+
+---
+
+## Installation
+
+1. Clone or download this repository.
+2. Open `chrome://extensions/` in Chrome.
+3. Enable **Developer mode** (top-right toggle).
+4. Click **Load unpacked** and select the `PMsToolKit/` directory.
+5. Navigate to any Jira Cloud instance — the extension activates automatically.
+
+> **Note:** No API tokens or configuration required. The extension uses your existing Jira session cookies for API access.
+
+---
+
+*PMsToolKit v2.0 — Created by EricConcha*
