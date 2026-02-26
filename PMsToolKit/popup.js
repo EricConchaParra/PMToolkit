@@ -6,17 +6,45 @@ const searchInput = document.getElementById('search');
 
 let allNotes = [];
 
+async function fetchTicketDetails(ticketKey) {
+    const host = getJiraHost();
+    try {
+        const resp = await fetch(
+            `https://${host}/rest/api/2/issue/${ticketKey}?fields=summary,assignee`,
+            { credentials: 'include' }
+        );
+        if (!resp.ok) return { summary: '', assignee: '' };
+        const data = await resp.json();
+        return {
+            summary: data.fields?.summary || '',
+            assignee: data.fields?.assignee?.displayName || 'Unassigned'
+        };
+    } catch {
+        return { summary: '', assignee: '' };
+    }
+}
+
 function loadNotes() {
-    chrome.storage.local.get(null, (items) => {
+    chrome.storage.local.get(null, async (items) => {
         allNotes = [];
         for (const [key, value] of Object.entries(items)) {
             if (key.startsWith('notes_')) {
                 const ticketKey = key.replace('notes_', '');
-                allNotes.push({ ticketKey, text: value });
+                allNotes.push({ ticketKey, text: value, summary: '', assignee: '' });
             }
         }
         // Sort alphabetically by ticket key
         allNotes.sort((a, b) => a.ticketKey.localeCompare(b.ticketKey));
+        // Render immediately, then enrich with Jira details
+        renderNotes(allNotes);
+
+        // Fetch details in parallel
+        const promises = allNotes.map(async (note) => {
+            const details = await fetchTicketDetails(note.ticketKey);
+            note.summary = details.summary;
+            note.assignee = details.assignee;
+        });
+        await Promise.all(promises);
         renderNotes(allNotes);
     });
 }
@@ -34,18 +62,30 @@ function renderNotes(notes) {
         return;
     }
 
-    notesListEl.innerHTML = notes.map(note => `
+    notesListEl.innerHTML = notes.map(note => {
+        const summaryHtml = note.summary
+            ? `<span class="note-summary" title="${escapeHtml(note.summary)}">${escapeHtml(note.summary)}</span>`
+            : '';
+        const assigneeHtml = note.assignee
+            ? `<span class="note-assignee">${escapeHtml(note.assignee)}</span>`
+            : '';
+        const metaLine = (summaryHtml || assigneeHtml)
+            ? `<div class="note-meta">${summaryHtml}${assigneeHtml ? (summaryHtml ? ' · ' : '') + assigneeHtml : ''}</div>`
+            : '';
+        return `
         <div class="note-item" data-key="${note.ticketKey}">
             <a class="note-key" href="https://${getJiraHost()}/browse/${note.ticketKey}" target="_blank">
                 ${note.ticketKey}
             </a>
+            ${metaLine}
             <div class="note-text">${escapeHtml(note.text)}</div>
             <div class="note-actions">
                 <button class="copy-btn" data-key="${note.ticketKey}" title="Copy note">📋 Copy</button>
                 <button class="delete-btn" data-key="${note.ticketKey}" title="Delete note">🗑️ Delete</button>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     // Event listeners
     notesListEl.querySelectorAll('.copy-btn').forEach(btn => {

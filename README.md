@@ -189,6 +189,7 @@ Clicking the extension icon opens a popup that lists **all saved notes** across 
 
 **Features:**
 - **Notes list:** Shows every `notes_*` entry from `chrome.storage.local`, sorted alphabetically by ticket key.
+- **Summary & Assignee enrichment:** After the initial render, the popup fetches each ticket's **summary** and **assignee** from the Jira REST API (`/rest/api/2/issue/{key}?fields=summary,assignee`) in parallel. A metadata line is displayed below the ticket key showing the summary (truncated with ellipsis) and assignee separated by a `·` dot. If the API call fails, the card gracefully falls back to showing just the key.
 - **Search:** Real-time filtering by ticket key or note content (case-insensitive `input` listener).
 - **Clickable links:** Each ticket key is a hyperlink that opens the ticket in a new tab. The Jira hostname is auto-detected from the active tab and cached in `localStorage`.
 - **Copy button:** Copies `"KEY-123: note text"` to clipboard per note.
@@ -438,6 +439,7 @@ This prevents errors when the extension is updated/reloaded while a Jira tab is 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/rest/api/2/issue/{key}?fields=status,created` | GET | Get current status and creation date |
+| `/rest/api/2/issue/{key}?fields=summary,assignee` | GET | Fetch ticket summary and assignee for popup enrichment |
 | `/rest/api/2/issue/{key}/changelog?maxResults=50` | GET | Get changelog to find last status transition |
 | `/rest/api/2/issue/{key}/changelog?startAt={N}&maxResults=50` | GET | Paginate changelog for issues with 50+ history entries |
 | `/rest/api/2/field` | GET | Auto-detect the Story Points custom field ID |
@@ -509,4 +511,4 @@ This ensures that pasting into rich-text editors (Slack, Confluence, etc.) creat
 
 ---
 
-*PMsToolKit v2.1 — Created by EricConcha*
+*PMsToolKit v2.2 — Created by EricConcha*

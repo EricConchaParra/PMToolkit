@@ -907,15 +907,94 @@ function injectBoardCardAgeIndicators() {
         // Use the card root as the ultimate fallback
         const targetContainer = contentWrapper || cardRoot;
 
-        // Create a new row at the bottom of the card for the badge
+        // Create a new row at the bottom of the card for the badge + notes
         const badgeRow = document.createElement('div');
         badgeRow.className = 'et-board-age-row';
 
+        // ---- 📝 Notes icon on board card ----
+        const notesContainer = document.createElement('span');
+        notesContainer.className = 'et-notes-container et-board-notes-container';
+
+        const notesBtn = document.createElement('button');
+        notesBtn.className = 'et-notes-btn et-board-notes-btn';
+        notesBtn.innerHTML = '📝';
+        notesBtn.title = 'PMsToolKit: Personal notes';
+
+        const popup = document.createElement('div');
+        popup.className = 'et-notes-popup';
+        popup.innerHTML = `
+            <textarea placeholder="Write your note here..."></textarea>
+            <div class="et-notes-footer">
+                <button class="et-notes-save-btn">Save</button>
+                <span class="et-notes-save-indicator">✓ Saved</span>
+                <span style="font-size:9px;color:#97a0af">Esc to close</span>
+            </div>
+        `;
+
+        const textarea = popup.querySelector('textarea');
+        const saveIndicator = popup.querySelector('.et-notes-save-indicator');
+        const saveBtn = popup.querySelector('.et-notes-save-btn');
+        let saveTimeout = null;
+        const storageKey = `notes_${issueKey}`;
+
+        function doSaveBoard() {
+            clearTimeout(saveTimeout);
+            const value = textarea.value.trim();
+            if (value) {
+                safeStorage.set({ [storageKey]: value });
+                notesBtn.classList.add('has-note');
+            } else {
+                safeStorage.remove(storageKey);
+                notesBtn.classList.remove('has-note');
+            }
+            saveIndicator.classList.add('show');
+            setTimeout(() => saveIndicator.classList.remove('show'), 1200);
+        }
+
+        saveBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            doSaveBoard();
+        });
+
+        safeStorage.get(storageKey, (result) => {
+            if (result[storageKey]) {
+                textarea.value = result[storageKey];
+                notesBtn.classList.add('has-note');
+            }
+        });
+
+        textarea.addEventListener('input', () => {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => doSaveBoard(), 400);
+        });
+
+        notesBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            document.querySelectorAll('.et-notes-popup.visible').forEach(p => {
+                if (p !== popup) p.classList.remove('visible');
+            });
+            popup.classList.toggle('visible');
+            if (popup.classList.contains('visible')) {
+                setTimeout(() => textarea.focus(), 50);
+            }
+        };
+
+        textarea.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') popup.classList.remove('visible');
+        });
+
+        notesContainer.appendChild(notesBtn);
+        notesContainer.appendChild(popup);
+
+        // ---- ⏱ Time in State badge ----
         const badge = document.createElement('span');
         badge.className = 'et-age-badge et-age-loading et-board-age';
         badge.textContent = '⏳';
         badge.setAttribute('data-tooltip', 'Checking status...');
 
+        badgeRow.appendChild(notesContainer);
         badgeRow.appendChild(badge);
         targetContainer.appendChild(badgeRow);
 

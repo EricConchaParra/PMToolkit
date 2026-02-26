@@ -274,9 +274,12 @@ td.summary>.et-age-badge {
 .et-board-age-row {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
     padding: 4px 0 2px;
     position: relative;
-    z-index: 10;
+    z-index: 9999;
+    pointer-events: auto;
 }
 
 .et-board-age {
@@ -284,6 +287,29 @@ td.summary>.et-age-badge {
     padding: 2px 8px;
     border-radius: 3px;
     flex-shrink: 0;
+}
+
+/* Notes icon on board cards */
+.et-board-notes-container {
+    position: relative;
+    pointer-events: auto;
+    z-index: 9999;
+}
+
+.et-board-notes-btn {
+    font-size: 10px;
+    padding: 1px 3px;
+    margin-right: 0;
+    line-height: 1;
+    height: 18px;
+    min-width: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 9999;
 }
 
 /* ---- Story Points Column in Gadgets (Feature 9) ---- */
