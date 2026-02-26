@@ -1249,7 +1249,7 @@ async function injectStoryPointsSummary() {
 
 // ---- Feature 11: Velocity per Developer on Dashboard Gadgets ----
 
-const ET_VELOCITY_SPRINT_COUNT = 2; // Number of closed sprints to average
+const ET_VELOCITY_SPRINT_COUNT = 3; // Number of closed sprints to average
 const _etProcessedVelocityGadgets = new Set();
 const _etBoardIdCache = {}; // projectKey → boardId
 
@@ -1562,21 +1562,315 @@ document.addEventListener('click', (e) => {
     }
 });
 
+
+// ---- Feature 12: Jira Dashboard Customization (Header & Sidebar) ----
+
+let _etSidebarCollapsedOnLoad = false;
+
+function hideJiraHeaderElements() {
+    // Hide search bar
+    const searchContainer = document.querySelector('[data-testid="search-input-container"]');
+    if (searchContainer && searchContainer.style.display !== 'none') {
+        searchContainer.style.display = 'none';
+        console.debug('PMsToolKit: Search bar hidden');
+    }
+
+    // Hide Create button
+    const createButton = document.querySelector('[data-testid="atlassian-navigation--create-button"]');
+    if (createButton) {
+        const parent = createButton.closest('[data-testid="ak-spotlight-target-global-create-spotlight"]') || createButton;
+        if (parent.style.display !== 'none') {
+            parent.style.display = 'none';
+            console.debug('PMsToolKit: Create button hidden');
+        }
+    }
+
+    // Hide Ask Rovo
+    const askRovo = Array.from(document.querySelectorAll('button')).find(btn =>
+        btn.textContent.includes('Ask Rovo') ||
+        btn.getAttribute('data-testid')?.includes('ask-rovo') ||
+        btn.getAttribute('aria-label')?.includes('Ask Rovo')
+    );
+    if (askRovo && askRovo.style.display !== 'none') {
+        askRovo.style.display = 'none';
+        console.debug('PMsToolKit: Ask Rovo hidden');
+    }
+}
+
+function collapseJiraSidebarOnLoad() {
+    if (_etSidebarCollapsedOnLoad) return;
+
+    const sidebar = document.querySelector('[data-testid="page-layout.sidebar"]');
+    if (!sidebar) return;
+
+    const width = sidebar.offsetWidth;
+    if (width > 100) {
+        const collapseBtn = Array.from(document.querySelectorAll('button')).find(btn =>
+            btn.textContent.includes('Collapse sidebar') ||
+            btn.getAttribute('aria-label')?.includes('Collapse sidebar')
+        );
+
+        if (collapseBtn) {
+            collapseBtn.click();
+            _etSidebarCollapsedOnLoad = true;
+            console.debug('PMsToolKit: Sidebar collapsed on load');
+        }
+    } else if (width > 0) {
+        _etSidebarCollapsedOnLoad = true;
+    }
+}
+
+let _etCachedStarredItems = null;
+
+
+function renderStarredItemsMenu(items) {
+    const topNav = document.querySelector('[data-testid="page-layout.top-nav"]');
+    if (!topNav) return;
+
+    let menuWrapper = document.querySelector('.et-header-menu-wrapper');
+    if (!menuWrapper) {
+        menuWrapper = document.createElement('div');
+        menuWrapper.className = 'et-header-menu-wrapper';
+        menuWrapper.style.display = 'flex';
+        menuWrapper.style.alignItems = 'center';
+        menuWrapper.style.position = 'relative';
+
+        const productHome = topNav.querySelector('[data-testid="atlassian-navigation--product-home--container"]');
+        if (productHome) {
+            productHome.parentNode.insertBefore(menuWrapper, productHome.nextSibling);
+        } else {
+            topNav.prepend(menuWrapper);
+        }
+    }
+
+    const linksHash = (items || []).map(i => i.href + i.title).join('|');
+    let menu = menuWrapper.querySelector('.et-header-starred-menu');
+
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.className = 'et-header-starred-menu';
+        menuWrapper.appendChild(menu);
+    }
+
+    if (menu.getAttribute('data-links-hash') !== linksHash) {
+        menu.innerHTML = '';
+        (items || []).forEach(item => {
+            const a = document.createElement('a');
+            a.className = 'et-header-starred-item';
+            a.href = item.href;
+            a.textContent = item.title;
+            menu.appendChild(a);
+        });
+        menu.setAttribute('data-links-hash', linksHash);
+    }
+
+    // Edit Button (Pen)
+    let editBtn = menuWrapper.querySelector('.et-menu-edit-btn');
+    if (!editBtn) {
+        editBtn = document.createElement('button');
+        editBtn.className = 'et-menu-edit-btn';
+        editBtn.innerHTML = '⋮';
+        editBtn.title = 'PMsToolKit: Edit Menu';
+        menuWrapper.appendChild(editBtn);
+
+        // Menu Manager Popup
+        const popup = document.createElement('div');
+        popup.className = 'et-menu-manager-popup';
+        popup.innerHTML = `
+            <h4>Manage Jira Menu</h4>
+            <div class="et-menu-manager-add-section">
+                <input type="text" id="et-menu-new-title" placeholder="Title">
+                <input type="text" id="et-menu-new-url" placeholder="URL">
+                <button class="et-notes-save-btn" id="et-menu-add-save">Add Current Page</button>
+            </div>
+            <div class="et-menu-manager-list"></div>
+        `;
+        menuWrapper.appendChild(popup);
+
+        editBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const isVisible = popup.classList.toggle('visible');
+            if (isVisible) {
+                const titleInput = popup.querySelector('#et-menu-new-title');
+                const urlInput = popup.querySelector('#et-menu-new-url');
+                titleInput.value = document.title.replace(' - Jira', '');
+                urlInput.value = window.location.pathname + window.location.search;
+                renderManagerList(popup, items);
+            }
+        };
+
+        const saveBtn = popup.querySelector('#et-menu-add-save');
+        saveBtn.onclick = () => {
+            const title = popup.querySelector('#et-menu-new-title').value.trim();
+            const url = popup.querySelector('#et-menu-new-url').value.trim();
+            if (title && url) {
+                const newItems = [...(items || []), { title, href: url }];
+                saveMenuItems(newItems);
+                popup.classList.remove('visible');
+            }
+        };
+
+        // Close on click outside
+        document.addEventListener('click', (e) => {
+            if (!menuWrapper.contains(e.target)) {
+                popup.classList.remove('visible');
+            }
+        });
+    }
+}
+
+function renderManagerList(popup, items) {
+    const list = popup.querySelector('.et-menu-manager-list');
+    list.innerHTML = '';
+
+    (items || []).forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'et-menu-manager-item';
+        div.draggable = true;
+        div.dataset.index = index;
+
+        div.innerHTML = `
+            <div class="et-menu-drag-handle" title="Drag to reorder">⋮⋮</div>
+            <span title="${item.href}">${item.title}</span>
+            <button class="et-menu-manager-delete" data-index="${index}">🗑️</button>
+        `;
+
+        // Delete functionality
+        div.querySelector('.et-menu-manager-delete').onclick = (e) => {
+            e.stopPropagation();
+            const newItems = items.filter((_, i) => i !== index);
+            saveMenuItems(newItems);
+            renderManagerList(popup, newItems);
+        };
+
+        // Drag and Drop Events
+        div.addEventListener('dragstart', (e) => {
+            div.classList.add('dragging');
+            e.dataTransfer.setData('text/plain', index);
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        div.addEventListener('dragend', () => {
+            div.classList.remove('dragging');
+            popup.querySelectorAll('.et-menu-manager-item').forEach(el => el.classList.remove('drag-over'));
+        });
+
+        div.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        });
+
+        div.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            if (!div.classList.contains('dragging')) {
+                div.classList.add('drag-over');
+            }
+        });
+
+        div.addEventListener('dragleave', () => {
+            div.classList.remove('drag-over');
+        });
+
+        div.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            const toIndex = index;
+
+            if (fromIndex !== toIndex) {
+                const newItems = [...items];
+                const [movedItem] = newItems.splice(fromIndex, 1);
+                newItems.splice(toIndex, 0, movedItem);
+
+                saveMenuItems(newItems);
+                renderManagerList(popup, newItems);
+            }
+
+            return false;
+        });
+
+        list.appendChild(div);
+    });
+}
+
+function saveMenuItems(items) {
+    _etCachedStarredItems = items;
+    safeStorage.set({ et_manual_menu_items: items });
+    renderStarredItemsMenu(items);
+}
+
+function injectStarredItemsMenu() {
+    if (_etCachedStarredItems) {
+        renderStarredItemsMenu(_etCachedStarredItems);
+        return;
+    }
+
+    // Try to load manual items first
+    safeStorage.get(['et_manual_menu_items', 'et_starred_items'], (res) => {
+        if (res.et_manual_menu_items) {
+            _etCachedStarredItems = res.et_manual_menu_items;
+        } else if (res.et_starred_items) {
+            // Migration
+            _etCachedStarredItems = res.et_starred_items;
+            safeStorage.set({ et_manual_menu_items: res.et_starred_items });
+        } else {
+            _etCachedStarredItems = [];
+        }
+        renderStarredItemsMenu(_etCachedStarredItems);
+    });
+}
+
+
 // ---- Main execution ----
 
+let _etRunAllTimeout = null;
+let _etIsRunning = false;
+
 function etRunAll() {
-    injectPMsToolKitJira();     // Original: copy button in list views
-    injectQuickNotesListView();  // Feature 5: notes in list views
-    injectQuickNotesTicketView(); // Feature 5: notes in ticket view
-    injectBreadcrumbCopyButton(); // Feature 7: copy in breadcrumbs
-    injectAgeIndicators();        // Feature 8: age indicator
-    injectBoardCardAgeIndicators(); // Feature 8b: age on board cards
-    injectStoryPointsSummary();   // Feature 9: SP summary
-    injectVelocityPerDeveloper(); // Feature 11: Velocity per Dev
-    injectNativeTableIcons();     // Feature 10: icons in native issue table
+    if (_etIsRunning) return;
+    _etIsRunning = true;
+
+    try {
+        hideJiraHeaderElements();     // Feature 12: hide search/create
+        collapseJiraSidebarOnLoad();  // Feature 12: auto collapse
+        injectStarredItemsMenu();     // Feature 12: starred menu in header
+        injectPMsToolKitJira();     // Original: copy button in list views
+        injectQuickNotesListView();  // Feature 5: notes in list views
+        injectQuickNotesTicketView(); // Feature 5: notes in ticket view
+        injectBreadcrumbCopyButton(); // Feature 7: copy in breadcrumbs
+        injectAgeIndicators();        // Feature 8: age indicator
+        injectBoardCardAgeIndicators(); // Feature 8b: age on board cards
+        injectStoryPointsSummary();   // Feature 9: SP summary
+        injectVelocityPerDeveloper(); // Feature 11: Velocity per Dev
+        injectNativeTableIcons();     // Feature 10: icons in native issue table
+    } finally {
+        _etIsRunning = false;
+    }
+}
+
+function etRunAllDebounced() {
+    if (_etRunAllTimeout) clearTimeout(_etRunAllTimeout);
+    _etRunAllTimeout = setTimeout(etRunAll, 300);
 }
 
 // Run when Jira loads dynamic content
-const observer = new MutationObserver(() => etRunAll());
+// Use a more specific observer if possible, but Jira is very dynamic
+const observer = new MutationObserver((mutations) => {
+    // Optimization: ignore mutations inside our own injected elements if possible
+    const meaningfulMutation = mutations.some(m => {
+        const target = m.target;
+        if (target.closest?.('.et-header-starred-menu')) return false;
+        if (target.closest?.('.et-notes-container')) return false;
+        return true;
+    });
+
+    if (meaningfulMutation) {
+        etRunAllDebounced();
+    }
+});
+
 observer.observe(document.body, { childList: true, subtree: true });
-etRunAll();
+etRunAllDebounced();

@@ -422,3 +422,157 @@ td.summary>.et-age-badge {
     display: inline-flex;
     align-items: center;
 }
+
+/* ---- Starred Menu in Header (Customization) ---- */
+.et-header-starred-menu {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-left: 16px;
+    margin-right: 16px;
+    flex-grow: 1;
+}
+
+.et-header-starred-item {
+    color: var(--ds-text, #42526e);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color 0.2s;
+}
+
+.et-header-starred-item:hover {
+    color: var(--ds-text-selected, #0052cc);
+    text-decoration: underline;
+}
+
+/* ---- Manual Menu Manager (Feature 12 Update) ---- */
+.et-menu-edit-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    margin-left: 8px;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    color: var(--ds-text, #42526e);
+}
+
+.et-menu-edit-btn:hover {
+    background: var(--ds-background-neutral-subtle-hovered, #ebecf0);
+    border-color: var(--ds-border, #dfe1e6);
+}
+
+.et-menu-manager-popup {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 2147483647;
+    background: #ffffff;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(9, 30, 66, 0.15), 0 0 1px rgba(9, 30, 66, 0.31);
+    padding: 12px;
+    width: 300px;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.et-menu-manager-popup.visible {
+    display: flex;
+}
+
+.et-menu-manager-popup h4 {
+    margin: 0;
+    font-size: 14px;
+    color: #172b4d;
+    border-bottom: 1px solid #dfe1e6;
+    padding-bottom: 6px;
+}
+
+.et-menu-manager-add-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #f4f5f7;
+    padding: 8px;
+    border-radius: 4px;
+}
+
+.et-menu-manager-add-section input {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid #dfe1e6;
+    border-radius: 3px;
+    font-size: 12px;
+    box-sizing: border-box;
+}
+
+.et-menu-manager-list {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.et-menu-manager-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 8px;
+    background: #fff;
+    border: 1px solid #f4f5f7;
+    border-radius: 3px;
+    font-size: 12px;
+    cursor: default;
+    user-select: none;
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.et-menu-manager-item.dragging {
+    opacity: 0.4;
+    background: #ebecf0;
+}
+
+.et-menu-manager-item.drag-over {
+    border-top: 2px solid #0052cc;
+}
+
+.et-menu-drag-handle {
+    cursor: grab;
+    color: #6b778c;
+    margin-right: 8px;
+    font-size: 14px;
+    user-select: none;
+}
+
+.et-menu-drag-handle:active {
+    cursor: grabbing;
+}
+
+.et-menu-manager-item span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.et-menu-manager-delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: #6b778c;
+    padding: 2px;
+    line-height: 1;
+}
+
+.et-menu-manager-delete:hover {
+    color: #bf2600;
+}
