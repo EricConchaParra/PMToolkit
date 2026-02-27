@@ -1,0 +1,45 @@
+{
+    "manifest_version": 3,
+    "name": "PMsToolKit",
+    "version": "2.1",
+    "description": "Enhanced project management workflows on Jira Cloud. Modular v2.1.",
+    "permissions": [
+        "clipboardWrite",
+        "storage",
+        "tabs",
+        "alarms",
+        "notifications"
+    ],
+    "host_permissions": [
+        "https://*.atlassian.net/*"
+    ],
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "action": {
+        "default_popup": "index.html",
+        "default_icon": "assets/icon.png"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*.atlassian.net/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "assets/*"
+            ],
+            "matches": [
+                "https://*.atlassian.net/*"
+            ]
+        }
+    ]
+}
