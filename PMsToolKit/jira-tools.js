@@ -18,6 +18,397 @@ const safeStorage = {
     }
 };
 
+const NoteDrawer = {
+    el: null,
+    backdrop: null,
+    currentKey: null,
+    saveTimeout: null,
+
+    init() {
+        if (this.el) return;
+
+        this.backdrop = document.createElement('div');
+        this.backdrop.className = 'et-drawer-backdrop';
+        this.backdrop.onclick = () => this.close();
+
+        this.el = document.createElement('div');
+        this.el.className = 'et-drawer';
+        this.el.innerHTML = `
+            <div class="et-drawer-header">
+                <div>
+                    <h2 class="et-drawer-title">📝 Note: <span id="et-drawer-key">---</span></h2>
+                    <div id="et-drawer-summary" style="font-size: 13px; color: #6b778c; margin-top: 4px; font-weight: 500; line-height: 1.4;"></div>
+                </div>
+                <button class="et-drawer-close">×</button>
+            </div>
+            <div class="et-drawer-content">
+                <div class="et-drawer-section">
+                    <label class="et-drawer-label">Personal Notes</label>
+                    <textarea class="et-drawer-textarea" placeholder="Type your notes here..."></textarea>
+                </div>
+                <div class="et-drawer-section">
+                    <label class="et-drawer-label">Reminder</label>
+                    <div class="et-drawer-reminder-row">
+                        <span>🔔</span>
+                        <input type="datetime-local" class="et-drawer-reminder-input">
+                    </div>
+                    <div class="et-drawer-shortcuts">
+                        <button class="et-shortcut-btn" data-time="1h">1 Hr</button>
+                        <button class="et-shortcut-btn" data-time="2h">2 Hrs</button>
+                        <button class="et-shortcut-btn" data-time="tomorrow">Tomorrow 9am</button>
+                        <button class="et-shortcut-btn" data-time="2days">2 Days 9am</button>
+                    </div>
+                </div>
+            </div>
+            <div class="et-drawer-footer">
+                <button class="et-drawer-save">Save Note</button>
+                <span class="et-drawer-status">✓ Saved</span>
+            </div>
+        `;
+
+        document.body.appendChild(this.backdrop);
+        document.body.appendChild(this.el);
+
+        this.el.querySelector('.et-drawer-close').onclick = () => this.close();
+        this.el.querySelector('.et-drawer-save').onclick = () => this.save();
+
+        const textarea = this.el.querySelector('.et-drawer-textarea');
+        const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
+
+        textarea.oninput = () => {
+            clearTimeout(this.saveTimeout);
+            this.saveTimeout = setTimeout(() => this.save(), 500);
+        };
+
+        reminderInput.onchange = () => this.save();
+
+        // Shortcut buttons
+        this.el.querySelectorAll('.et-shortcut-btn').forEach(btn => {
+            btn.onclick = () => {
+                const type = btn.getAttribute('data-time');
+                this.applyShortcut(type);
+            };
+        });
+
+        // Handle Escape key
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.el.classList.contains('visible')) {
+                this.close();
+            }
+        });
+    },
+
+    applyShortcut(type) {
+        const now = new Date();
+        let target = new Date(now);
+
+        if (type === '1h') target.setHours(now.getHours() + 1);
+        else if (type === '2h') target.setHours(now.getHours() + 2);
+        else if (type === 'tomorrow') {
+            target.setDate(now.getDate() + 1);
+            target.setHours(9, 0, 0, 0);
+        } else if (type === '2days') {
+            target.setDate(now.getDate() + 2);
+            target.setHours(9, 0, 0, 0);
+        }
+
+        const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
+        const offset = target.getTimezoneOffset() * 60000;
+        const localISODate = new Date(target.getTime() - offset).toISOString().slice(0, 16);
+        reminderInput.value = localISODate;
+        this.save();
+    },
+
+    open(issueKey, summary) {
+        this.init();
+        this.currentKey = issueKey;
+        this.el.querySelector('#et-drawer-key').textContent = issueKey;
+        this.el.querySelector('#et-drawer-summary').textContent = summary || '';
+
+        const textarea = this.el.querySelector('.et-drawer-textarea');
+        const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
+
+        textarea.value = '';
+        reminderInput.value = '';
+
+        const prefixedKey = issueKey.includes(':') ? issueKey : `jira:${issueKey}`;
+        const storageKey = `notes_${prefixedKey}`;
+        const reminderKey = `reminder_${prefixedKey}`;
+
+        safeStorage.get([storageKey, reminderKey], (result) => {
+            if (this.currentKey !== issueKey) return;
+
+            if (result[storageKey]) {
+                textarea.value = result[storageKey];
+            }
+            if (result[reminderKey]) {
+                const date = new Date(result[reminderKey]);
+                const offset = date.getTimezoneOffset() * 60000;
+                const localISODate = new Date(date.getTime() - offset).toISOString().slice(0, 16);
+                reminderInput.value = localISODate;
+            }
+        });
+
+        this.backdrop.classList.add('visible');
+        this.el.classList.add('visible');
+        setTimeout(() => textarea.focus(), 350);
+    },
+
+    close() {
+        if (!this.el) return;
+        this.el.classList.remove('visible');
+        this.backdrop.classList.remove('visible');
+        clearTimeout(this.saveTimeout);
+        this.save();
+    },
+
+    save() {
+        if (!this.currentKey) return;
+
+        const textarea = this.el.querySelector('.et-drawer-textarea');
+        const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
+        const status = this.el.querySelector('.et-drawer-status');
+
+        const value = textarea.value.trim();
+        const reminderValue = reminderInput.value;
+
+        // Ensure key has prefix
+        const storageKey = this.currentKey.includes(':') ? `notes_${this.currentKey}` : `notes_jira:${this.currentKey}`;
+        const reminderKey = this.currentKey.includes(':') ? `reminder_${this.currentKey}` : `reminder_jira:${this.currentKey}`;
+        const finalKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
+
+        if (value) {
+            safeStorage.set({ [storageKey]: value });
+        } else {
+            safeStorage.remove(storageKey);
+        }
+
+        if (reminderValue) {
+            const timestamp = new Date(reminderValue).getTime();
+            console.log(`PMsToolKit: Saving reminder for ${finalKey} at ${new Date(timestamp).toLocaleString()}`);
+            safeStorage.set({ [reminderKey]: timestamp });
+        } else {
+            console.log(`PMsToolKit: Removing reminder for ${finalKey}`);
+            safeStorage.remove(reminderKey);
+        }
+
+        // Show "Saved" status
+        status.classList.add('show');
+        setTimeout(() => status.classList.remove('show'), 1500);
+
+        // Update all indicators on the page for this issue key
+        const hasActiveItem = !!(value || reminderValue);
+        const cleanKey = this.currentKey.split(':').pop();
+        document.querySelectorAll(`[data-issue-key="${cleanKey}"], [data-issue-key="jira:${cleanKey}"]`).forEach(btn => {
+            if (btn.classList.contains('et-ticket-notes-toggle')) {
+                btn.querySelector('span').textContent = hasActiveItem ? 'Personal notes ●' : 'Personal notes';
+            } else {
+                if (hasActiveItem) btn.classList.add('has-note');
+                else btn.classList.remove('has-note');
+            }
+        });
+    }
+};
+
+const ReminderModal = {
+    backdrop: null,
+    el: null,
+    currentKey: null,
+    queue: [],
+
+    init() {
+        if (this.el) return;
+
+        this.backdrop = document.createElement('div');
+        this.backdrop.className = 'et-alert-modal-backdrop';
+
+        this.el = document.createElement('div');
+        this.el.className = 'et-alert-modal';
+        this.el.innerHTML = `
+            <div class="et-alert-modal-header">
+                <span style="font-size: 24px">🔔</span>
+                <div style="display:flex; flex-direction:column">
+                    <h3 class="et-alert-modal-title">Reminder: <span id="et-alert-key">---</span></h3>
+                    <div id="et-alert-summary" style="font-size: 13px; color: #6b778c; margin-top: 2px; font-weight: 500;"></div>
+                </div>
+            </div>
+            <div class="et-alert-modal-body" id="et-alert-text">
+            </div>
+            <div class="et-alert-modal-footer">
+                <button class="et-alert-btn et-alert-btn-primary" id="et-alert-done">Mark as Done</button>
+                <button class="et-alert-btn et-alert-btn-secondary" id="et-alert-snooze">Snooze</button>
+                <div class="et-alert-snooze-options" id="et-alert-snooze-options">
+                    <button class="et-alert-btn et-alert-btn-secondary" data-time="1h">1 Hr</button>
+                    <button class="et-alert-btn et-alert-btn-secondary" data-time="2h">2 Hrs</button>
+                    <button class="et-alert-btn et-alert-btn-secondary" data-time="tomorrow">Tomorrow 9am</button>
+                    <button class="et-alert-btn et-alert-btn-secondary" data-time="2days">2 Days 9am</button>
+                </div>
+                <button class="et-alert-btn et-alert-btn-tertiary" id="et-alert-ignore">Ignore</button>
+            </div>
+            <div id="et-alert-queue-info" style="margin-top: 12px; font-size: 11px; color: #6b778c; text-align: center; border-top: 1px solid #eee; padding-top: 8px; display:none;">
+            </div>
+        `;
+
+        document.body.appendChild(this.backdrop);
+        this.backdrop.appendChild(this.el);
+
+        this.el.querySelector('#et-alert-done').onclick = () => this.markAsDone();
+        this.el.querySelector('#et-alert-snooze').onclick = () => this.snooze();
+        this.el.querySelector('#et-alert-ignore').onclick = () => this.hide();
+
+        // Snooze duration buttons
+        this.el.querySelectorAll('.et-alert-snooze-options button').forEach(btn => {
+            btn.onclick = () => {
+                const type = btn.getAttribute('data-time');
+                this.applySnooze(type);
+            };
+        });
+    },
+
+    show(issueKey, noteText, summary) {
+        this.init();
+
+        // If already showing something, add to queue
+        if (this.backdrop.classList.contains('visible') && this.currentKey !== issueKey) {
+            if (!this.queue.find(q => q.issueKey === issueKey)) {
+                this.queue.push({ issueKey, noteText, summary });
+                this.updateQueueInfo();
+            }
+            return;
+        }
+
+        this.resetView();
+        this.currentKey = issueKey;
+        const cleanKey = issueKey.split(':').pop();
+        this.el.querySelector('#et-alert-key').textContent = cleanKey;
+        this.el.querySelector('#et-alert-summary').textContent = summary || '';
+
+        const textEl = this.el.querySelector('#et-alert-text');
+        if (noteText && noteText.trim()) {
+            textEl.textContent = noteText;
+            textEl.style.display = 'block';
+        } else {
+            textEl.style.display = 'none';
+        }
+
+        this.updateQueueInfo();
+        this.backdrop.classList.add('visible');
+    },
+
+    updateQueueInfo() {
+        const info = this.el.querySelector('#et-alert-queue-info');
+        if (this.queue.length > 0) {
+            info.textContent = `+ ${this.queue.length} more pending alerts`;
+            info.style.display = 'block';
+        } else {
+            info.style.display = 'none';
+        }
+    },
+
+    resetView() {
+        if (!this.el) return;
+        this.el.querySelector('#et-alert-done').classList.remove('hidden');
+        this.el.querySelector('#et-alert-snooze').classList.remove('hidden');
+        this.el.querySelector('#et-alert-ignore').classList.remove('hidden');
+        this.el.querySelector('#et-alert-snooze-options').classList.remove('visible');
+    },
+
+    hide() {
+        if (this.backdrop) {
+            this.backdrop.classList.remove('visible');
+        }
+        this.currentKey = null;
+
+        // Process next in queue
+        if (this.queue.length > 0) {
+            const next = this.queue.shift();
+            setTimeout(() => {
+                this.show(next.issueKey, next.noteText, next.summary);
+            }, 300);
+        }
+    },
+
+    markAsDone() {
+        if (!this.currentKey) return;
+        const storageKey = this.currentKey.includes(':') ? `reminder_${this.currentKey}` : `reminder_jira:${this.currentKey}`;
+        safeStorage.remove(storageKey);
+
+        // Remove from pending_alerts in background
+        safeStorage.get('pending_alerts', (result) => {
+            const pending = (result.pending_alerts || []).filter(k => k !== this.currentKey);
+            safeStorage.set({ pending_alerts: pending });
+        });
+
+        this.hide();
+    },
+
+    snooze() {
+        this.el.querySelector('#et-alert-done').classList.add('hidden');
+        this.el.querySelector('#et-alert-snooze').classList.add('hidden');
+        this.el.querySelector('#et-alert-ignore').classList.add('hidden');
+        this.el.querySelector('#et-alert-snooze-options').classList.add('visible');
+    },
+
+    applySnooze(type) {
+        if (!this.currentKey) return;
+
+        const now = new Date();
+        let target = new Date(now);
+
+        if (type === '1h') target.setHours(now.getHours() + 1);
+        else if (type === '2h') target.setHours(now.getHours() + 2);
+        else if (type === 'tomorrow') {
+            target.setDate(now.getDate() + 1);
+            target.setHours(9, 0, 0, 0);
+        } else if (type === '2days') {
+            target.setDate(now.getDate() + 2);
+            target.setHours(9, 0, 0, 0);
+        }
+
+        const snoozeUntil = target.getTime();
+        const storageKey = this.currentKey.includes(':') ? `reminder_${this.currentKey}` : `reminder_jira:${this.currentKey}`;
+        safeStorage.set({ [storageKey]: snoozeUntil });
+
+        // Remove from pending_alerts since we snoozed it
+        safeStorage.get('pending_alerts', (result) => {
+            const pending = (result.pending_alerts || []).filter(k => k !== this.currentKey);
+            safeStorage.set({ pending_alerts: pending });
+        });
+
+        this.hide();
+    }
+};
+
+async function checkPendingAlerts() {
+    safeStorage.get(['pending_alerts'], (result) => {
+        const pending = result.pending_alerts || [];
+        if (pending.length === 0) return;
+
+        console.log(`PMsToolKit: Found ${pending.length} pending alerts`);
+
+        // Get details for all pending alerts
+        pending.forEach(issueKey => {
+            const storageKey = issueKey.includes(':') ? `notes_${issueKey}` : `notes_jira:${issueKey}`;
+            const cleanKey = issueKey.split(':').pop();
+
+            safeStorage.get([storageKey, `ticket_cache_${cleanKey}`], (res) => {
+                const noteText = res[storageKey] || '';
+                const summary = res[`ticket_cache_${cleanKey}`]?.details?.summary || '';
+                ReminderModal.show(issueKey, noteText, summary);
+            });
+        });
+    });
+}
+
+// Handle messages from background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'REMINDER_FIRED') {
+        ReminderModal.show(message.issueKey, message.noteText, message.summary);
+    }
+});
+
+
+
 // ---- Original Feature: 🔗 Copy for Slack button in list views ----
 
 function injectPMsToolKitJira() {
@@ -102,84 +493,31 @@ function injectQuickNotesListView() {
         btn.className = 'et-notes-btn';
         btn.innerHTML = '📝';
         btn.title = 'PMsToolKit: Personal notes';
+        btn.setAttribute('data-issue-key', issueKey);
 
-        // Notes popup
-        const popup = document.createElement('div');
-        popup.className = 'et-notes-popup';
-        popup.innerHTML = `
-            <textarea placeholder="Write your note here..."></textarea>
-            <div class="et-notes-footer">
-                <button class="et-notes-save-btn">Save</button>
-                <span class="et-notes-save-indicator">✓ Saved</span>
-                <span style="font-size:9px;color:#97a0af">Esc to close</span>
-            </div>
-        `;
-
-        const textarea = popup.querySelector('textarea');
-        const saveIndicator = popup.querySelector('.et-notes-save-indicator');
-        const saveBtn = popup.querySelector('.et-notes-save-btn');
-        let saveTimeout = null;
         const storageKey = `notes_${issueKey}`;
 
-        // Manual save helper
-        function doSave() {
-            clearTimeout(saveTimeout);
-            const value = textarea.value.trim();
-            if (value) {
-                safeStorage.set({ [storageKey]: value });
-                btn.classList.add('has-note');
-            } else {
-                safeStorage.remove(storageKey);
-                btn.classList.remove('has-note');
-            }
-            saveIndicator.classList.add('show');
-            setTimeout(() => saveIndicator.classList.remove('show'), 1200);
-        }
-
-        // Save button click
-        saveBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            doSave();
-        });
-
-        // Load existing note
-        safeStorage.get(storageKey, (result) => {
-            if (result[storageKey]) {
-                textarea.value = result[storageKey];
-                btn.classList.add('has-note');
-            }
-        });
-
-        // Auto-save on input
-        textarea.addEventListener('input', () => {
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => doSave(), 400);
-        });
-
-        // Toggle popup
+        // Notes button click
         btn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            // Close other open popups
-            document.querySelectorAll('.et-notes-popup.visible').forEach(p => {
-                if (p !== popup) p.classList.remove('visible');
-            });
-            popup.classList.toggle('visible');
-            if (popup.classList.contains('visible')) {
-                setTimeout(() => textarea.focus(), 50);
-            }
+            const summaryElement = row.querySelector('.summary a, [data-field-id="summary"] a, .summary, [data-field-id="summary"]');
+            const summaryText = summaryElement?.innerText?.trim() || '';
+            NoteDrawer.open(issueKey, summaryText);
         };
 
-        // Close with Esc
-        textarea.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                popup.classList.remove('visible');
+        // Load existing note indicator
+        const prefixedKey = `jira:${issueKey}`;
+        const sKey = `notes_${prefixedKey}`;
+        const rKey = `reminder_${prefixedKey}`;
+
+        safeStorage.get([sKey, rKey], (result) => {
+            if (result[sKey] || result[rKey]) {
+                btn.classList.add('has-note');
             }
         });
 
         container.appendChild(btn);
-        container.appendChild(popup);
 
         const target = row.querySelector('.key, .issuetype') || row.querySelector('td') || row;
         if (target.prepend) {
@@ -206,70 +544,37 @@ function injectQuickNotesTicketView() {
 
     const toggle = document.createElement('button');
     toggle.className = 'et-ticket-notes-toggle';
+    toggle.setAttribute('data-issue-key', issueKey);
     toggle.innerHTML = '📝 <span>Personal notes</span> <span class="et-notes-save-indicator" style="margin-left:auto">✓ Saved</span>';
 
     const body = document.createElement('div');
     body.className = 'et-ticket-notes-body';
     body.style.display = 'none';
 
-    const textarea = document.createElement('textarea');
-    textarea.placeholder = 'Write your notes about this ticket...';
+    // Load existing note indicator
+    const prefixedKey = `jira:${issueKey}`;
+    const sKey = `notes_${prefixedKey}`;
+    const rKey = `reminder_${prefixedKey}`;
 
-    const saveManualBtn = document.createElement('button');
-    saveManualBtn.className = 'et-notes-save-btn';
-    saveManualBtn.textContent = 'Save';
-    saveManualBtn.style.marginTop = '6px';
-    body.appendChild(textarea);
-    body.appendChild(saveManualBtn);
-
-    const saveIndicator = toggle.querySelector('.et-notes-save-indicator');
-    let saveTimeout = null;
-
-    // Load existing note
-    safeStorage.get(storageKey, (result) => {
-        if (result[storageKey]) {
-            textarea.value = result[storageKey];
+    safeStorage.get([sKey, rKey], (result) => {
+        if (result[sKey] || result[rKey]) {
             toggle.querySelector('span').textContent = 'Personal notes ●';
         }
-    });
-
-    // Manual save helper
-    function doSaveTicket() {
-        clearTimeout(saveTimeout);
-        const value = textarea.value.trim();
-        if (value) {
-            safeStorage.set({ [storageKey]: value });
-            toggle.querySelector('span').textContent = 'Personal notes ●';
-        } else {
-            safeStorage.remove(storageKey);
-            toggle.querySelector('span').textContent = 'Personal notes';
-        }
-        saveIndicator.classList.add('show');
-        setTimeout(() => saveIndicator.classList.remove('show'), 1200);
-    }
-
-    // Save button click
-    saveManualBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        doSaveTicket();
-    });
-
-    // Auto-save on input
-    textarea.addEventListener('input', () => {
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => doSaveTicket(), 400);
     });
 
     // Toggle
     toggle.onclick = () => {
-        const isOpen = body.style.display !== 'none';
-        body.style.display = isOpen ? 'none' : 'block';
-        if (!isOpen) setTimeout(() => textarea.focus(), 50);
+        const summaryEl = document.querySelector(
+            '[data-testid="issue.views.issue-base.foundation.summary.heading"] h1, ' +
+            '#summary-val, ' +
+            '#jira-issue-header + * h1, ' +
+            'h1[data-test-id="issue.views.issue-base.foundation.summary.heading"]'
+        );
+        const summaryText = summaryEl?.innerText?.trim() || '';
+        NoteDrawer.open(issueKey, summaryText);
     };
 
     panel.appendChild(toggle);
-    panel.appendChild(body);
     headerArea.appendChild(panel);
 }
 
@@ -342,76 +647,29 @@ function injectBreadcrumbCopyButton() {
     notesBtn.className = 'et-breadcrumb-copy et-notes-btn';
     notesBtn.innerHTML = '📝';
     notesBtn.title = 'PMsToolKit: Personal notes';
+    notesBtn.setAttribute('data-issue-key', issueKey);
 
-    const popup = document.createElement('div');
-    popup.className = 'et-notes-popup';
-    popup.innerHTML = `
-        <textarea placeholder="Write your note here..."></textarea>
-        <div class="et-notes-footer">
-            <button class="et-notes-save-btn">Save</button>
-            <span class="et-notes-save-indicator">✓ Saved</span>
-            <span style="font-size:9px;color:#97a0af">Esc to close</span>
-        </div>
-    `;
-
-    const textarea = popup.querySelector('textarea');
-    const saveIndicator = popup.querySelector('.et-notes-save-indicator');
-    const saveBtnBc = popup.querySelector('.et-notes-save-btn');
     const storageKey = `notes_${issueKey}`;
-    let saveTimeout = null;
 
-    // Manual save helper
-    function doSaveBc() {
-        clearTimeout(saveTimeout);
-        const value = textarea.value.trim();
-        if (value) {
-            safeStorage.set({ [storageKey]: value });
-            notesBtn.classList.add('has-note');
-        } else {
-            safeStorage.remove(storageKey);
-            notesBtn.classList.remove('has-note');
-        }
-        saveIndicator.classList.add('show');
-        setTimeout(() => saveIndicator.classList.remove('show'), 1200);
-    }
-
-    // Save button click
-    saveBtnBc.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        doSaveBc();
-    });
-
-    // Load existing note
-    safeStorage.get(storageKey, (result) => {
-        if (result[storageKey]) {
-            textarea.value = result[storageKey];
-            notesBtn.classList.add('has-note');
-        }
-    });
-
-    // Auto-save on input
-    textarea.addEventListener('input', () => {
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => doSaveBc(), 400);
-    });
-
-    // Toggle popup
+    // Toggle Drawer
     notesBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        popup.classList.toggle('visible');
-        if (popup.classList.contains('visible')) {
-            setTimeout(() => textarea.focus(), 50);
-        }
+        const currentSummary = summaryEl?.innerText?.trim() || summaryText;
+        NoteDrawer.open(issueKey, currentSummary);
     };
 
-    textarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') popup.classList.remove('visible');
+    const prefixedKey = `jira:${issueKey}`;
+    const sKey = `notes_${prefixedKey}`;
+    const rKey = `reminder_${prefixedKey}`;
+
+    safeStorage.get([sKey, rKey], (result) => {
+        if (result[sKey] || result[rKey]) {
+            notesBtn.classList.add('has-note');
+        }
     });
 
     notesContainer.appendChild(notesBtn);
-    notesContainer.appendChild(popup);
 
     // -- Time in state badge ⏱ --
     const ageBadge = document.createElement('span');
@@ -490,74 +748,25 @@ function injectNativeTableIcons() {
         notesBtn.className = 'et-notes-btn';
         notesBtn.innerHTML = '📝';
         notesBtn.title = 'PMsToolKit: Personal notes';
+        const prefixedKey = `jira:${issueKey}`;
+        const sKey = `notes_${prefixedKey}`;
+        const rKey = `reminder_${prefixedKey}`;
 
-        const popup = document.createElement('div');
-        popup.className = 'et-notes-popup';
-        popup.innerHTML = `
-            <textarea placeholder="Write your note here..."></textarea>
-            <div class="et-notes-footer">
-                <button class="et-notes-save-btn">Save</button>
-                <span class="et-notes-save-indicator">✓ Saved</span>
-                <span style="font-size:9px;color:#97a0af">Esc to close</span>
-            </div>
-        `;
-
-        const textarea = popup.querySelector('textarea');
-        const saveIndicator = popup.querySelector('.et-notes-save-indicator');
-        const saveBtn = popup.querySelector('.et-notes-save-btn');
-        let saveTimeout = null;
-        const storageKey = `notes_${issueKey}`;
-
-        function doSaveNative() {
-            clearTimeout(saveTimeout);
-            const value = textarea.value.trim();
-            if (value) {
-                safeStorage.set({ [storageKey]: value });
-                notesBtn.classList.add('has-note');
-            } else {
-                safeStorage.remove(storageKey);
-                notesBtn.classList.remove('has-note');
-            }
-            saveIndicator.classList.add('show');
-            setTimeout(() => saveIndicator.classList.remove('show'), 1200);
-        }
-
-        saveBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            doSaveNative();
-        });
-
-        safeStorage.get(storageKey, (result) => {
-            if (result[storageKey]) {
-                textarea.value = result[storageKey];
-                notesBtn.classList.add('has-note');
-            }
-        });
-
-        textarea.addEventListener('input', () => {
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => doSaveNative(), 400);
-        });
-
+        // Toggle Drawer
         notesBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            document.querySelectorAll('.et-notes-popup.visible').forEach(p => {
-                if (p !== popup) p.classList.remove('visible');
-            });
-            popup.classList.toggle('visible');
-            if (popup.classList.contains('visible')) {
-                setTimeout(() => textarea.focus(), 50);
-            }
+            NoteDrawer.open(issueKey, summaryText);
         };
 
-        textarea.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') popup.classList.remove('visible');
+        safeStorage.get([sKey, rKey], (result) => {
+            if (result[sKey] || result[rKey]) {
+                notesBtn.classList.add('has-note');
+            }
         });
 
         notesContainer.appendChild(notesBtn);
-        notesContainer.appendChild(popup);
+
 
         // ---- 🔗 Copy button ----
         const copyBtn = document.createElement('button');
@@ -602,18 +811,14 @@ function injectNativeTableIcons() {
         wrapper.appendChild(copyBtn);
         wrapper.appendChild(badge);
 
-        // Insert into the merged cell, right before the issue key so
-        // all 3 icons are grouped between the type icon and the key
         const mergedCell = row.querySelector('[data-testid="native-issue-table.ui.row.issue-row.merged-cell"]');
         if (mergedCell) {
             const keyContainer = mergedCell.querySelector(
                 '[data-testid="native-issue-table.common.ui.issue-cells.issue-key.issue-key-cell"]'
             );
             if (keyContainer) {
-                // Insert wrapper right before the key
                 keyContainer.parentElement.insertBefore(wrapper, keyContainer);
             } else {
-                // Fallback: insert after the first child (type icon)
                 const firstChild = mergedCell.firstElementChild;
                 if (firstChild && firstChild.nextSibling) {
                     mergedCell.insertBefore(wrapper, firstChild.nextSibling);
@@ -622,7 +827,6 @@ function injectNativeTableIcons() {
                 }
             }
         } else {
-            // Fallback for non-merged tables
             const firstTd = row.querySelector('td:nth-child(2)') || row.querySelector('td');
             if (firstTd) firstTd.prepend(wrapper);
         }
@@ -918,75 +1122,26 @@ function injectBoardCardAgeIndicators() {
         const notesBtn = document.createElement('button');
         notesBtn.className = 'et-notes-btn et-board-notes-btn';
         notesBtn.innerHTML = '📝';
-        notesBtn.title = 'PMsToolKit: Personal notes';
+        const prefixedKey = `jira:${issueKey}`;
+        const sKey = `notes_${prefixedKey}`;
+        const rKey = `reminder_${prefixedKey}`;
 
-        const popup = document.createElement('div');
-        popup.className = 'et-notes-popup';
-        popup.innerHTML = `
-            <textarea placeholder="Write your note here..."></textarea>
-            <div class="et-notes-footer">
-                <button class="et-notes-save-btn">Save</button>
-                <span class="et-notes-save-indicator">✓ Saved</span>
-                <span style="font-size:9px;color:#97a0af">Esc to close</span>
-            </div>
-        `;
-
-        const textarea = popup.querySelector('textarea');
-        const saveIndicator = popup.querySelector('.et-notes-save-indicator');
-        const saveBtn = popup.querySelector('.et-notes-save-btn');
-        let saveTimeout = null;
-        const storageKey = `notes_${issueKey}`;
-
-        function doSaveBoard() {
-            clearTimeout(saveTimeout);
-            const value = textarea.value.trim();
-            if (value) {
-                safeStorage.set({ [storageKey]: value });
-                notesBtn.classList.add('has-note');
-            } else {
-                safeStorage.remove(storageKey);
-                notesBtn.classList.remove('has-note');
-            }
-            saveIndicator.classList.add('show');
-            setTimeout(() => saveIndicator.classList.remove('show'), 1200);
-        }
-
-        saveBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            doSaveBoard();
-        });
-
-        safeStorage.get(storageKey, (result) => {
-            if (result[storageKey]) {
-                textarea.value = result[storageKey];
-                notesBtn.classList.add('has-note');
-            }
-        });
-
-        textarea.addEventListener('input', () => {
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => doSaveBoard(), 400);
-        });
-
+        // Toggle Drawer
         notesBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            document.querySelectorAll('.et-notes-popup.visible').forEach(p => {
-                if (p !== popup) p.classList.remove('visible');
-            });
-            popup.classList.toggle('visible');
-            if (popup.classList.contains('visible')) {
-                setTimeout(() => textarea.focus(), 50);
-            }
+            const summaryText = cardRoot.querySelector('[data-testid="platform-card.common.ui.summary.summary"]')?.innerText?.trim() || '';
+            NoteDrawer.open(issueKey, summaryText);
         };
 
-        textarea.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') popup.classList.remove('visible');
+        safeStorage.get([sKey, rKey], (result) => {
+            if (result[sKey] || result[rKey]) {
+                notesBtn.classList.add('has-note');
+            }
         });
 
         notesContainer.appendChild(notesBtn);
-        notesContainer.appendChild(popup);
+
 
         // ---- ⏱ Time in State badge ----
         const badge = document.createElement('span');
@@ -1829,24 +1984,42 @@ function injectStarredItemsMenu() {
 let _etRunAllTimeout = null;
 let _etIsRunning = false;
 
-function etRunAll() {
+async function etRunAll() {
     if (_etIsRunning) return;
     _etIsRunning = true;
 
     try {
-        hideJiraHeaderElements();     // Feature 12: hide search/create
-        collapseJiraSidebarOnLoad();  // Feature 12: auto collapse
-        injectStarredItemsMenu();     // Feature 12: starred menu in header
-        injectPMsToolKitJira();     // Original: copy button in list views
-        injectQuickNotesListView();  // Feature 5: notes in list views
-        injectQuickNotesTicketView(); // Feature 5: notes in ticket view
-        injectBreadcrumbCopyButton(); // Feature 7: copy in breadcrumbs
-        injectAgeIndicators();        // Feature 8: age indicator
-        injectBoardCardAgeIndicators(); // Feature 8b: age on board cards
-        injectStoryPointsSummary();   // Feature 9: SP summary
-        injectVelocityPerDeveloper(); // Feature 11: Velocity per Dev
-        injectNativeTableIcons();     // Feature 10: icons in native issue table
-    } finally {
+        console.log('PMsToolKit: Running features...');
+        checkPendingAlerts();
+
+        chrome.storage.sync.get(globalThis.DEFAULT_SETTINGS, (settings) => {
+            try {
+                if (settings.jira_hide_elements !== false) hideJiraHeaderElements();
+                if (settings.jira_collapse_sidebar !== false) collapseJiraSidebarOnLoad();
+
+                if (settings.jira_manual_menu !== false) injectStarredItemsMenu();
+
+                if (settings.jira_copy_for_slack) injectPMsToolKitJira();
+                if (settings.jira_quick_notes_list) injectQuickNotesListView();
+                if (settings.jira_quick_notes_ticket) injectQuickNotesTicketView();
+                if (settings.jira_breadcrumb_copy) injectBreadcrumbCopyButton();
+
+                if (settings.jira_age_indicators) injectAgeIndicators();
+                if (settings.jira_board_age) injectBoardCardAgeIndicators();
+
+                // Feature 9 (SP Summary) - let's add it to settings too if not there
+                if (settings.jira_sp_summary !== false) injectStoryPointsSummary();
+
+                if (settings.jira_velocity_per_dev) injectVelocityPerDeveloper();
+                if (settings.jira_native_table_icons) injectNativeTableIcons();
+            } catch (innerError) {
+                console.error('PMsToolKit: Error executing features in etRunAll callback', innerError);
+            } finally {
+                _etIsRunning = false;
+            }
+        });
+    } catch (e) {
+        console.error('PMsToolKit: Error in etRunAll', e);
         _etIsRunning = false;
     }
 }

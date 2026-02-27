@@ -3,21 +3,19 @@
 > **Custom toolkit to enhance project management workflows on Jira Cloud.**
 > Created by **EricConcha**.
 
-A Manifest V3 Chrome extension that injects productivity tools directly into the Jira Cloud UI. It enhances list views, ticket detail pages, board views, and dashboard gadgets with copy-to-Slack links, personal notes, time-in-state indicators, and story point summaries — all without requiring any Jira admin configuration.
+A Manifest V3 Chrome extension that injects productivity tools directly into the Jira Cloud UI. It enhances list views, ticket detail pages, board views, and dashboard gadgets with copy-to-Slack links, personal notes (via a Notion-like drawer), reminder notifications, time-in-state indicators, and story point summaries — all without requiring any Jira admin configuration.
 
 ---
 
-## Table of Contents
-
+- [Table of Contents](#table-of-contents)
 - [Features Overview](#features-overview)
 - [Feature Details](#feature-details)
   - [🔗 Copy Link for Slack — List View](#-copy-link-for-slack--list-view)
   - [🔗 Copy Link for Slack — Native Issue Table](#-copy-link-for-slack--native-issue-table)
   - [🔗 Copy Link in Breadcrumbs — Ticket View](#-copy-link-in-breadcrumbs--ticket-view)
-  - [📝 Quick Notes — List View](#-quick-notes--list-view)
-  - [📝 Quick Notes — Native Issue Table](#-quick-notes--native-issue-table)
-  - [📝 Quick Notes — Ticket View (Detail Panel)](#-quick-notes--ticket-view-detail-panel)
-  - [📝 Quick Notes — Breadcrumb Navigation](#-quick-notes--breadcrumb-navigation)
+  - [📝 Note Drawer & Reminders (Global)](#-note-drawer--reminders-global)
+  - [🔔 Persistent & Missed Alerts](#-persistent--missed-alerts)
+  - [🌐 Multi-Source Logic (Prefixing)](#-multi-source-logic-prefixing)
   - [📋 View All Notes — Extension Popup](#-view-all-notes--extension-popup)
   - [⏱️ Time in State — List View](#%EF%B8%8F-time-in-state--list-view)
   - [⏱️ Time in State — Native Issue Table](#%EF%B8%8F-time-in-state--native-issue-table)
@@ -46,11 +44,11 @@ A Manifest V3 Chrome extension that injects productivity tools directly into the
 | 1 | Copy Link for Slack | Legacy list views | 🔗 button per row |
 | 2 | Copy Link for Slack | Native issue table | 🔗 button per row |
 | 3 | Copy Link in Breadcrumbs | Ticket detail pages | 🔗 button in breadcrumb nav |
-| 4 | Quick Notes | Legacy list views | 📝 button per row |
-| 5 | Quick Notes | Native issue table | 📝 button per row |
-| 6 | Quick Notes | Ticket detail pages | Collapsible panel below header |
-| 7 | Quick Notes | Breadcrumb navigation | 📝 button in breadcrumb nav |
-| 8 | View All Notes | Extension popup | Click extension icon |
+| 4 | Note Drawer & Reminders | All views (List, Board, Ticket) | 📝 button or "Personal notes" panel |
+| 5 | Missed Alerts Queue | Global (on Jira Load) | Automatically shows missed reminders |
+| 6 | Multi-Source Prefixes | Storage/Logic | Auto-migrates `notes_` keys to `notes_jira:` |
+| 7 | Notification Diagnostics | Extension Popup | "Test System Notification" button in settings |
+| 8 | View All Notes | Extension Popup | Click extension icon |
 | 9 | Time in State | Legacy list views | Auto-injected badge per row |
 | 10 | Time in State | Native issue table | Auto-injected badge per row |
 | 11 | Time in State | Board cards (Kanban/Scrum) | Auto-injected badge per card |
@@ -117,67 +115,64 @@ The button is wrapped in a `div[role="listitem"]` with `display: flex` to match 
 
 ---
 
-### 📝 Quick Notes — List View
+### 📝 Note Drawer & Reminders (Global)
 
-**Function:** `injectQuickNotesListView()`
+**Singleton:** `NoteDrawer`
 
-Adds a **📝** button to each ticket row in legacy list views. Clicking it opens an **inline floating popup** with a text area for personal notes.
+Replaces the legacy localized popups with a modern, **right-side Drawer UI** (similar to Notion's database item view). This centralized component handles all personal notes and follow-up reminders across Jira.
 
-**Behavior:**
-- Notes are stored in `chrome.storage.local` under the key `notes_{ISSUE_KEY}`.
-- **Auto-save:** Triggers 400ms after the last keystroke via a debounced `input` event handler.
-- **Manual save:** A dedicated "Save" button for explicit saves.
-- **Visual indicator:** A blue dot (`::after` pseudo-element) appears on the 📝 button when a note exists (`.has-note` class).
-- **Save confirmation:** A "✓ Saved" indicator fades in for 1.2 seconds after each save.
-- **Popup management:** Only one popup can be open at a time — opening a new popup closes any previously open ones.
-- **Keyboard:** Press `Escape` to close the popup.
-- **Click outside:** Clicking anywhere outside a notes container closes all open popups (global `click` listener on `document`).
+**Key Features:**
+- **Spacious Environment:** A large side drawer provides ample space for long-form notes and complex reminder scheduling.
+- **Quick Reminder Shortcuts:** Fast-action buttons to schedule follow-ups:
+  - **1 Hr / 2 Hrs:** For same-day follow-ups.
+  - **Tomorrow 9am / 2 Days 9am:** For standard morning reminders.
+- **Global Synchronization:** Saving a note in the drawer for a specific ticket immediately updates the **blue dot indicator** (the "has-note" status) on every instance of that ticket across the current page (e.g., if you have the same ticket visible in a list and a sidebar).
+- **Auto-save:** Triggers 500ms after the last keystroke or immediately upon clicking a shortcut.
+- **Clean Layout:** Features a glassmorphism backdrop, smooth slide-in animations, and a responsive design that stays out of the way of Jira's main content.
+- **Keyboard Shortcuts:** Press `Escape` to close the drawer instantly.
 
-**Storage format:**
+**Entry Points:**
+1. **List View:** 📝 button next to the ticket key.
+2. **Native Issue Table:** 📝 button in the merged icon group.
+3. **Ticket Detail Page:** "Personal notes" panel in the sidebar/detail area.
+4. **Breadcrumbs:** 📝 button in the ticket header navigation.
+5. **Scrum Board:** 📝 button on board cards.
+
+**Storage Keys:**
 ```
-Key:   "notes_KEY-123"
-Value: "Your note text here"
+Notes:    "notes_KEY-123"
+Reminder: "reminder_KEY-123" (Unix timestamp)
 ```
 
 ---
 
-### 📝 Quick Notes — Native Issue Table
+### 🔔 Persistent & Missed Alerts
 
-**Function:** `injectNativeTableIcons()`
+**Files:** `background.js`, `jira-tools.js`
 
-Same Quick Notes functionality as the legacy list view, but adapted for Jira Cloud's native issue table. The notes button, popup, auto-save, and visual indicators behave identically.
+Ensures you never miss a follow-up reminder, even if Chrome or your Jira tabs were closed when the alarm fired.
 
-Injected inside a `.et-native-icons` wrapper alongside the copy and time-in-state elements, positioned before the issue key in the merged cell.
-
----
-
-### 📝 Quick Notes — Ticket View (Detail Panel)
-
-**Function:** `injectQuickNotesTicketView()`
-
-On individual ticket pages (`/browse/XXX-NNN`), renders a **collapsible panel** below the issue header.
-
-**UI components:**
-- **Toggle button:** Displays "📝 Personal notes" — click to expand/collapse.
-- **Blue dot indicator:** When a note exists, the toggle shows "Personal notes ●".
-- **Text area:** Larger than the list-view popup (`min-height: 80px`), for more comfortable editing.
-- **Manual save button:** Positioned below the textarea.
-- **Auto-save:** Same 400ms debounce as list view.
-- **Save indicator:** "✓ Saved" appears in the toggle bar itself.
-
-**Header detection:**
-- `#jira-issue-header`
-- `[data-testid="issue.views.issue-details.issue-layout.container-left"]`
-
-**Guard:** Won't inject twice — checks for existing `.et-ticket-notes-panel`.
+**Key Features:**
+- **Pending Alerts Queue:** When an alarm triggers, it's added to a `pending_alerts` list in `chrome.storage.local`.
+- **Automatic Retrieval:** Upon opening any Jira page, the extension checks for pending alerts and displays them using the `ReminderModal`.
+- **Queue Indicator:** If multiple alerts are waiting, the modal shows a **"+ N more"** counter. Dismissing or snoozing an alert automatically pulls the next one from the queue.
+- **System Notifications:** Reminders still fire native macOS/Windows notifications via the background script.
+- **Diagnostics Tool:** Includes a **"Test System Notification"** button in the popup settings to verify that OS-level notification permissions are correctly configured.
 
 ---
 
-### 📝 Quick Notes — Breadcrumb Navigation
+### 🌐 Multi-Source Logic (Prefixing)
 
-**Function:** `injectBreadcrumbCopyButton()` (combined with copy button)
+**Infrastructure Change**
 
-A 📝 notes button is also injected into the breadcrumb bar alongside the copy button, with the same popup, auto-save, and blue dot behaviors. This allows quick access to notes from the ticket view without scrolling down to the panel.
+To prepare for future integrations (GitHub, Slack, generic URLs), the storage schema now uses **source prefixes**.
+
+**Schema:**
+- **Legacy:** `notes_PROJ-123`
+- **Modern:** `notes_jira:PROJ-123`
+
+**Migration:**
+The extension automatically migrates all legacy `notes_` and `reminder_` keys to the `jira:` prefix on startup. The UI gracefully handles both reading and writing with these prefixes.
 
 ---
 
@@ -198,6 +193,7 @@ Clicking the extension icon opens a popup that lists **all saved notes** across 
 - **Count badge:** Header shows total note count (e.g., "3 notes").
 - **About footer:** "PMsToolKit — Created by EricConcha".
 - **UI:** 380px wide, max 500px tall, with Jira-inspired styling (blue header gradient, Atlassian font stack, hover states).
+- **Diagnostics:** Integrated troubleshooting for system notifications and permission level checks.
 - **XSS protection:** Notes are HTML-escaped via `escapeHtml()` before rendering.
 
 ---
@@ -373,8 +369,8 @@ Automatically detects dashboard gadgets whose title contains **"Velocity"** (cas
 |----------|-------|
 | `manifest_version` | `3` |
 | `name` | `PMsToolKit` |
-| `version` | `2.0` |
-| `permissions` | `clipboardWrite`, `storage`, `tabs` |
+| `version` | `3.0` |
+| `permissions` | `clipboardWrite`, `storage`, `tabs`, `notifications`, `alarms` |
 | `host_permissions` | `https://*.atlassian.net/*` |
 | `content_scripts.run_at` | `document_idle` |
 | `content_scripts.js` | `jira-tools.js` |
@@ -385,24 +381,17 @@ Automatically detects dashboard gadgets whose title contains **"Velocity"** (cas
 
 ```
 PMsToolKit/
-├── manifest.json        # Extension manifest (MV3)
-├── jira-tools.js        # Main content script (~1500 lines)
-│                        #   - All feature injection functions
-│                        #   - Jira REST API interaction
-│                        #   - Concurrency queue & caching
-│                        #   - MutationObserver-based lifecycle
-│                        #   - Global tooltip system
-├── styles.css           # All custom styles (~344 lines)
-│                        #   - Notes popup & panel styles
-│                        #   - Age badge color coding
-│                        #   - Board card badge layout
-│                        #   - Breadcrumb button styles
-│                        #   - Native issue table icon layout
-│                        #   - Global tooltip styles
-│                        #   - Pulse loading animation
+├── manifest.json        # Extension manifest (MV3 - with notifications/alarms permissions)
+├── background.js        # Background service worker (Alarms, Pending alerts migration)
+├── jira-tools.js        # Main content script (~2000 lines)
+│                        #   - Feature injection & UI manipulation
+│                        #   - Missed Alerts Queue retrieval
+│                        #   - Multi-source prefixed key support
+├── styles.css           # All custom styles
+├── constants.js         # Shared constants (Prefixes, Intervals)
 ├── popup.html           # Extension popup UI
-├── popup.js             # Popup logic (notes listing, search, CRUD)
-└── icon.png             # Extension icon (48x48)
+├── popup.js             # Popup logic (Diagnostics, Notes listing)
+└── icon.png             # Extension icon
 ```
 
 ### Content Script Lifecycle
@@ -439,15 +428,13 @@ This prevents errors when the extension is updated/reloaded while a Jira tab is 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/rest/api/2/issue/{key}?fields=status,created` | GET | Get current status and creation date |
-| `/rest/api/2/issue/{key}?fields=summary,assignee` | GET | Fetch ticket summary and assignee for popup enrichment |
-| `/rest/api/2/issue/{key}/changelog?maxResults=50` | GET | Get changelog to find last status transition |
-| `/rest/api/2/issue/{key}/changelog?startAt={N}&maxResults=50` | GET | Paginate changelog for issues with 50+ history entries |
-| `/rest/api/2/field` | GET | Auto-detect the Story Points custom field ID |
-| `/rest/api/3/search/jql` | POST | Fetch issues with story points / velocity data for dashboard gadgets |
-| `/rest/agile/1.0/board?projectKeyOrId={key}&type=scrum` | GET | Resolve the Scrum board ID for a project (Velocity feature) |
-| `/rest/agile/1.0/board/{boardId}/sprint?state=closed` | GET | Get closed sprints for velocity calculation |
+| `/rest/api/2/issue/{key}?fields=summary,assignee,status` | GET | Enrichment for popup and background notifications |
+| `/rest/api/2/issue/{key}/changelog` | GET | Detailed status transition history |
+| `/rest/api/2/field` | GET | Resolve custom field IDs (Story Points) |
+| `/rest/api/3/search/jql` | POST | Bulk issue fetching for dashboards |
+| `/rest/agile/1.0/board` | GET | Resolve Scrum boards for Velocity mapping |
 
-All requests use `credentials: 'same-origin'` to leverage the user's existing Jira session — **no API tokens or authentication setup required**.
+All requests use `credentials: 'include'` to leverage the user's existing Jira session — **no API tokens or authentication setup required**.
 
 ### Concurrency Queue
 
@@ -456,10 +443,8 @@ To avoid overwhelming the Jira API (which can throttle or 429), API requests are
 ```
 Max concurrent requests: 3 (ET_MAX_CONCURRENT)
 Queue type: FIFO
-Implementation: Promise-based with _etEnqueue() / _etProcessQueue()
+Implementation: Promise-based processor
 ```
-
-Every time-in-state API call goes through `_etEnqueue()`, which queues a function and returns a `Promise`. The processor ensures no more than 3 requests are in-flight at any time.
 
 ### In-Memory Cache
 
@@ -471,31 +456,18 @@ Key: issueKey (e.g., "PROJ-123")
 Value: { statusName, changedDate, changedBy, fetchedAt }
 ```
 
-Cache is checked before every API call. Entries older than 5 minutes are ignored and refetched.
-
 ### Global Tooltip System
 
 Instead of using native `title` attributes (which conflict with Jira's own tooltip system), the extension uses a **custom tooltip** appended to `document.body`:
 
 - A single `div.et-tooltip` element is created once and reused.
-- `mouseover` on any `.et-age-badge[data-tooltip]` reads the `data-tooltip` attribute and positions the tooltip above the badge using `getBoundingClientRect()`.
-- `mouseout` hides it (checking `e.relatedTarget` to avoid flicker when moving to child elements).
+- `mouseover` reads the `data-tooltip` attribute.
 - Supports multi-line content via `\n` → `<br>` splitting.
-- Uses `z-index: 2147483647` (max 32-bit integer) and `position: fixed` to ensure it's always on top.
+- Uses `z-index: 2147483647` to ensure it's always on top.
 
 ### Clipboard API (Rich Text)
 
-The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()`) with `ClipboardItem` to write both `text/plain` and `text/html` MIME types simultaneously:
-
-```javascript
-const data = [new ClipboardItem({
-    'text/plain': new Blob([plainText], { type: 'text/plain' }),
-    'text/html':  new Blob([htmlLink],  { type: 'text/html' })
-})];
-navigator.clipboard.write(data);
-```
-
-This ensures that pasting into rich-text editors (Slack, Confluence, etc.) creates a hyperlink, while pasting into plain-text editors preserves the key and summary.
+The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()`) with `ClipboardItem` to write both `text/plain` and `text/html` MIME types simultaneously. This ensures that pasting into rich-text editors (Slack, Confluence, etc.) creates a hyperlink, while pasting into plain-text editors preserves the key and summary.
 
 ---
 
@@ -504,11 +476,9 @@ This ensures that pasting into rich-text editors (Slack, Confluence, etc.) creat
 1. Clone or download this repository.
 2. Open `chrome://extensions/` in Chrome.
 3. Enable **Developer mode** (top-right toggle).
-4. Click **Load unpacked** and select the `PMsToolKit/` directory.
-5. Navigate to any Jira Cloud instance — the extension activates automatically.
-
-> **Note:** No API tokens or configuration required. The extension uses your existing Jira session cookies for API access.
+4. Click **Load unpacked** and select the directory.
+5. Navigate to Jira — the extension activates automatically.
 
 ---
 
-*PMsToolKit v2.2 — Created by EricConcha*
+*PMsToolKit v3.0 — Created by EricConcha*
