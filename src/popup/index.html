@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="../assets/popup.css">
+</head>
+<body>
+    <div class="header">
+        <h1 id="view-title">📝 My Notes</h1>
+        <div class="header-actions">
+            <span class="count" id="notes-count"></span>
+            <button id="settings-toggle" class="icon-btn" title="Settings">⚙️</button>
+        </div>
+    </div>
+    <div id="notes-view">
+        <div class="search-bar">
+            <input type="text" id="search" placeholder="Search by ticket or content...">
+        </div>
+        <div class="notes-list" id="notes-list"></div>
+    </div>
+
+    <div id="settings-view" style="display: none;">
+        <div class="settings-content">
+            <div class="settings-group">
+                <h3>Navigation & Info</h3>
+                <label class="setting-item">
+                    <span>Breadcrumb Copy Button</span>
+                    <input type="checkbox" data-setting="jira_breadcrumb_copy">
+                </label>
+                <label class="setting-item">
+                    <span>Age Indicators</span>
+                    <input type="checkbox" data-setting="jira_age_indicators">
+                </label>
+                <label class="setting-item">
+                    <span>Board Card Age</span>
+                    <input type="checkbox" data-setting="jira_board_age">
+                </label>
+                <label class="setting-item">
+                    <span>Quick Notes (Ticket View)</span>
+                    <input type="checkbox" data-setting="jira_quick_notes_ticket">
+                </label>
+                <label class="setting-item">
+                    <span>Quick Notes (List View)</span>
+                    <input type="checkbox" data-setting="jira_quick_notes_list">
+                </label>
+                <label class="setting-item">
+                    <span>Manual Menu Manager</span>
+                    <input type="checkbox" data-setting="jira_manual_menu">
+                </label>
+                <label class="setting-item">
+                    <span>Hide Junk Elements</span>
+                    <input type="checkbox" data-setting="jira_hide_elements">
+                </label>
+                <label class="setting-item">
+                    <span>Auto-collapse Sidebar</span>
+                    <input type="checkbox" data-setting="jira_collapse_sidebar">
+                </label>
+            </div>
+
+            <div class="settings-group">
+                <h3>Productivity</h3>
+                <label class="setting-item">
+                    <span>Copy for Slack Button</span>
+                    <input type="checkbox" data-setting="jira_copy_for_slack">
+                </label>
+                <label class="setting-item">
+                    <span>Velocity per Developer</span>
+                    <input type="checkbox" data-setting="jira_velocity_per_dev">
+                </label>
+                <label class="setting-item">
+                    <span>Story Points Summary</span>
+                    <input type="checkbox" data-setting="jira_sp_summary">
+                </label>
+            </div>
+
+            <div class="settings-group">
+                <h3>Diagnostics</h3>
+                <div class="setting-item" style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <span style="font-size: 12px; color: #6b778c;">Verify system notifications are working.</span>
+                    <button id="test-notification-btn" class="et-notes-save-btn" style="width: 100%; margin: 0;">Test System Notification</button>
+                    <div id="notif-status" style="font-size: 11px; margin-top: 4px; display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="about-footer">
+        <strong>PMsToolKit</strong> — Created by EricConcha
+    </div>
+    <script type="module" src="popup.js"></script>
+</body>
+</html>

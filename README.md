@@ -24,8 +24,8 @@ A Manifest V3 Chrome extension that injects productivity tools directly into the
   - [📊 Story Points in Dashboard Gadgets](#-story-points-in-dashboard-gadgets)
   - [🚀 Velocity per Developer in Dashboard Gadgets](#-velocity-per-developer-in-dashboard-gadgets)
 - [Architecture & Technical Details](#architecture--technical-details)
-  - [Manifest & Permissions](#manifest--permissions)
-  - [File Structure](#file-structure)
+  - [Build System (Vite)](#build-system-vite)
+  - [Modular File Structure](#modular-file-structure)
   - [Content Script Lifecycle](#content-script-lifecycle)
   - [safeStorage Wrapper](#safestorage-wrapper)
   - [Jira REST API Usage](#jira-rest-api-usage)
@@ -363,35 +363,31 @@ Automatically detects dashboard gadgets whose title contains **"Velocity"** (cas
 
 ## Architecture & Technical Details
 
-### Manifest & Permissions
+### Build System (Vite)
+The extension now uses **Vite** as its build engine. This allows for:
+- **ES Modules**: Native `import/export` support.
+- **Optimized Bundling**: Faster load times and smaller footprint.
+- **Production Build**: Run `npm run build` to generate the `dist/` folder for distribution.
 
-| Property | Value |
-|----------|-------|
-| `manifest_version` | `3` |
-| `name` | `PMsToolKit` |
-| `version` | `3.0` |
-| `permissions` | `clipboardWrite`, `storage`, `tabs`, `notifications`, `alarms` |
-| `host_permissions` | `https://*.atlassian.net/*` |
-| `content_scripts.run_at` | `document_idle` |
-| `content_scripts.js` | `jira-tools.js` |
-| `content_scripts.css` | `styles.css` |
-| `action.default_popup` | `popup.html` |
+### Modular File Structure
+The project has been refactored from a monolithic `jira-tools.js` into a modularized structure:
 
-### File Structure
-
-```
-PMsToolKit/
-├── manifest.json        # Extension manifest (MV3 - with notifications/alarms permissions)
-├── background.js        # Background service worker (Alarms, Pending alerts migration)
-├── jira-tools.js        # Main content script (~2000 lines)
-│                        #   - Feature injection & UI manipulation
-│                        #   - Missed Alerts Queue retrieval
-│                        #   - Multi-source prefixed key support
-├── styles.css           # All custom styles
-├── constants.js         # Shared constants (Prefixes, Intervals)
-├── popup.html           # Extension popup UI
-├── popup.js             # Popup logic (Diagnostics, Notes listing)
-└── icon.png             # Extension icon
+```text
+src/
+  ├── common/          # Shared utilities
+  │   ├── storage.js   # Robust chrome.storage wrapper
+  │   └── jira-api.js  # Jira REST API interaction layer
+  ├── content/         # Site-specific logic
+  │   └── jira/
+  │       ├── ui/      # UI Components (NoteDrawer, ReminderModal)
+  │       ├── features/# Modular features (metrics, injections, customization)
+  │       ├── main.js  # Entry point
+  │       └── utils.js # Jira-specific utilities
+  ├── background/      # Service worker core logic
+  ├── popup/           # Popup UI and logic
+  └── assets/          # Icons and global styles
+public/                # Static assets and manifest.json
+dist/                  # Final production build (Load this in Chrome)
 ```
 
 ### Content Script Lifecycle
@@ -474,10 +470,11 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 ## Installation
 
 1. Clone or download this repository.
-2. Open `chrome://extensions/` in Chrome.
-3. Enable **Developer mode** (top-right toggle).
-4. Click **Load unpacked** and select the directory.
-5. Navigate to Jira — the extension activates automatically.
+2. Run `npm install` followed by `npm run build`.
+3. Open `chrome://extensions/` in Chrome.
+4. Enable **Developer mode** (top-right toggle).
+5. Click **Load unpacked** and select the `dist/` directory.
+6. Navigate to Jira — the extension activates automatically.
 
 ---
 
