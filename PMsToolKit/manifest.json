@@ -6,11 +6,16 @@
     "permissions": [
         "clipboardWrite",
         "storage",
-        "tabs"
+        "tabs",
+        "alarms",
+        "notifications"
     ],
     "host_permissions": [
         "https://*.atlassian.net/*"
     ],
+    "background": {
+        "service_worker": "background.js"
+    },
     "action": {
         "default_popup": "popup.html",
         "default_icon": "icon.png"
@@ -21,6 +26,7 @@
                 "https://*.atlassian.net/*"
             ],
             "js": [
+                "constants.js",
                 "jira-tools.js"
             ],
             "css": [
