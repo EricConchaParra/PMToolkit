@@ -965,25 +965,33 @@ async function getLastStatusChangeDate(issueKey) {
     }
 
     try {
-        // 1. Get current status and creation date
-        const issueRes = await fetch(`/rest/api/2/issue/${issueKey}?fields=status,created`, {
-            credentials: 'same-origin',
-            headers: { 'Accept': 'application/json' }
-        });
+        // 1. Get current status, creation date AND sprint info (BATCHED)
+        const issueData = await _etFetchIssueDataBatched(issueKey);
+        if (!issueData) return null;
 
-        if (!issueRes.ok) {
-            console.warn(`PMsToolKit: Error fetching ${issueKey}: ${issueRes.status}`);
-            return null;
+        const status = issueData.fields?.status;
+        const statusName = status?.name || '?';
+        const createdDate = issueData.fields?.created;
+        const statusCategory = status?.statusCategory?.key || ''; // 'new', 'indeterminate', 'done'
+
+        // ---- "To Do" State Logic Optimization ----
+        // If it's a "new" status and has an active sprint, we might use that instead of history
+        let sprintStartDate = null;
+        const { sprint: sprintFieldId } = await _etEnsureCustomFields();
+        if (sprintFieldId) {
+            const sprintVal = issueData.fields[sprintFieldId];
+            sprintStartDate = _etParseSprintData(sprintVal);
         }
 
-        const issueData = await issueRes.json();
-        const statusName = issueData.fields?.status?.name || '?';
-        const createdDate = issueData.fields?.created;
+        // If it's a To Do ticket in an active sprint, we can often skip the changelog 
+        // because we know we want the LATER of (creation, sprint start).
+        // However, we still check the changelog because the ticket might have been moved
+        // from another state back to To Do.
 
         // 2. Get changelog sorted by most recent first
-        //    We use a low maxResults because we only need the last status transition
-        const changelogRes = await fetch(
-            `/rest/api/2/issue/${issueKey}/changelog?maxResults=50`,
+        //    Jira returns oldest first by default, so we need to check if there are more pages
+        let changelogRes = await fetch(
+            `/rest/api/3/issue/${issueKey}/changelog?maxResults=50`,
             {
                 credentials: 'same-origin',
                 headers: { 'Accept': 'application/json' }
@@ -994,11 +1002,25 @@ async function getLastStatusChangeDate(issueKey) {
         let lastStatusAuthor = null;
 
         if (changelogRes.ok) {
-            const changelogData = await changelogRes.json();
+            let changelogData = await changelogRes.json();
+
+            // If there are more pages, fetch the LAST page to get the most recent entries
+            if (changelogData.total > changelogData.maxResults) {
+                const lastPageStart = Math.max(0, changelogData.total - 50);
+                changelogRes = await fetch(
+                    `/rest/api/3/issue/${issueKey}/changelog?startAt=${lastPageStart}&maxResults=50`,
+                    {
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' }
+                    }
+                );
+                if (changelogRes.ok) {
+                    changelogData = await changelogRes.json();
+                }
+            }
+
             const values = changelogData.values || [];
 
-            // values are in chronological order (oldest first),
-            // we iterate from most recent to oldest
             for (let i = values.length - 1; i >= 0; i--) {
                 const entry = values[i];
                 const statusItem = entry.items?.find(item => item.field === 'status');
@@ -1008,41 +1030,24 @@ async function getLastStatusChangeDate(issueKey) {
                     break;
                 }
             }
-
-            // If not found and there are more pages, paginate backwards
-            // to search in more recent entries
-            if (!lastStatusChange && changelogData.total > changelogData.maxResults) {
-                // Go to the last page
-                const lastPageStart = changelogData.total - changelogData.maxResults;
-                const startAt = Math.max(0, lastPageStart);
-
-                const lastPageRes = await fetch(
-                    `/rest/api/2/issue/${issueKey}/changelog?startAt=${startAt}&maxResults=50`,
-                    {
-                        credentials: 'same-origin',
-                        headers: { 'Accept': 'application/json' }
-                    }
-                );
-
-                if (lastPageRes.ok) {
-                    const lastPageData = await lastPageRes.json();
-                    const lastValues = lastPageData.values || [];
-
-                    for (let i = lastValues.length - 1; i >= 0; i--) {
-                        const entry = lastValues[i];
-                        const statusItem = entry.items?.find(item => item.field === 'status');
-                        if (statusItem) {
-                            lastStatusChange = entry.created;
-                            lastStatusAuthor = entry.author?.displayName || null;
-                            break;
-                        }
-                    }
-                }
-            }
         }
 
-        // If state never changed, use creation date
-        const changedDate = lastStatusChange || createdDate;
+        // Final decision on the date:
+        let changedDate = lastStatusChange || createdDate;
+
+        const isToDo = (statusCategory.toLowerCase() === 'new' || statusCategory.toLowerCase() === 'todo' || statusName.toLowerCase() === 'to do');
+        if (isToDo && sprintStartDate) {
+            const sprintDateParsed = new Date(sprintStartDate);
+            const currentDateParsed = new Date(changedDate);
+
+            // If sprint started AFTER the last transition/creation, use sprint start
+            if (sprintDateParsed > currentDateParsed) {
+                console.debug(`PMsToolKit: ${issueKey} Overriding ${changedDate} with sprint start ${sprintStartDate}`);
+                changedDate = sprintStartDate;
+            } else {
+                console.debug(`PMsToolKit: ${issueKey} Keeping original date ${changedDate} because sprint start ${sprintStartDate} is older`);
+            }
+        }
 
         const result = {
             statusName,
@@ -1055,12 +1060,7 @@ async function getLastStatusChangeDate(issueKey) {
         return result;
 
     } catch (err) {
-        // "Failed to fetch" is expected for issues in projects with restricted access
-        if (err.message === 'Failed to fetch') {
-            console.debug(`PMsToolKit: Skipping ${issueKey} (no access or network issue)`);
-        } else {
-            console.warn(`PMsToolKit: Error fetching status for ${issueKey}:`, err);
-        }
+        console.warn(`PMsToolKit: Error fetching status for ${issueKey}:`, err);
         return null;
     }
 }
@@ -1249,34 +1249,156 @@ function _etGetGadgetTitle(gadgetContainer) {
 // ---- Feature 9: Story Points en gadgets del Dashboard ----
 
 let _etStoryPointsFieldId = null;
+let _etSprintFieldId = null;
 let _etFieldIdFetched = false;
 const _etProcessedGadgets = new Set(); // IDs of already processed gadgets
 
-async function _etEnsureStoryPointsField() {
-    if (_etFieldIdFetched) return _etStoryPointsFieldId;
+async function _etEnsureCustomFields() {
+    if (_etFieldIdFetched) return { sp: _etStoryPointsFieldId, sprint: _etSprintFieldId };
 
     try {
-        const res = await fetch(`${window.location.origin}/rest/api/2/field`, {
+        const res = await fetch(`${window.location.origin}/rest/api/3/field`, {
             credentials: 'same-origin',
             headers: { 'Accept': 'application/json' }
         });
-        if (!res.ok) return null; // leave _etFieldIdFetched false → retries next cycle
+        if (!res.ok) return { sp: null, sprint: null };
         const fields = await res.json();
+
         const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
         _etStoryPointsFieldId = spField ? spField.id : null;
-        _etFieldIdFetched = true; // only cache after successful fetch
+
+        const sprintField = fields.find(f => f.name && f.name.toLowerCase() === 'sprint');
+        _etSprintFieldId = sprintField ? sprintField.id : null;
+
+        _etFieldIdFetched = true;
     } catch (e) {
-        console.warn('PMsToolKit: Could not detect the Story Points field', e);
-        // _etFieldIdFetched stays false → next call will retry
+        console.warn('PMsToolKit: Could not detect custom fields', e);
     }
-    return _etStoryPointsFieldId;
+    return { sp: _etStoryPointsFieldId, sprint: _etSprintFieldId };
+}
+
+// ---- API Batching Engine ----
+
+const _etBatchQueue = new Set();
+const _etBatchCache = new Map(); // issueKey -> { data, timestamp }
+let _etBatchTimeout = null;
+
+/**
+ * Enqueue an issue key for batch fetching. 
+ * Returns a promise that resolves when the data for this specific key is fetched.
+ */
+function _etFetchIssueDataBatched(issueKey) {
+    if (_etBatchCache.has(issueKey)) {
+        const cached = _etBatchCache.get(issueKey);
+        if (Date.now() - cached.timestamp < 30000) { // 30s cache
+            return Promise.resolve(cached.data);
+        }
+    }
+
+    return new Promise((resolve) => {
+        _etBatchQueue.add({ issueKey, resolve });
+
+        if (!_etBatchTimeout) {
+            _etBatchTimeout = setTimeout(() => _etProcessBatch(), 50); // 50ms window to collect keys
+        }
+    });
+}
+
+async function _etProcessBatch() {
+    const currentBatch = Array.from(_etBatchQueue);
+    _etBatchQueue.clear();
+    _etBatchTimeout = null;
+
+    if (currentBatch.length === 0) return;
+
+    // Split into chunks of 20 to avoid too long URLs/JQL
+    const chunks = [];
+    for (let i = 0; i < currentBatch.length; i += 20) {
+        chunks.push(currentBatch.slice(i, i + 20));
+    }
+
+    const { sp, sprint } = await _etEnsureCustomFields();
+    const fields = ['status', 'created'];
+    if (sprint) fields.push(sprint);
+
+    for (const chunk of chunks) {
+        const keys = chunk.map(item => `"${item.issueKey}"`);
+        const jql = `key in (${keys.join(',')})`;
+
+        try {
+            const res = await fetch(`${window.location.origin}/rest/api/3/search/jql`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Atlassian-Token': 'no-check'
+                },
+                body: JSON.stringify({
+                    jql,
+                    fields,
+                    maxResults: chunk.length
+                })
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Batch fetch failed (${res.status}): ${errText.substring(0, 100)}`);
+            }
+
+            const data = await res.json();
+            const issuesMap = new Map();
+            (data.issues || []).forEach(issue => {
+                issuesMap.set(issue.key, issue);
+            });
+
+            // Resolve all promises in this chunk
+            chunk.forEach(item => {
+                const issueData = issuesMap.get(item.issueKey) || null;
+                if (issueData) {
+                    _etBatchCache.set(item.issueKey, { data: issueData, timestamp: Date.now() });
+                }
+                item.resolve(issueData);
+            });
+
+        } catch (e) {
+            console.warn('PMsToolKit: Batch fetch error', e);
+            chunk.forEach(item => item.resolve(null));
+        }
+    }
+}
+
+/**
+ * Helper to parse startDate from sprint serialized string
+ */
+function _etParseSprintData(sprintValue) {
+    if (!sprintValue || !Array.isArray(sprintValue)) return null;
+
+    for (const sprint of sprintValue) {
+        // Modern Jira API: objects
+        if (typeof sprint === 'object' && sprint !== null) {
+            if (sprint.state && sprint.state.toUpperCase() === 'ACTIVE' && sprint.startDate) {
+                return sprint.startDate;
+            }
+            continue;
+        }
+
+        // Older Jira API: serialized strings
+        if (typeof sprint === 'string' && sprint.toLowerCase().includes('state=active')) {
+            const startDateMatch = sprint.match(/startDate=([^,\]]+)/i);
+            if (startDateMatch && startDateMatch[1] !== '<null>') {
+                return startDateMatch[1];
+            }
+        }
+    }
+    return null;
 }
 
 async function injectStoryPointsSummary() {
     const gadgetTables = document.querySelectorAll('table.stats-gadget-table');
     if (gadgetTables.length === 0) return;
 
-    const fieldId = await _etEnsureStoryPointsField();
+    const { sp: fieldId } = await _etEnsureCustomFields();
     if (!fieldId) return;
 
     for (const table of gadgetTables) {
@@ -1558,7 +1680,7 @@ async function injectVelocityPerDeveloper() {
     const gadgetTables = document.querySelectorAll('table.stats-gadget-table');
     if (gadgetTables.length === 0) return;
 
-    const fieldId = await _etEnsureStoryPointsField();
+    const { sp: fieldId } = await _etEnsureCustomFields();
     if (!fieldId) return;
 
     for (const table of gadgetTables) {
