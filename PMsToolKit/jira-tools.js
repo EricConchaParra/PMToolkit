@@ -187,9 +187,12 @@ const NoteDrawer = {
             const timestamp = new Date(reminderValue).getTime();
             console.log(`PMsToolKit: Saving reminder for ${finalKey} at ${new Date(timestamp).toLocaleString()}`);
             safeStorage.set({ [reminderKey]: timestamp });
+            // Reset ignored flag when a reminder is set/updated
+            safeStorage.remove(`ignored_${finalKey}`);
         } else {
             console.log(`PMsToolKit: Removing reminder for ${finalKey}`);
             safeStorage.remove(reminderKey);
+            safeStorage.remove(`ignored_${finalKey}`);
         }
 
         // Show "Saved" status
@@ -215,6 +218,7 @@ const ReminderModal = {
     el: null,
     currentKey: null,
     queue: [],
+    handledKeys: new Set(), // Track what's been dismissed in this session
 
     init() {
         if (this.el) return;
@@ -254,7 +258,7 @@ const ReminderModal = {
 
         this.el.querySelector('#et-alert-done').onclick = () => this.markAsDone();
         this.el.querySelector('#et-alert-snooze').onclick = () => this.snooze();
-        this.el.querySelector('#et-alert-ignore').onclick = () => this.hide();
+        this.el.querySelector('#et-alert-ignore').onclick = () => this.ignore();
 
         // Snooze duration buttons
         this.el.querySelectorAll('.et-alert-snooze-options button').forEach(btn => {
@@ -268,8 +272,14 @@ const ReminderModal = {
     show(issueKey, noteText, summary) {
         this.init();
 
-        // If already showing something, add to queue
-        if (this.backdrop.classList.contains('visible') && this.currentKey !== issueKey) {
+        // If this key was already handled (ignored/done) in this session, skip
+        if (this.handledKeys.has(issueKey)) return;
+
+        // If already showing this exact key, don't reset view
+        if (this.currentKey === issueKey && this.backdrop.classList.contains('visible')) return;
+
+        // If already showing something else, add to queue
+        if (this.backdrop.classList.contains('visible')) {
             if (!this.queue.find(q => q.issueKey === issueKey)) {
                 this.queue.push({ issueKey, noteText, summary });
                 this.updateQueueInfo();
@@ -328,14 +338,39 @@ const ReminderModal = {
         }
     },
 
+    ignore() {
+        const keyToIgnore = this.currentKey;
+        if (!keyToIgnore) return;
+
+        this.handledKeys.add(keyToIgnore);
+
+        const finalKey = keyToIgnore.includes(':') ? keyToIgnore : `jira:${keyToIgnore}`;
+        const ignoredKey = `ignored_${finalKey}`;
+
+        // Set persistent ignored flag
+        safeStorage.set({ [ignoredKey]: true });
+
+        // Remove from pending_alerts so it doesn't pop up again on next DOM change
+        safeStorage.get('pending_alerts', (result) => {
+            const pending = (result.pending_alerts || []).filter(k => k !== keyToIgnore);
+            safeStorage.set({ pending_alerts: pending });
+        });
+
+        this.hide();
+    },
+
     markAsDone() {
-        if (!this.currentKey) return;
-        const storageKey = this.currentKey.includes(':') ? `reminder_${this.currentKey}` : `reminder_jira:${this.currentKey}`;
+        const keyDone = this.currentKey;
+        if (!keyDone) return;
+
+        this.handledKeys.add(keyDone);
+
+        const storageKey = keyDone.includes(':') ? `reminder_${keyDone}` : `reminder_jira:${keyDone}`;
         safeStorage.remove(storageKey);
 
         // Remove from pending_alerts in background
         safeStorage.get('pending_alerts', (result) => {
-            const pending = (result.pending_alerts || []).filter(k => k !== this.currentKey);
+            const pending = (result.pending_alerts || []).filter(k => k !== keyDone);
             safeStorage.set({ pending_alerts: pending });
         });
 
@@ -350,7 +385,10 @@ const ReminderModal = {
     },
 
     applySnooze(type) {
-        if (!this.currentKey) return;
+        const keyToSnooze = this.currentKey;
+        if (!keyToSnooze) return;
+
+        this.handledKeys.add(keyToSnooze);
 
         const now = new Date();
         let target = new Date(now);
@@ -366,12 +404,12 @@ const ReminderModal = {
         }
 
         const snoozeUntil = target.getTime();
-        const storageKey = this.currentKey.includes(':') ? `reminder_${this.currentKey}` : `reminder_jira:${this.currentKey}`;
+        const storageKey = keyToSnooze.includes(':') ? `reminder_${keyToSnooze}` : `reminder_jira:${keyToSnooze}`;
         safeStorage.set({ [storageKey]: snoozeUntil });
 
         // Remove from pending_alerts since we snoozed it
         safeStorage.get('pending_alerts', (result) => {
-            const pending = (result.pending_alerts || []).filter(k => k !== this.currentKey);
+            const pending = (result.pending_alerts || []).filter(k => k !== keyToSnooze);
             safeStorage.set({ pending_alerts: pending });
         });
 
@@ -390,8 +428,20 @@ async function checkPendingAlerts() {
         pending.forEach(issueKey => {
             const storageKey = issueKey.includes(':') ? `notes_${issueKey}` : `notes_jira:${issueKey}`;
             const cleanKey = issueKey.split(':').pop();
+            const ignoredKey = `ignored_${issueKey.includes(':') ? issueKey : `jira:${issueKey}`}`;
 
-            safeStorage.get([storageKey, `ticket_cache_${cleanKey}`], (res) => {
+            safeStorage.get([storageKey, `ticket_cache_${cleanKey}`, ignoredKey], (res) => {
+                if (res[ignoredKey]) {
+                    // It was ignored, remove from pending if it's there
+                    safeStorage.get('pending_alerts', (result) => {
+                        const newPending = (result.pending_alerts || []).filter(k => k !== issueKey);
+                        if (newPending.length !== (result.pending_alerts || []).length) {
+                            safeStorage.set({ pending_alerts: newPending });
+                        }
+                    });
+                    return;
+                }
+
                 const noteText = res[storageKey] || '';
                 const summary = res[`ticket_cache_${cleanKey}`]?.details?.summary || '';
                 ReminderModal.show(issueKey, noteText, summary);

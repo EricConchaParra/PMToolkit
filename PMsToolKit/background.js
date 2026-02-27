@@ -40,9 +40,16 @@ async function getTicketSummary(issueKey) {
 
 async function handleReminder(issueKey) {
     const summary = await getTicketSummary(issueKey);
-    const storageKey = issueKey.includes(':') ? `notes_${issueKey}` : `notes_${issueKey}`; // Legacy vs prefixed
+    const finalKey = issueKey.includes(':') ? issueKey : `jira:${issueKey}`;
+    const ignoredKey = `ignored_${finalKey}`;
+    const storageKey = `notes_${finalKey}`;
 
-    chrome.storage.local.get([storageKey, 'pending_alerts'], (result) => {
+    chrome.storage.local.get([storageKey, 'pending_alerts', ignoredKey], (result) => {
+        if (result[ignoredKey]) {
+            console.log(`PMsToolKit: Skipping ignored reminder for ${finalKey}`);
+            return;
+        }
+
         const noteText = result[storageKey] || '';
         const pendingAlerts = result.pending_alerts || [];
 
@@ -152,11 +159,14 @@ function initializeExtension() {
             // Sync Alarms
             if (key.startsWith('reminder_')) {
                 const timestamp = value;
+                const ticketKey = key.replace('reminder_', '');
+                const ignoredKey = `ignored_${ticketKey}`;
+
                 if (timestamp > now) {
                     chrome.alarms.create(key, { when: timestamp });
-                } else if (timestamp > 0) {
-                    // It fired while we were away
-                    handleReminder(key.replace('reminder_', ''));
+                } else if (timestamp > 0 && !items[ignoredKey]) {
+                    // It fired while we were away and not ignored
+                    handleReminder(ticketKey);
                 }
             }
         }
