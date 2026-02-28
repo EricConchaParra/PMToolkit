@@ -1,12 +1,23 @@
 /**
+ * Checks if the extension context is still valid.
+ */
+export const isContextValid = () => {
+    return !!chrome.runtime?.id;
+};
+
+/**
  * Modular wrapper for chrome.storage.local with error handling.
  */
 export const storage = {
     get(keys) {
         return new Promise((resolve) => {
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (storage.get).');
+                return resolve({});
+            }
             try {
                 chrome.storage.local.get(keys, (items) => {
-                    if (chrome.runtime.lastError) {
+                    if (chrome.runtime?.lastError) {
                         console.warn('PMsToolKit: Storage fetch error', chrome.runtime.lastError);
                         resolve({});
                     } else {
@@ -14,7 +25,7 @@ export const storage = {
                     }
                 });
             } catch (e) {
-                console.warn('PMsToolKit: Context invalidated, please refresh the page.');
+                console.warn('PMsToolKit: Context invalidated during storage.get.');
                 resolve({});
             }
         });
@@ -22,15 +33,19 @@ export const storage = {
 
     set(data) {
         return new Promise((resolve) => {
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (storage.set).');
+                return resolve();
+            }
             try {
                 chrome.storage.local.set(data, () => {
-                    if (chrome.runtime.lastError) {
+                    if (chrome.runtime?.lastError) {
                         console.warn('PMsToolKit: Storage set error', chrome.runtime.lastError);
                     }
                     resolve();
                 });
             } catch (e) {
-                console.warn('PMsToolKit: Context invalidated, please refresh the page.');
+                console.warn('PMsToolKit: Context invalidated during storage.set.');
                 resolve();
             }
         });
@@ -38,15 +53,19 @@ export const storage = {
 
     remove(keys) {
         return new Promise((resolve) => {
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (storage.remove).');
+                return resolve();
+            }
             try {
                 chrome.storage.local.remove(keys, () => {
-                    if (chrome.runtime.lastError) {
+                    if (chrome.runtime?.lastError) {
                         console.warn('PMsToolKit: Storage remove error', chrome.runtime.lastError);
                     }
                     resolve();
                 });
             } catch (e) {
-                console.warn('PMsToolKit: Context invalidated, please refresh the page.');
+                console.warn('PMsToolKit: Context invalidated during storage.remove.');
                 resolve();
             }
         });
@@ -60,12 +79,38 @@ export const storage = {
 export const syncStorage = {
     get(keys) {
         return new Promise((resolve) => {
-            chrome.storage.sync.get(keys, resolve);
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (syncStorage.get).');
+                return resolve({});
+            }
+            try {
+                chrome.storage.sync.get(keys, (items) => {
+                    if (chrome.runtime?.lastError) {
+                        resolve({});
+                    } else {
+                        resolve(items);
+                    }
+                });
+            } catch (e) {
+                console.warn('PMsToolKit: Context invalidated (sync), please refresh.');
+                resolve({});
+            }
         });
     },
     set(data) {
         return new Promise((resolve) => {
-            chrome.storage.sync.set(data, resolve);
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (syncStorage.set).');
+                return resolve();
+            }
+            try {
+                chrome.storage.sync.set(data, () => {
+                    resolve();
+                });
+            } catch (e) {
+                console.warn('PMsToolKit: Context invalidated (sync), please refresh.');
+                resolve();
+            }
         });
     }
 };

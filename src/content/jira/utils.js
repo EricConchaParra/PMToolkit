@@ -1,10 +1,73 @@
 /**
  * Concurrency queue and formatting utilities for Jira features.
  */
+import { syncStorage } from '../../common/storage';
 
 let _etQueue = [];
 let _etRunningCount = 0;
 const MAX_CONCURRENT = 3;
+
+let _etStoryPointsFieldId = null;
+let _etSprintFieldId = null;
+let _etFieldIdFetched = false;
+
+export async function getJiraHost() {
+    // 1. Try to get from storage (set by top frame)
+    const settings = await syncStorage.get(['et_jira_host']);
+    if (settings.et_jira_host) return settings.et_jira_host;
+
+    // 2. Fallback to current hostname if it looks like Jira
+    if (window.location.hostname.endsWith('.atlassian.net')) {
+        return window.location.hostname;
+    }
+
+    // 3. Default fallback
+    return 'jira.atlassian.net';
+}
+
+export async function etEnsureCustomFields() {
+    if (_etFieldIdFetched) return { sp: _etStoryPointsFieldId, sprint: _etSprintFieldId };
+
+    const host = await getJiraHost();
+    try {
+        const res = await fetch(`https://${host}/rest/api/3/field`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!res.ok) return { sp: null, sprint: null };
+        const fields = await res.json();
+
+        const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
+        _etStoryPointsFieldId = spField ? spField.id : null;
+
+        const sprintField = fields.find(f => f.name && f.name.toLowerCase() === 'sprint');
+        _etSprintFieldId = sprintField ? sprintField.id : null;
+
+        _etFieldIdFetched = true;
+    } catch (e) {
+        console.warn('PMsToolKit: Could not detect custom fields', e);
+    }
+    return { sp: _etStoryPointsFieldId, sprint: _etSprintFieldId };
+}
+
+export function etParseSprintData(sprintValue) {
+    if (!sprintValue || !Array.isArray(sprintValue)) return null;
+
+    for (const sprint of sprintValue) {
+        if (typeof sprint === 'object' && sprint !== null) {
+            if (sprint.state && sprint.state.toUpperCase() === 'ACTIVE' && sprint.startDate) {
+                return sprint.startDate;
+            }
+            continue;
+        }
+        if (typeof sprint === 'string' && sprint.toLowerCase().includes('state=active')) {
+            const startDateMatch = sprint.match(/startDate=([^,\]]+)/i);
+            if (startDateMatch && startDateMatch[1] !== '<null>') {
+                return startDateMatch[1];
+            }
+        }
+    }
+    return null;
+}
 
 export function etEnqueue(fn) {
     return new Promise((resolve, reject) => {
@@ -32,23 +95,28 @@ async function etProcessQueue() {
 
 export function formatAge(diffMs) {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays === 0) {
-        const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-        return diffHrs === 0 ? '<1h' : `${diffHrs}h`;
-    }
-    return `${diffDays}d`;
+    const diffWeeks = Math.floor(diffDays / 7);
+
+    if (diffDays === 0) return '<1d';
+    if (diffDays === 1) return '1d';
+    if (diffDays < 7) return `${diffDays}d`;
+    if (diffWeeks < 4) return `${diffWeeks}w`;
+    const diffMonths = Math.floor(diffDays / 30);
+    return `${diffMonths}m`;
 }
 
 export function getColorClass(diffMs) {
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    if (diffDays < 3) return 'et-age-young';
-    if (diffDays < 7) return 'et-age-middle';
-    return 'et-age-old';
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays <= 2) return 'et-age-green';
+    if (diffDays <= 4) return 'et-age-yellow';
+    return 'et-age-red';
 }
 
-export function getGadgetTitle(container) {
-    if (!container) return '';
-    const titleEl = container.querySelector('.dashboard-item-title, .gadget-title');
+export function getGadgetTitle(gadgetContainer) {
+    if (!gadgetContainer) return '';
+    const frame = gadgetContainer.closest('.dashboard-item-frame') || gadgetContainer.parentElement;
+    if (!frame) return '';
+    const titleEl = frame.querySelector('.dashboard-item-title, .gadget-title, h1, h2, h3, h4');
     return titleEl?.textContent?.trim() || '';
 }
 
@@ -71,4 +139,50 @@ export function etCopyTicketLink(issueKey, summaryText, url, feedbackEl) {
             feedbackEl.style.backgroundColor = originalBg || '';
         }, 1500);
     });
+}
+
+/**
+ * Shared helper to find the best injection target for row-based icons.
+ */
+export function etGetRowIconTarget(row) {
+    const target = row.querySelector('.key, .issuetype, [data-field-id="issuekey"], [data-field-id="issuetype"]');
+    if (target && target.prepend) return target;
+
+    const nativeActionContainer = row.querySelector('[data-testid="native-issue-table.common.ui.issue-cells.issue-key.action-container"]');
+    if (nativeActionContainer && nativeActionContainer.prepend) {
+        return nativeActionContainer;
+    }
+
+    const nativeKeyLink = row.querySelector('a[href*="/browse/"]');
+    if (nativeKeyLink) {
+        const td = nativeKeyLink.closest('td');
+        if (td && td.prepend) return td;
+    }
+
+    const firstTd = row.querySelector('td');
+    if (firstTd && firstTd.prepend) return firstTd;
+
+    return row;
+}
+
+export function etGetIconContainer(row) {
+    let container = row.querySelector('.et-row-icons');
+    if (!container) {
+        container = document.createElement('span');
+        container.className = 'et-row-icons';
+        container.style.display = 'inline-flex';
+        container.style.alignItems = 'center';
+        container.style.gap = '4px';
+        container.style.marginRight = '8px';
+
+        const target = etGetRowIconTarget(row);
+        if (target && target.prepend) {
+            target.prepend(container);
+        } else if (target && target.parentNode) {
+            target.parentNode.insertBefore(container, target);
+        } else {
+            row.prepend(container); // Fallback
+        }
+    }
+    return container;
 }

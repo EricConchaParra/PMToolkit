@@ -39,11 +39,22 @@ async function handleReminder(issueKey) {
             chrome.storage.local.set({ pending_alerts: pendingAlerts });
         }
 
+        let notificationTitle = `Reminder: ${issueKey}`;
+        if (issueKey.includes(':')) {
+            const [source, id] = issueKey.split(':');
+            const sourceCapitalized = source.charAt(0).toUpperCase() + source.slice(1);
+            notificationTitle = `Reminder on ${sourceCapitalized}: ${id}${summary ? ` (${summary})` : ''}`;
+        } else {
+            notificationTitle = `Reminder on Jira: ${issueKey}${summary ? ` (${summary})` : ''}`;
+        }
+
+        const notificationMessage = noteText.trim() || 'Reminder set for this ticket';
+
         chrome.notifications.create(`reminder_${issueKey}`, {
             type: 'basic',
             iconUrl: '/assets/icon.png',
-            title: `Reminder: ${issueKey}`,
-            message: (summary ? `${summary}\n` : '') + (noteText.length > 100 ? noteText.substring(0, 97) + '...' : noteText),
+            title: notificationTitle,
+            message: notificationMessage.length > 100 ? notificationMessage.substring(0, 97) + '...' : notificationMessage,
             priority: 2,
             requireInteraction: true
         });
@@ -106,6 +117,18 @@ function initialize() {
         }
     });
 }
+
+chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'TEST_NOTIFICATION') {
+        chrome.notifications.create('test_notif', {
+            type: 'basic',
+            iconUrl: '/assets/icon.png',
+            title: 'PMsToolKit Test',
+            message: 'Notifications are working correctly!',
+            priority: 2
+        });
+    }
+});
 
 chrome.runtime.onStartup.addListener(initialize);
 chrome.runtime.onInstalled.addListener(initialize);

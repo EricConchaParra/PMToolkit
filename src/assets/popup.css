@@ -382,21 +382,38 @@ body {
 .setting-item {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: 14px 0;
+    align-items: flex-start;
+    padding: 16px 0;
     border-bottom: 1px solid var(--bg-alt);
     cursor: pointer;
     transition: all 0.2s;
+    gap: 12px;
 }
 
 .setting-item:hover {
     padding-left: 4px;
 }
 
-.setting-item span {
+.setting-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-grow: 1;
+}
+
+.setting-info span {
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text-main);
+    line-height: 1.2;
+}
+
+.setting-info p {
+    font-size: 11px;
+    color: var(--text-subtle);
+    font-weight: 400;
+    line-height: 1.4;
+    margin: 0;
 }
 
 /* Custom Stylish Switch */

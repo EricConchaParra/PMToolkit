@@ -1,16 +1,19 @@
-/**
- * Utility for Jira REST API interactions.
- */
+import { syncStorage } from './storage';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 export const jiraApi = {
-    getHost() {
-        return localStorage.getItem('et_jira_host') || window.location.hostname || 'jira.atlassian.net';
+    async getHost() {
+        const settings = await syncStorage.get(['et_jira_host']);
+        if (settings.et_jira_host) return settings.et_jira_host;
+        if (window.location.hostname && window.location.hostname.endsWith('.atlassian.net')) {
+            return window.location.hostname;
+        }
+        return 'jira.atlassian.net';
     },
 
     async fetchIssueDetails(issueKey) {
-        const host = this.getHost();
+        const host = await this.getHost();
         const id = issueKey.split(':').pop();
 
         try {

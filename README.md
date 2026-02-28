@@ -1,9 +1,23 @@
 # PMsToolKit — Chrome Extension for Jira
 
-> **Custom toolkit to enhance project management workflows on Jira Cloud.**
+> **The professional productivity layer for Jira Cloud.**
 > Created by **EricConcha**.
 
-A Manifest V3 Chrome extension that injects productivity tools directly into the Jira Cloud UI. It enhances list views, ticket detail pages, board views, and dashboard gadgets with copy-to-Slack links, personal notes (via a Notion-like drawer), reminder notifications, time-in-state indicators, and story point summaries — all without requiring any Jira admin configuration.
+PMsToolKit is a personal productivity powerhouse designed for Project Managers, Team Leads, and developers who live in Jira but need a faster, more streamlined workflow. It acts as a lightweight enhancement layer that injects professional tools directly into your existing Jira interface—helping you communicate more effectively and manage your time without ever leaving your browser tab.
+
+---
+
+## 💡 What is PMsToolKit?
+
+Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the gaps in your daily workflow by adding the "missing" features that make project management fluid:
+
+*   **Seamless Communication:** Copy perfectly formatted ticket links for Slack or Notion with one click. No more messy URLs.
+*   **Context at a Glance:** Instantly see how long a ticket has been in its current state with color-coded badges, helping you spot bottlenecks before they become blockers.
+*   **Personal Knowledge Base:** Maintain private, Notion-like notes for any ticket. Keep your thoughts organized without cluttering the official Jira comments.
+*   **Intelligent Reminders:** Set follow-up alerts for yourself. The toolkit ensures you never miss a deadline by surfacing missed notifications the moment you log in.
+*   **Data-Driven Decisions:** View Story Point summaries and developer velocity directly on your dashboards, giving you real-time insights into team performance.
+
+**Built for speed, privacy, and simplicity.** PMsToolKit requires zero Jira admin configuration and stores all your personal data locally in your browser.
 
 ---
 
@@ -467,7 +481,7 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-## Installation
+## Installation (Beta v0.3.0)
 
 1. Clone or download this repository.
 2. Run `npm install` followed by `npm run build`.
@@ -478,4 +492,4 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-*PMsToolKit v3.0 — Created by EricConcha*
+*PMsToolKit v0.3.0 (Beta) — Created by EricConcha*

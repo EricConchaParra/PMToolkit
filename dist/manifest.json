@@ -27,15 +27,22 @@
                 "https://*.atlassian.net/*"
             ],
             "js": [
-                "content.js"
+                "content-loader.js"
             ],
-            "run_at": "document_idle"
+            "css": [
+                "assets/content.css"
+            ],
+            "run_at": "document_idle",
+            "all_frames": true,
+            "match_about_blank": true
         }
     ],
     "web_accessible_resources": [
         {
             "resources": [
-                "assets/*"
+                "assets/*",
+                "content.js",
+                "background.js"
             ],
             "matches": [
                 "https://*.atlassian.net/*"

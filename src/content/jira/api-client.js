@@ -1,4 +1,4 @@
-import { etEnqueue } from './utils';
+import { etEnqueue, etEnsureCustomFields, etParseSprintData, getJiraHost } from './utils';
 
 const STATUS_CACHE = {};
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -11,35 +11,62 @@ export const jiraClient = {
 
         return etEnqueue(async () => {
             try {
-                // First call: get current status and creation date
-                const basicRes = await fetch(`${window.location.origin}/rest/api/3/issue/${issueKey}?fields=status,created`, {
+                // 1. Get current status, creation date AND sprint info
+                const { sp: spId, sprint: sprintFieldId } = await etEnsureCustomFields();
+                const fields = ['status', 'created'];
+                if (sprintFieldId) fields.push(sprintFieldId);
+
+                const basicRes = await fetch(`/rest/api/3/issue/${issueKey}?fields=${fields.join(',')}`, {
                     headers: { 'Accept': 'application/json' }
                 });
                 if (!basicRes.ok) return null;
-                const basicData = await basicRes.json();
+                const issueData = await basicRes.json();
 
-                const currentStatus = basicData.fields.status.name;
-                const createdDate = basicData.fields.created;
+                const statusObj = issueData.fields.status;
+                const currentStatus = statusObj.name;
+                const statusCategory = statusObj.statusCategory?.key || statusObj.statusCategory?.name || '';
+                const createdDate = issueData.fields.created;
 
-                // Second call: get changelog for status transitions
-                const changelogRes = await fetch(`${window.location.origin}/rest/api/3/issue/${issueKey}/changelog`, {
+                let sprintStartDate = null;
+                if (sprintFieldId) {
+                    sprintStartDate = etParseSprintData(issueData.fields[sprintFieldId]);
+                }
+
+                // 2. Get changelog for status transitions
+                const changelogRes = await fetch(`/rest/api/3/issue/${issueKey}/changelog`, {
                     headers: { 'Accept': 'application/json' }
                 });
 
-                let changedDate = createdDate;
-                let changedBy = null;
+                let lastStatusChange = null;
+                let lastStatusAuthor = null;
 
                 if (changelogRes.ok) {
                     const changelogData = await changelogRes.json();
                     const histories = changelogData.values || [];
-                    // Find the most recent status change
-                    const statusChanges = histories
-                        .filter(h => h.items.some(item => item.field === 'status'))
-                        .sort((a, b) => new Date(b.created) - new Date(a.created));
 
-                    if (statusChanges.length > 0) {
-                        changedDate = statusChanges[0].created;
-                        changedBy = statusChanges[0].author.displayName;
+                    // Jira returns oldest first. We want the YOUNGEST change to status.
+                    for (let i = histories.length - 1; i >= 0; i--) {
+                        const h = histories[i];
+                        if (h.items.some(item => item.field === 'status')) {
+                            lastStatusChange = h.created;
+                            lastStatusAuthor = h.author?.displayName;
+                            break;
+                        }
+                    }
+                }
+
+                let changedDate = lastStatusChange || createdDate;
+
+                // "To Do" logic: Compare with sprint start
+                const statusLower = currentStatus.toLowerCase();
+                const categoryLower = statusCategory.toLowerCase();
+                const isToDo = (categoryLower === 'new' || categoryLower === 'todo' || statusLower === 'to do' || statusLower === 'todo');
+
+                if (isToDo && sprintStartDate) {
+                    const sprintDateParsed = new Date(sprintStartDate);
+                    const historyDateParsed = new Date(changedDate);
+                    if (sprintDateParsed > historyDateParsed) {
+                        changedDate = sprintStartDate;
                     }
                 }
 
@@ -47,7 +74,7 @@ export const jiraClient = {
                     issueKey,
                     statusName: currentStatus,
                     changedDate,
-                    changedBy,
+                    changedBy: lastStatusAuthor,
                     fetchedAt: Date.now()
                 };
 

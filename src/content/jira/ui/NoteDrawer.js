@@ -6,6 +6,47 @@ export const NoteDrawer = {
     currentKey: null,
     saveTimeout: null,
 
+    async initIndicators() {
+        const buttons = document.querySelectorAll('.et-notes-btn:not(.et-indicator-checked), .et-ticket-notes-toggle:not(.et-indicator-checked)');
+        if (buttons.length === 0) return;
+
+        const keys = new Set();
+        buttons.forEach(btn => {
+            btn.classList.add('et-indicator-checked');
+            const key = btn.getAttribute('data-issue-key');
+            if (key) keys.add(key);
+        });
+
+        if (keys.size === 0) return;
+
+        const storageKeys = [];
+        keys.forEach(k => {
+            const cleanKey = k.includes(':') ? k : `jira:${k}`;
+            storageKeys.push(`notes_${cleanKey}`, `reminder_${cleanKey}`);
+        });
+
+        const result = await storage.get(storageKeys);
+
+        keys.forEach(k => {
+            const cleanKey = k.includes(':') ? k : `jira:${k}`;
+            const hasNote = !!result[`notes_${cleanKey}`];
+            const hasReminder = !!result[`reminder_${cleanKey}`];
+            const hasActiveItem = hasNote || hasReminder;
+
+            if (hasActiveItem) {
+                const cleanSuffix = k.split(':').pop();
+                document.querySelectorAll(`[data-issue-key="${cleanSuffix}"], [data-issue-key="jira:${cleanSuffix}"]`).forEach(btn => {
+                    if (btn.classList.contains('et-ticket-notes-toggle')) {
+                        const span = btn.querySelector('span');
+                        if (span) span.textContent = 'Personal notes ●';
+                    } else {
+                        btn.classList.add('has-note');
+                    }
+                });
+            }
+        });
+    },
+
     init() {
         if (this.el) return;
 

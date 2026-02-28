@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
   <script type="module" crossorigin src="/index.js"></script>
-  <link rel="modulepreload" crossorigin href="/assets/storage-BJx0TNhJ.js">
-  <link rel="stylesheet" crossorigin href="/assets/index-BQ1JZBw6.css">
+  <link rel="modulepreload" crossorigin href="/assets/storage.js">
+  <link rel="stylesheet" crossorigin href="/assets/index.css">
 </head>
 
 <body>
@@ -28,35 +28,59 @@
             <div class="settings-group">
                 <h3>Navigation & Info</h3>
                 <label class="setting-item">
-                    <span>Breadcrumb Copy Button</span>
+                    <div class="setting-info">
+                        <span>Breadcrumb Copy Button</span>
+                        <p>Adds a copy button to ticket breadcrumbs for easy link sharing.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_breadcrumb_copy">
                 </label>
                 <label class="setting-item">
-                    <span>Age Indicators</span>
+                    <div class="setting-info">
+                        <span>Age Indicators</span>
+                        <p>Shows how long a ticket has been in its current status in lists.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_age_indicators">
                 </label>
                 <label class="setting-item">
-                    <span>Board Card Age</span>
+                    <div class="setting-info">
+                        <span>Board Card Age</span>
+                        <p>Displays the age of tickets directly on Kanban board cards.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_board_age">
                 </label>
                 <label class="setting-item">
-                    <span>Quick Notes (Ticket View)</span>
+                    <div class="setting-info">
+                        <span>Quick Notes (Ticket View)</span>
+                        <p>Enable personal notes on Jira issue details page.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_quick_notes_ticket">
                 </label>
                 <label class="setting-item">
-                    <span>Quick Notes (List View)</span>
+                    <div class="setting-info">
+                        <span>Quick Notes (List View)</span>
+                        <p>Enable personal notes on Jira list and board views.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_quick_notes_list">
                 </label>
                 <label class="setting-item">
-                    <span>Manual Menu Manager</span>
+                    <div class="setting-info">
+                        <span>Manual Menu Manager</span>
+                        <p>Adds a customizable navigation menu to the Jira sidebar.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_manual_menu">
                 </label>
                 <label class="setting-item">
-                    <span>Hide Junk Elements</span>
+                    <div class="setting-info">
+                        <span>Hide Junk Elements</span>
+                        <p>Removes clutter and non-essential elements for a cleaner UI.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_hide_elements">
                 </label>
                 <label class="setting-item">
-                    <span>Auto-collapse Sidebar</span>
+                    <div class="setting-info">
+                        <span>Auto-collapse Sidebar</span>
+                        <p>Automatically collapses the sidebar to maximize workspace.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_collapse_sidebar">
                 </label>
             </div>
@@ -64,15 +88,24 @@
             <div class="settings-group">
                 <h3>Productivity</h3>
                 <label class="setting-item">
-                    <span>Copy for Slack Button</span>
+                    <div class="setting-info">
+                        <span>Copy for Slack Button</span>
+                        <p>Single-click button to copy ticket info formatted for Slack.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_copy_for_slack">
                 </label>
                 <label class="setting-item">
-                    <span>Velocity per Developer</span>
+                    <div class="setting-info">
+                        <span>Velocity per Developer</span>
+                        <p>Shows velocity metrics per developer in dashboads.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_velocity_per_dev">
                 </label>
                 <label class="setting-item">
-                    <span>Story Points Summary</span>
+                    <div class="setting-info">
+                        <span>Story Points Summary</span>
+                        <p>Calculates Story Points totals for columns and lists.</p>
+                    </div>
                     <input type="checkbox" data-setting="jira_sp_summary">
                 </label>
             </div>
