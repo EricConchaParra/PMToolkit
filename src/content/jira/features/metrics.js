@@ -351,39 +351,76 @@ export const MetricsFeature = {
                 });
 
                 // UI injection
-                table.querySelectorAll('[id$="-stats-count"], [headers$="-stats-count"]').forEach(c => c.style.display = 'none');
+                table.querySelectorAll('[id$="-stats-count"], [headers$="-stats-count"], [id$="-stats-percentage"], [headers$="-stats-percentage"], .stats-gadget-percent, .stats-gadget-progress-indicator, .final-table-cell.stats-gadget-final-row-cell').forEach(c => c.style.display = 'none');
 
                 const hr = table.querySelector('tr.stats-gadget-table-header');
-                const th = document.createElement('th');
-                th.className = 'stats-gadget-numeric et-velocity-header';
-                th.textContent = 'V-Avg';
+                if (!hr || hr.querySelector('.et-velocity-header')) return; // Avoid double injection
+                const thVel = document.createElement('th');
+                thVel.className = 'stats-gadget-numeric et-velocity-header';
+                thVel.textContent = 'V-Avg';
+
+                const thPct = document.createElement('th');
+                thPct.className = 'stats-gadget-numeric et-percentage-header';
+                thPct.textContent = 'Percentage';
 
                 const countHeader = hr?.querySelector('[id$="-stats-count"]');
-                if (countHeader) countHeader.insertAdjacentElement('afterend', th);
-                else hr?.appendChild(th);
+                const pctHeader = hr?.querySelector('[id$="-stats-percentage"]');
+
+                if (countHeader) countHeader.insertAdjacentElement('afterend', thVel);
+                else hr?.appendChild(thVel);
+
+                if (pctHeader) pctHeader.insertAdjacentElement('afterend', thPct);
+                else hr?.appendChild(thPct);
 
                 table.querySelectorAll('tbody tr:not(.stats-gadget-final-row)').forEach(row => {
                     const name = row.querySelector('[headers$="-stats-category"] a')?.textContent?.trim() || '';
                     const data = spByAssignee[name] || { total: 0, details: [] };
                     const avg = Math.round((data.total / sprints.length) * 10) / 10;
-                    const td = document.createElement('td');
-                    td.className = 'stats-gadget-numeric et-velocity-cell';
-                    td.innerHTML = `<span class="et-velocity-badge" data-tooltip="${data.details.join(' + ')}">${avg}</span>`;
+
+                    // Velocity Cell
+                    const tdVel = document.createElement('td');
+                    tdVel.className = 'stats-gadget-numeric et-velocity-cell';
+                    tdVel.innerHTML = `<span class="et-velocity-badge" data-tooltip="${data.details.join(' + ')}">${avg}</span>`;
 
                     const countCell = row.querySelector('[headers$="-stats-count"]');
-                    if (countCell) countCell.insertAdjacentElement('afterend', td);
-                    else row.appendChild(td);
+                    if (countCell) countCell.insertAdjacentElement('afterend', tdVel);
+                    else row.appendChild(tdVel);
+
+                    // Percentage Cell
+                    const pct = grandTotal > 0 ? Math.round((data.total / grandTotal) * 100) : 0;
+                    const tdPct = document.createElement('td');
+                    tdPct.className = 'stats-gadget-numeric et-percentage-cell';
+                    tdPct.innerHTML = `
+                        <div class="et-percentage-bar-container">
+                            <div class="et-percentage-bar" style="width: ${pct}%"></div>
+                        </div>
+                        <span class="et-percentage-value">${pct}%</span>
+                    `;
+
+                    const pctCell = row.querySelector('[headers$="-stats-percentage"]');
+                    if (pctCell) pctCell.insertAdjacentElement('afterend', tdPct);
+                    else row.appendChild(tdPct);
                 });
 
                 if (totalRow) {
                     const avg = Math.round((grandTotal / sprints.length) * 10) / 10;
-                    const td = document.createElement('td');
-                    td.className = 'stats-gadget-numeric et-velocity-cell';
-                    td.innerHTML = `<strong class="et-velocity-total">${avg}</strong>`;
+
+                    // Total Velocity Cell
+                    const tdVel = document.createElement('td');
+                    tdVel.className = 'stats-gadget-numeric et-velocity-cell';
+                    tdVel.innerHTML = `<strong class="et-velocity-total">${avg}</strong>`;
 
                     const totalCountCell = totalRow.querySelector('[headers$="-stats-count"]');
-                    if (totalCountCell) totalCountCell.insertAdjacentElement('afterend', td);
-                    else totalRow.appendChild(td);
+                    if (totalCountCell) totalCountCell.insertAdjacentElement('afterend', tdVel);
+                    else totalRow.appendChild(tdVel);
+
+                    // Total Percentage Cell (Empty or 100%)
+                    const tdPct = document.createElement('td');
+                    tdPct.className = 'stats-gadget-numeric et-percentage-cell';
+
+                    const totalPctCell = totalRow.querySelector('[headers$="-stats-percentage"]') || totalRow.querySelector('.final-table-cell.stats-gadget-final-row-cell');
+                    if (totalPctCell) totalPctCell.insertAdjacentElement('afterend', tdPct);
+                    else totalRow.appendChild(tdPct);
                 }
 
                 PROCESSED_GADGETS.add(`vel-${container.id}`);

@@ -66,7 +66,7 @@ async function runAll() {
         if (settings.jira_manual_menu) CustomizationFeature.injectManualMenu();
 
         if (settings.jira_copy_for_slack) InjectionFeature.injectCopyForSlack();
-        if (settings.jira_quick_notes_list || settings.jira_quick_notes_ticket) InjectionFeature.injectQuickNotes();
+        InjectionFeature.injectQuickNotes(settings.jira_quick_notes_list, settings.jira_quick_notes_ticket);
         if (settings.jira_breadcrumb_copy) InjectionFeature.injectBreadcrumbCopyButton();
         if (settings.jira_copy_for_slack || settings.jira_quick_notes_list) InjectionFeature.injectBoardCardIcons();
 

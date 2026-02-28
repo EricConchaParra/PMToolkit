@@ -86,6 +86,7 @@ export const NoteDrawer = {
             <div class="et-drawer-footer">
                 <button class="et-drawer-save">Save Note</button>
                 <span class="et-drawer-status">✓ Saved</span>
+                <button class="et-drawer-delete">Delete</button>
             </div>
         `;
 
@@ -93,7 +94,11 @@ export const NoteDrawer = {
         document.body.appendChild(this.el);
 
         this.el.querySelector('.et-drawer-close').onclick = () => this.close();
-        this.el.querySelector('.et-drawer-save').onclick = () => this.save();
+        this.el.querySelector('.et-drawer-save').onclick = () => {
+            this.save();
+            this.close(true); // Skip redundant save on close
+        };
+        this.el.querySelector('.et-drawer-delete').onclick = () => this.delete();
 
         const textarea = this.el.querySelector('.et-drawer-textarea');
         const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
@@ -172,12 +177,34 @@ export const NoteDrawer = {
         setTimeout(() => textarea.focus(), 350);
     },
 
-    close() {
+    close(skipSave = false) {
         if (!this.el) return;
         this.el.classList.remove('visible');
         this.backdrop.classList.remove('visible');
         clearTimeout(this.saveTimeout);
-        this.save();
+        if (!skipSave) this.save();
+    },
+
+    async delete() {
+        if (!this.currentKey) return;
+
+        if (!confirm('Are you sure you want to delete this note and reminder?')) {
+            return;
+        }
+
+        const prefixedKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
+        const storageKey = `notes_${prefixedKey}`;
+        const reminderKey = `reminder_${prefixedKey}`;
+        const ignoredKey = `ignored_${prefixedKey}`;
+
+        await storage.remove([storageKey, reminderKey, ignoredKey]);
+
+        // Reset fields
+        this.el.querySelector('.et-drawer-textarea').value = '';
+        this.el.querySelector('.et-drawer-reminder-input').value = '';
+
+        this.updateIndicators(false);
+        this.close(true); // Close without saving (it's already deleted)
     },
 
     async save() {

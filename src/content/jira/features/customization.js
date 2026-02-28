@@ -2,12 +2,35 @@ import { storage } from '../../../common/storage';
 
 export const CustomizationFeature = {
     hideHeaderElements() {
-        const selectors = [
-            '[data-testid="search-input-container"]',
+        // Target specific Rovo elements and their containers
+        const rovoSelectors = [
+            '[data-testid="atlassian-navigation.ui.conversation-assistant.app-navigation-ai-mate"]',
+            '[data-testid="platform-ai-button"]'
+        ];
+
+        rovoSelectors.forEach(s => {
+            const el = document.querySelector(s);
+            if (el) {
+                // Hide the element itself
+                el.style.display = 'none';
+
+                // Robustly hide parent containers that might still be visible
+                const listItem = el.closest('[role="listitem"]');
+                if (listItem) listItem.style.display = 'none';
+
+                const floatingWrapper = el.closest('div._1e0c1txw');
+                if (floatingWrapper && floatingWrapper.querySelector('[data-testid="platform-ai-button"]')) {
+                    floatingWrapper.style.display = 'none';
+                }
+            }
+        });
+
+        // Other elements to hide
+        const otherSelectors = [
             '[data-testid="atlassian-navigation--create-button"]',
             'button[aria-label*="Ask Rovo"]'
         ];
-        selectors.forEach(s => {
+        otherSelectors.forEach(s => {
             const el = document.querySelector(s);
             if (el) el.style.display = 'none';
         });

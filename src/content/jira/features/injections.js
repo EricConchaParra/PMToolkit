@@ -37,57 +37,61 @@ export const InjectionFeature = {
         });
     },
 
-    injectQuickNotes() {
+    injectQuickNotes(enableList, enableTicket) {
         // List View and Native Tables
-        const rows = document.querySelectorAll('tr[data-issuekey]:not(.et-notes-added), .issuerow:not(.et-notes-added), tr[data-testid="native-issue-table.ui.issue-row"]:not(.et-notes-added)');
-        rows.forEach(row => {
-            let issueKey = row.getAttribute('data-issuekey') || row.querySelector('.key')?.innerText.trim();
-            if (!issueKey) {
-                const link = row.querySelector('a[href*="/browse/"]');
-                if (link) {
-                    const match = link.href.match(/\/browse\/([A-Z][A-Z0-9]*-\d+)/i);
-                    if (match) issueKey = match[1];
+        if (enableList) {
+            const rows = document.querySelectorAll('tr[data-issuekey]:not(.et-notes-added), .issuerow:not(.et-notes-added), tr[data-testid="native-issue-table.ui.issue-row"]:not(.et-notes-added)');
+            rows.forEach(row => {
+                let issueKey = row.getAttribute('data-issuekey') || row.querySelector('.key')?.innerText.trim();
+                if (!issueKey) {
+                    const link = row.querySelector('a[href*="/browse/"]');
+                    if (link) {
+                        const match = link.href.match(/\/browse\/([A-Z][A-Z0-9]*-\d+)/i);
+                        if (match) issueKey = match[1];
+                    }
                 }
-            }
-            if (!issueKey) return;
-            row.classList.add('et-notes-added');
+                if (!issueKey) return;
+                row.classList.add('et-notes-added');
 
-            const btn = document.createElement('button');
-            btn.className = 'et-notes-btn';
-            btn.innerHTML = '📝';
-            btn.setAttribute('data-issue-key', issueKey);
+                const btn = document.createElement('button');
+                btn.className = 'et-notes-btn';
+                btn.innerHTML = '📝';
+                btn.setAttribute('data-issue-key', issueKey);
 
-            btn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const summaryEl = row.querySelector('.summary a, [data-field-id="summary"] a, .summary, [data-field-id="summary"]');
-                NoteDrawer.open(issueKey, summaryEl?.innerText?.trim() || '');
-            };
-
-            const container = etGetIconContainer(row);
-            btn.style.order = '1';
-            container.appendChild(btn);
-        });
-
-        // Ticket View
-        const match = window.location.pathname.match(/\/browse\/([A-Z][A-Z0-9]*-\d+)/i);
-        if (match) {
-            const issueKey = match[1];
-            const headerArea = document.querySelector('#jira-issue-header, [data-testid="issue.views.issue-details.issue-layout.container-left"]');
-            if (headerArea && !headerArea.querySelector('.et-ticket-notes-panel')) {
-                const panel = document.createElement('div');
-                panel.className = 'et-ticket-notes-panel';
-                const toggle = document.createElement('button');
-                toggle.className = 'et-ticket-notes-toggle';
-                toggle.setAttribute('data-issue-key', issueKey);
-                toggle.innerHTML = '📝 <span>Personal notes</span> <span class="et-notes-save-indicator" style="margin-left:auto">✓ Saved</span>';
-
-                toggle.onclick = () => {
-                    const summaryEl = document.querySelector('[data-testid="issue.views.issue-base.foundation.summary.heading"] h1, #summary-val');
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const summaryEl = row.querySelector('.summary a, [data-field-id="summary"] a, .summary, [data-field-id="summary"]');
                     NoteDrawer.open(issueKey, summaryEl?.innerText?.trim() || '');
                 };
-                panel.appendChild(toggle);
-                headerArea.appendChild(panel);
+
+                const container = etGetIconContainer(row);
+                btn.style.order = '1';
+                container.appendChild(btn);
+            });
+        }
+
+        // Ticket View
+        if (enableTicket) {
+            const match = window.location.pathname.match(/\/browse\/([A-Z][A-Z0-9]*-\d+)/i);
+            if (match) {
+                const issueKey = match[1];
+                const headerArea = document.querySelector('#jira-issue-header, [data-testid="issue.views.issue-details.issue-layout.container-left"]');
+                if (headerArea && !headerArea.querySelector('.et-ticket-notes-panel')) {
+                    const panel = document.createElement('div');
+                    panel.className = 'et-ticket-notes-panel';
+                    const toggle = document.createElement('button');
+                    toggle.className = 'et-ticket-notes-toggle';
+                    toggle.setAttribute('data-issue-key', issueKey);
+                    toggle.innerHTML = '📝 <span>Personal notes</span> <span class="et-notes-save-indicator" style="margin-left:auto">✓ Saved</span>';
+
+                    toggle.onclick = () => {
+                        const summaryEl = document.querySelector('[data-testid="issue.views.issue-base.foundation.summary.heading"] h1, #summary-val');
+                        NoteDrawer.open(issueKey, summaryEl?.innerText?.trim() || '');
+                    };
+                    panel.appendChild(toggle);
+                    headerArea.appendChild(panel);
+                }
             }
         }
     },

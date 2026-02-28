@@ -265,6 +265,24 @@ td.summary>.et-age-badge {
     opacity: 1;
 }
 
+.et-drawer-delete {
+    background: none;
+    border: none;
+    color: #6b778c;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-left: auto;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: all 0.2s;
+}
+
+.et-drawer-delete:hover {
+    color: #de350b;
+    background: #ffebe6;
+}
+
 .et-notes-save-btn {
     background: #0052cc;
     color: #fff;
@@ -860,4 +878,87 @@ td.summary>.et-age-badge {
 .et-alert-btn-tertiary:hover {
     background: #f4f5f7;
     color: #42526e;
+}
+
+/* ---- Rovo Removal & Search Bar Restoration ---- */
+/* Hide the Rovo button and ALL its parents that might be wrappers */
+[data-testid="platform-ai-button"],
+[data-testid="atlassian-navigation.ui.conversation-assistant.app-navigation-ai-mate"],
+[data-testid="rovo-floating-button"],
+[data-testid="rovo-floating-trigger"],
+.rovo-floating-icon,
+/* Target common Jira wrapper patterns for these buttons if they are still visible */
+div:has(> [data-testid="platform-ai-button"]),
+span:has(> [data-testid="atlassian-navigation.ui.conversation-assistant.app-navigation-ai-mate"]),
+div._1e0c1txw:has([data-testid="platform-ai-button"]) {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: absolute !important;
+    left: -9999px !important;
+}
+
+[data-testid="search-input-container"] {
+    max-width: 180px !important;
+    margin-left: 20px !important;
+    margin-right: 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    height: 32px !important;
+    align-self: center !important;
+}
+
+[data-testid="search-input-container"] [data-testid="search-input"] {
+    height: 32px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    font-size: 13px !important;
+    border-radius: 4px !important;
+}
+
+[data-testid="search-input-container"] input {
+    height: 32px !important;
+}
+
+/* ---- Percentage Column in Gadgets ---- */
+.et-percentage-header {
+    color: #42526e !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    text-align: right !important;
+}
+
+.et-percentage-cell {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    min-width: 120px !important;
+    justify-content: flex-end !important;
+}
+
+.et-percentage-bar-container {
+    flex-grow: 1 !important;
+    height: 4px !important;
+    background: #ebecf0 !important;
+    border-radius: 2px !important;
+    overflow: hidden !important;
+    max-width: 100px !important;
+}
+
+.et-percentage-bar {
+    height: 100% !important;
+    background: #0052cc !important;
+    border-radius: 2px !important;
+}
+
+.et-percentage-value {
+    font-size: 11px !important;
+    color: #42526e !important;
+    min-width: 30px !important;
+    text-align: right !important;
 }
