@@ -1,5 +1,5 @@
 import { jiraClient } from '../api-client';
-import { etEnsureCustomFields, formatAge, getColorClass, getGadgetTitle, getJiraHost, etGetRowIconTarget, etGetIconContainer } from '../utils';
+import { etEnsureCustomFields, formatAge, getColorClass, getGadgetTitle, getJiraHost, etGetRowIconTarget, etGetIconContainer, invokeBackgroundFetch } from '../utils';
 
 const PROCESSED_BADGES = new Set();
 const PROCESSED_GADGETS = new Set();
@@ -231,7 +231,7 @@ export const MetricsFeature = {
             table.classList.add('et-sp-processing');
 
             try {
-                const res = await fetch(`/rest/api/3/search/jql`, {
+                const res = await invokeBackgroundFetch(`/rest/api/3/search/jql`, {
                     method: 'POST',
                     headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
                     body: JSON.stringify({ jql: jqlClean, fields: [fieldId, 'assignee'], maxResults: 200 })
@@ -311,20 +311,20 @@ export const MetricsFeature = {
             try {
                 // Get board
                 if (BOARD_ID_CACHE[projectKey] === undefined) {
-                    const res = await fetch(`/rest/agile/1.0/board?projectKeyOrId=${projectKey}&type=scrum&maxResults=1`);
+                    const res = await invokeBackgroundFetch(`/rest/agile/1.0/board?projectKeyOrId=${projectKey}&type=scrum&maxResults=1`);
                     BOARD_ID_CACHE[projectKey] = (await res.json()).values?.[0]?.id || null;
                 }
                 const boardId = BOARD_ID_CACHE[projectKey];
                 if (!boardId) continue;
 
                 // Get last 3 closed sprints
-                const sprintRes = await fetch(`/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=50`);
+                const sprintRes = await invokeBackgroundFetch(`/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=50`);
                 const sprints = (await sprintRes.json()).values?.slice(-3) || [];
                 if (sprints.length === 0) continue;
 
                 // Fetch issues for each sprint
                 const sprintResults = await Promise.all(sprints.map(async s => {
-                    const res = await fetch(`/rest/api/3/search/jql`, {
+                    const res = await invokeBackgroundFetch(`/rest/api/3/search/jql`, {
                         method: 'POST',
                         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
                         body: JSON.stringify({ jql: `sprint = ${s.id} AND statusCategory = Done`, fields: [fieldId, 'assignee'], maxResults: 200 })

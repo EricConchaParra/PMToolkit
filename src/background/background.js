@@ -118,7 +118,7 @@ function initialize() {
     });
 }
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'TEST_NOTIFICATION') {
         chrome.notifications.create('test_notif', {
             type: 'basic',
@@ -127,6 +127,23 @@ chrome.runtime.onMessage.addListener((message) => {
             message: 'Notifications are working correctly!',
             priority: 2
         });
+    } else if (message.type === 'JIRA_API_FETCH') {
+        fetch(message.url, message.options)
+            .then(async (response) => {
+                const isJson = (response.headers.get('content-type') || '').includes('application/json');
+                let data = null;
+                try {
+                    data = isJson ? await response.json() : await response.text();
+                } catch (e) {
+                    console.error('PMsToolKit: Failed to parse fetch response', e);
+                }
+                sendResponse({ ok: response.ok, status: response.status, data });
+            })
+            .catch(error => {
+                console.error(`PMsToolKit: Background fetch error for ${message.url}`, error);
+                sendResponse({ ok: false, status: 500, error: error.message });
+            });
+        return true; // Required for async sendResponse
     }
 });
 

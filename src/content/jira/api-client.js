@@ -1,4 +1,4 @@
-import { etEnqueue, etEnsureCustomFields, etParseSprintData, getJiraHost } from './utils';
+import { etEnqueue, etEnsureCustomFields, etParseSprintData, invokeBackgroundFetch } from './utils';
 
 const STATUS_CACHE = {};
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -16,7 +16,7 @@ export const jiraClient = {
                 const fields = ['status', 'created'];
                 if (sprintFieldId) fields.push(sprintFieldId);
 
-                const basicRes = await fetch(`/rest/api/3/issue/${issueKey}?fields=${fields.join(',')}`, {
+                const basicRes = await invokeBackgroundFetch(`/rest/api/3/issue/${issueKey}?fields=${fields.join(',')}`, {
                     headers: { 'Accept': 'application/json' }
                 });
                 if (!basicRes.ok) return null;
@@ -33,7 +33,7 @@ export const jiraClient = {
                 }
 
                 // 2. Get changelog for status transitions
-                const changelogRes = await fetch(`/rest/api/3/issue/${issueKey}/changelog`, {
+                const changelogRes = await invokeBackgroundFetch(`/rest/api/3/issue/${issueKey}/changelog`, {
                     headers: { 'Accept': 'application/json' }
                 });
 

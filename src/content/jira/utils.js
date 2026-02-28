@@ -25,12 +25,39 @@ export async function getJiraHost() {
     return 'jira.atlassian.net';
 }
 
+export async function invokeBackgroundFetch(urlOrPath, options = {}) {
+    let url = urlOrPath;
+    if (!url.startsWith('http')) {
+        const host = await getJiraHost();
+        url = `https://${host}${urlOrPath}`;
+    }
+
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+            { type: 'JIRA_API_FETCH', url, options },
+            (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('PMsToolKit: Background fetch error', chrome.runtime.lastError);
+                    resolve({ ok: false, status: 500, error: chrome.runtime.lastError.message });
+                } else if (!response) {
+                    resolve({ ok: false, status: 500, error: 'No response from background script' });
+                } else {
+                    // Mimic the fetch response
+                    response.json = async () => response.data;
+                    response.text = async () => response.data;
+                    resolve(response);
+                }
+            }
+        );
+    });
+}
+
 export async function etEnsureCustomFields() {
     if (_etFieldIdFetched) return { sp: _etStoryPointsFieldId, sprint: _etSprintFieldId };
 
     const host = await getJiraHost();
     try {
-        const res = await fetch(`https://${host}/rest/api/3/field`, {
+        const res = await invokeBackgroundFetch(`/rest/api/3/field`, {
             headers: { 'Accept': 'application/json' }
         });
         if (!res.ok) return { sp: null, sprint: null };
