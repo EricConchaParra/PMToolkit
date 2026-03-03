@@ -1,10 +1,10 @@
-import { syncStorage } from './storage';
+import { storage, syncStorage } from './storage';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 export const jiraApi = {
     async getHost() {
-        const settings = await syncStorage.get(['et_jira_host']);
+        const settings = await storage.get(['et_jira_host']);
         if (settings.et_jira_host) return settings.et_jira_host;
         if (window.location.hostname && window.location.hostname.endsWith('.atlassian.net')) {
             return window.location.hostname;

@@ -1,7 +1,7 @@
 /**
  * Concurrency queue and formatting utilities for Jira features.
  */
-import { syncStorage } from '../../common/storage';
+import { storage, syncStorage } from '../../common/storage';
 
 let _etQueue = [];
 let _etRunningCount = 0;
@@ -13,7 +13,7 @@ let _etFieldIdFetched = false;
 
 export async function getJiraHost() {
     // 1. Try to get from storage (set by top frame)
-    const settings = await syncStorage.get(['et_jira_host']);
+    const settings = await storage.get(['et_jira_host']);
     if (settings.et_jira_host) return settings.et_jira_host;
 
     // 2. Fallback to current hostname if it looks like Jira

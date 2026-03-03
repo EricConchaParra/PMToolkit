@@ -26,6 +26,9 @@
             "matches": [
                 "https://*.atlassian.net/*"
             ],
+            "exclude_matches": [
+                "https://*.atlassian.net/wiki/*"
+            ],
             "js": [
                 "content-loader.js"
             ],

@@ -212,15 +212,24 @@ export const MetricsFeature = {
             if (table.querySelector('.et-sp-header')) continue;
 
             const totalRow = table.querySelector('tr.stats-gadget-final-row');
-            const totalLink = totalRow?.querySelector('a[href*="jql="]');
+            const totalLink = totalRow?.querySelector('a[href*="jql="], a[href*="filter="]');
             if (!totalLink) continue;
 
             let jql;
             try {
-                jql = new URL(totalLink.href).searchParams.get('jql');
+                const url = new URL(totalLink.href);
+                jql = url.searchParams.get('jql');
+                if (!jql) {
+                    const filterId = url.searchParams.get('filter');
+                    if (filterId) jql = `filter=${filterId}`;
+                }
             } catch (e) {
-                jql = totalLink.href.match(/jql=([^&]+)/)?.[1];
+                jql = totalLink.href.match(/[?&]jql=([^&]+)/)?.[1];
                 if (jql) jql = decodeURIComponent(jql);
+                else {
+                    const filterMatch = totalLink.href.match(/[?&]filter=([^&]+)/)?.[1];
+                    if (filterMatch) jql = `filter=${filterMatch}`;
+                }
             }
             if (!jql) continue;
 
@@ -231,42 +240,56 @@ export const MetricsFeature = {
             table.classList.add('et-sp-processing');
 
             try {
+                // Detect grouping field
+                const groupHeader = table.querySelector('th[id$="-stats-category"], th[headers$="-stats-category"]');
+                const groupName = groupHeader?.textContent?.trim() || 'Assignee';
+                const isStatusGroup = groupName.toLowerCase() === 'status';
+
                 const res = await invokeBackgroundFetch(`/rest/api/3/search/jql`, {
                     method: 'POST',
                     headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
-                    body: JSON.stringify({ jql: jqlClean, fields: [fieldId, 'assignee'], maxResults: 200 })
+                    body: JSON.stringify({ jql: jqlClean, fields: [fieldId, 'assignee', 'status'], maxResults: 200 })
                 });
                 if (!res.ok) continue;
                 const data = await res.json();
 
-                const spByAssignee = {};
+                const spByGroup = {};
                 let grandTotal = 0;
 
                 (data.issues || []).forEach(issue => {
                     const sp = Number(issue.fields?.[fieldId] || 0);
-                    const name = issue.fields?.assignee?.displayName || 'Unassigned';
-                    spByAssignee[name] = (spByAssignee[name] || 0) + sp;
+                    let groupValue;
+
+                    if (isStatusGroup) {
+                        groupValue = issue.fields?.status?.name || 'Unknown';
+                    } else {
+                        // Default to assignee for other groupings (or add more logic here)
+                        groupValue = issue.fields?.assignee?.displayName || 'Unassigned';
+                    }
+
+                    spByGroup[groupValue] = (spByGroup[groupValue] || 0) + sp;
                     grandTotal += sp;
                 });
 
                 // Modify UI
-                // Kept percentage bars as requested by user
-
                 const headerRow = table.querySelector('tr.stats-gadget-table-header');
-                const th = document.createElement('th');
-                th.className = 'stats-gadget-numeric et-sp-header';
-                th.textContent = 'SP';
-                headerRow?.querySelector('[id$="-stats-count"]')?.insertAdjacentElement('afterend', th);
+                if (headerRow && !headerRow.querySelector('.et-sp-header')) {
+                    const th = document.createElement('th');
+                    th.className = 'stats-gadget-numeric et-sp-header';
+                    th.textContent = 'SP';
+                    headerRow.querySelector('[id$="-stats-count"]')?.insertAdjacentElement('afterend', th);
+                }
 
                 table.querySelectorAll('tbody tr:not(.stats-gadget-final-row)').forEach(row => {
-                    const name = row.querySelector('[headers$="-stats-category"] a')?.textContent?.trim() || '';
+                    if (row.querySelector('.et-sp-cell')) return;
+                    const groupValue = row.querySelector('[headers$="-stats-category"]')?.textContent?.trim() || '';
                     const td = document.createElement('td');
                     td.className = 'stats-gadget-numeric et-sp-cell';
-                    td.innerHTML = `<strong class="et-sp-value">${spByAssignee[name] || 0}</strong>`;
+                    td.innerHTML = `<strong class="et-sp-value">${spByGroup[groupValue] || 0}</strong>`;
                     row.querySelector('[headers$="-stats-count"]')?.insertAdjacentElement('afterend', td);
                 });
 
-                if (totalRow) {
+                if (totalRow && !totalRow.querySelector('.et-sp-cell')) {
                     const td = document.createElement('td');
                     td.className = 'stats-gadget-numeric stats-gadget-final-row-cell et-sp-cell';
                     td.innerHTML = `<strong class="et-sp-total">${grandTotal}</strong>`;

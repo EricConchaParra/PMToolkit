@@ -61,6 +61,9 @@ async function handleReminder(issueKey) {
 
         chrome.tabs.query({ url: 'https://*.atlassian.net/*' }, (tabs) => {
             tabs.forEach(tab => {
+                // Manually exclude Confluence (Wiki) tabs since excludeMatches is not supported in tabs.query
+                if (tab.url && tab.url.includes('.atlassian.net/wiki/')) return;
+
                 chrome.tabs.sendMessage(tab.id, {
                     type: 'REMINDER_FIRED',
                     issueKey: issueKey,

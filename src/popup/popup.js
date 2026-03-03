@@ -70,10 +70,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const allKeys = new Set([...Object.keys(notesMap), ...Object.keys(remindersMap)]);
 
-        // Fetch missing meta
+        // Fetch missing meta or missing status in meta
         const missingMetaKeys = [];
         for (const key of allKeys) {
-            if (!metaMap[key]) {
+            if (!metaMap[key] || !metaMap[key].status) {
                 missingMetaKeys.push(key);
             }
         }
@@ -86,7 +86,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (details) {
                     metaMap[key] = {
                         summary: details.summary,
-                        assignee: details.assignee
+                        assignee: details.assignee,
+                        status: details.status
                     };
                     await storage.set({ [`meta_jira:${key}`]: metaMap[key] });
                 }
@@ -132,10 +133,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Note: item.text might be the note itself
             const summaryText = item.meta ? item.meta.summary : 'No summary loaded';
             const assigneeText = item.meta ? item.meta.assignee : 'Unknown assignee';
+            const status = item.meta ? item.meta.status : null;
+
+            const statusHtml = status ? `
+                <div class="note-status-badge status-${status.category}">${status.name}</div>
+            ` : '';
 
             const summaryHtml = `
                 <div class="note-meta">
                     <div class="note-meta-top">
+                        ${statusHtml}
                         <div class="note-summary" title="${summaryText}">${summaryText}</div>
                     </div>
                     <div class="note-meta-bottom">

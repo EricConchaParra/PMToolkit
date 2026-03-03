@@ -1,4 +1,4 @@
-import { syncStorage, isContextValid } from '../../common/storage';
+import { storage, syncStorage, isContextValid } from '../../common/storage';
 import { MetricsFeature } from './features/metrics';
 import { InjectionFeature } from './features/injections';
 import { CustomizationFeature } from './features/customization';
@@ -6,6 +6,11 @@ import { ReminderModal } from './ui/ReminderModal';
 import { NoteDrawer } from './ui/NoteDrawer';
 import { initTooltips } from './ui/tooltips';
 import '../../assets/jira-styles.css';
+
+// Early exit if not on a Jira page (secondary safeguard for Confluence)
+if (window.location.pathname.startsWith('/wiki')) {
+    throw new Error('PMsToolKit: Extension disabled on Confluence pages.');
+}
 
 const DEFAULT_SETTINGS = {
     jira_hide_elements: true,
@@ -102,7 +107,7 @@ function stopAll() {
 
 // Initial Run
 if (window.top === window.self) {
-    syncStorage.set({ et_jira_host: window.location.hostname });
+    storage.set({ et_jira_host: window.location.hostname });
 }
 initTooltips();
 initSettings().then(() => {

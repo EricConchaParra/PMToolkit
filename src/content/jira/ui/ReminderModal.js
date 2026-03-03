@@ -1,4 +1,5 @@
 import { storage } from '../../../common/storage';
+import { NoteDrawer } from './NoteDrawer';
 
 export const ReminderModal = {
     backdrop: null,
@@ -19,8 +20,8 @@ export const ReminderModal = {
             <div class="et-alert-modal-header">
                 <span style="font-size: 24px">🔔</span>
                 <div style="display:flex; flex-direction:column">
-                    <h3 class="et-alert-modal-title">Reminder: <span id="et-alert-key">---</span></h3>
-                    <div id="et-alert-summary" style="font-size: 13px; color: #6b778c; margin-top: 2px; font-weight: 500;"></div>
+                    <h3 class="et-alert-modal-title">Reminder: <span id="et-alert-key" class="et-alert-clickable-key">---</span></h3>
+                    <div id="et-alert-summary" class="et-alert-modal-summary"></div>
                 </div>
             </div>
             <div class="et-alert-modal-body" id="et-alert-text">
@@ -42,6 +43,14 @@ export const ReminderModal = {
 
         document.body.appendChild(this.backdrop);
         this.backdrop.appendChild(this.el);
+
+        const keyBtn = this.el.querySelector('#et-alert-key');
+        keyBtn.onclick = () => {
+            const issueKey = this.currentKey;
+            const summary = this.el.querySelector('#et-alert-summary').textContent;
+            this.hide();
+            NoteDrawer.open(issueKey, summary);
+        };
 
         this.el.querySelector('#et-alert-done').onclick = () => this.markAsDone();
         this.el.querySelector('#et-alert-snooze').onclick = () => this.snooze();
