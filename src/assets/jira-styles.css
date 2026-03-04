@@ -900,16 +900,12 @@ td.summary>.et-age-badge {
 }
 
 /* ---- Rovo Removal & Search Bar Restoration ---- */
-/* Hide the Rovo button and ALL its parents that might be wrappers */
+/* Hide the Rovo button directly without risky :has parent selectors */
 [data-testid="platform-ai-button"],
 [data-testid="atlassian-navigation.ui.conversation-assistant.app-navigation-ai-mate"],
 [data-testid="rovo-floating-button"],
 [data-testid="rovo-floating-trigger"],
-.rovo-floating-icon,
-/* Target common Jira wrapper patterns for these buttons if they are still visible */
-div:has(> [data-testid="platform-ai-button"]),
-span:has(> [data-testid="atlassian-navigation.ui.conversation-assistant.app-navigation-ai-mate"]),
-div._1e0c1txw:has([data-testid="platform-ai-button"]) {
+.rovo-floating-icon {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
