@@ -1,4 +1,4 @@
-import { etCopyTicketLink, etGetRowIconTarget, etGetIconContainer, formatAge, getColorClass } from '../utils';
+import { etCopyTicketLink, etGetRowIconTarget, etGetIconContainer, formatAge, getColorClass, invokeBackgroundFetch } from '../utils';
 import { NoteDrawer } from '../ui/NoteDrawer';
 import { jiraClient } from '../api-client';
 
@@ -98,35 +98,105 @@ export const InjectionFeature = {
 
     injectBreadcrumbCopyButton() {
         const match = window.location.pathname.match(/\/browse\/([A-Z][A-Z0-9]*-\d+)/i);
-        if (!match || document.querySelector('.et-breadcrumb-copy')) return;
+        if (!match) return;
 
         const issueKey = match[1];
+        const existingActions = document.querySelector('.et-breadcrumb-actions');
+        if (existingActions) {
+            if (existingActions.getAttribute('data-issue-key') === issueKey) return;
+            existingActions.remove();
+        }
+
         const breadcrumbItem = document.querySelector('[data-testid="issue.views.issue-base.foundation.breadcrumbs.item"]');
         const breadcrumbNav = breadcrumbItem?.closest('ol');
         if (!breadcrumbNav) return;
 
-        const summaryEl = document.querySelector('[data-testid="issue.views.issue-base.foundation.summary.heading"] h1, #summary-val');
         const url = `https://${window.location.hostname}/browse/${issueKey}`;
 
         const wrapper = document.createElement('div');
         wrapper.className = 'et-breadcrumb-actions';
         wrapper.setAttribute('role', 'listitem');
+        wrapper.setAttribute('data-issue-key', issueKey);
+
+        const getReliableSummary = async () => {
+            console.log(`PMsToolKit: Breadcrumb clicked. document.title: "${document.title}"`);
+
+            // 1. Try high-confidence DOM selectors
+            const selectors = [
+                '[data-testid="issue.views.issue-base.foundation.summary.heading"] h1',
+                '#summary-val',
+                '[data-testid="issue.views.issue.summary.summary-content"]',
+                'h1[data-test-id="issue.views.issue-base.foundation.summary.heading"]'
+            ];
+            for (const selector of selectors) {
+                const el = document.querySelector(selector);
+                const text = el?.innerText?.trim();
+                if (text) {
+                    console.log(`PMsToolKit: Summary found via DOM selector: ${selector}`);
+                    return text;
+                }
+            }
+
+            // 2. Primary Fallback: document title (User suggested)
+            const title = document.title;
+            // Strategy: Strip Issue Key from start, then strip common Jira suffixes from end
+            let titleSummary = title.replace(new RegExp(`^\\[?${issueKey}\\]?\\s*[:\\-\\s]*`, 'i'), '');
+            titleSummary = titleSummary.replace(/\s*-\s*[^-|]*JIRA$/i, '') // Strips " - Jira" or " - Project Name - Jira"
+                .replace(/\s*[\-\|]\s*JIRA$/i, '') // Strips " | Jira" or " - Jira"
+                .trim();
+
+            if (titleSummary && titleSummary !== title) {
+                console.log(`PMsToolKit: Summary extracted from title: "${titleSummary}"`);
+                return titleSummary;
+            }
+
+            // Super Fallback: If title manipulation didn't work but we have a title, 
+            // just return the part after the first space/hyphen if it contains the key
+            if (title.toLowerCase().includes(issueKey.toLowerCase())) {
+                const parts = title.split(new RegExp(`\\]?\\s*[:\\-]\\s*`, 'i'));
+                if (parts.length > 1) {
+                    const fallback = parts[1].replace(/\s*-\s*JIRA$/i, '').trim();
+                    if (fallback) return fallback;
+                }
+            }
+
+            // 3. Final API Fallback
+            try {
+                const res = await invokeBackgroundFetch(`/rest/api/2/issue/${issueKey}?fields=summary`, {
+                    headers: { 'Accept': 'application/json', 'X-Atlassian-Token': 'no-check' }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.fields?.summary) {
+                        console.log(`PMsToolKit: Summary for ${issueKey} retrieved via API v2.`);
+                        return data.fields.summary.trim();
+                    }
+                }
+            } catch (e) {
+                console.warn(`PMsToolKit: API fallback failed for ${issueKey}`, e);
+            }
+
+            console.error(`PMsToolKit: Could not find summary for ${issueKey} (DOM, Title, and API failed)`);
+            return '';
+        };
 
         const copyBtn = document.createElement('button');
         copyBtn.className = 'et-breadcrumb-copy';
         copyBtn.innerHTML = '🔗';
-        copyBtn.onclick = (e) => {
+        copyBtn.onclick = async (e) => {
             e.preventDefault();
-            etCopyTicketLink(issueKey, summaryEl?.innerText?.trim() || '', url, copyBtn);
+            const summary = await getReliableSummary();
+            etCopyTicketLink(issueKey, summary, url, copyBtn);
         };
 
         const notesBtn = document.createElement('button');
         notesBtn.className = 'et-breadcrumb-copy et-notes-btn';
         notesBtn.innerHTML = '📝';
         notesBtn.setAttribute('data-issue-key', issueKey);
-        notesBtn.onclick = (e) => {
+        notesBtn.onclick = async (e) => {
             e.preventDefault();
-            NoteDrawer.open(issueKey, summaryEl?.innerText?.trim() || '');
+            const summary = await getReliableSummary();
+            NoteDrawer.open(issueKey, summary);
         };
 
         wrapper.appendChild(copyBtn);

@@ -13,7 +13,8 @@ const DEFAULT_SETTINGS = {
     jira_board_age: true,
     jira_sp_summary: true,
     jira_velocity_per_dev: true,
-    jira_native_table_icons: true
+    jira_native_table_icons: true,
+    zoom_copy_transcript: true
 };
 
 document.addEventListener('DOMContentLoaded', async () => {

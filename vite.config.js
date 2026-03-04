@@ -8,6 +8,7 @@ export default defineConfig({
                 index: resolve(__dirname, 'index.html'),
                 background: resolve(__dirname, 'src/background/background.js'),
                 content: resolve(__dirname, 'src/content/jira/main.js'),
+                'zoom-content': resolve(__dirname, 'src/content/zoom/main.js'),
             },
             output: {
                 entryFileNames: '[name].js',

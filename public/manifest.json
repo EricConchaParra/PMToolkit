@@ -11,7 +11,8 @@
         "notifications"
     ],
     "host_permissions": [
-        "https://*.atlassian.net/*"
+        "https://*.atlassian.net/*",
+        "https://*.zoom.us/*"
     ],
     "background": {
         "service_worker": "background.js",
@@ -38,6 +39,19 @@
             "run_at": "document_idle",
             "all_frames": true,
             "match_about_blank": true
+        },
+        {
+            "matches": [
+                "https://*.zoom.us/rec/play/*",
+                "https://*.zoom.us/rec/share/*"
+            ],
+            "js": [
+                "zoom-loader.js"
+            ],
+            "css": [
+                "assets/zoom-content.css"
+            ],
+            "run_at": "document_idle"
         }
     ],
     "web_accessible_resources": [
@@ -45,10 +59,12 @@
             "resources": [
                 "assets/*",
                 "content.js",
+                "zoom-content.js",
                 "background.js"
             ],
             "matches": [
-                "https://*.atlassian.net/*"
+                "https://*.atlassian.net/*",
+                "https://*.zoom.us/*"
             ]
         }
     ]
