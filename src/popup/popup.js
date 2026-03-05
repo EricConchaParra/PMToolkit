@@ -170,84 +170,144 @@ document.addEventListener('DOMContentLoaded', async () => {
             const el = document.createElement('div');
             el.className = 'note-item';
 
-            const isOverdue = item.reminder && item.reminder < Date.now();
-            const reminderHtml = item.reminder ? `
-                <div class="note-reminder-badge ${isOverdue ? 'overdue' : 'future'}">
-                    <span>🔔</span> ${new Date(item.reminder).toLocaleString()}
-                </div>
-            ` : '';
-
-            // Note: item.text might be the note itself
-            const summaryText = item.meta ? item.meta.summary : 'No summary loaded';
-            const assigneeText = item.meta ? item.meta.assignee : 'Unknown assignee';
-            const status = item.meta ? item.meta.status : null;
-
-            const statusHtml = status ? `
-                <div class="note-status-badge status-${status.category}">${status.name}</div>
-            ` : '';
-
-            const summaryHtml = `
-                <div class="note-meta">
-                    <div class="note-meta-top">
-                        ${statusHtml}
-                        <div class="note-summary" title="${summaryText}">${summaryText}</div>
+            function renderStandardView() {
+                const isOverdue = item.reminder && item.reminder < Date.now();
+                const reminderHtml = item.reminder ? `
+                    <div class="note-reminder-badge ${isOverdue ? 'overdue' : 'future'}">
+                        <span>🔔</span> ${new Date(item.reminder).toLocaleString()}
                     </div>
-                    <div class="note-meta-bottom">
-                        👤 ${assigneeText}
+                ` : '';
+
+                const summaryText = item.meta ? item.meta.summary : 'No summary loaded';
+                const assigneeText = item.meta ? item.meta.assignee : 'Unknown assignee';
+                const status = item.meta ? item.meta.status : null;
+
+                const statusHtml = status ? `
+                    <div class="note-status-badge status-${status.category}">${status.name}</div>
+                ` : '';
+
+                const summaryHtml = `
+                    <div class="note-meta">
+                        <div class="note-meta-top">
+                            ${statusHtml}
+                            <div class="note-summary" title="${summaryText}">${summaryText}</div>
+                        </div>
+                        <div class="note-meta-bottom">
+                            👤 ${assigneeText}
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
 
-            const host = currentJiraHost;
+                const host = currentJiraHost;
 
-            el.innerHTML = `
-                <div class="note-header">
-                    <a href="https://${host}/browse/${item.key}" target="_blank" class="note-key">${item.key}</a>
-                    <div class="note-actions">
-                        <button class="icon-only copy-btn" title="Copy Link for Slack">🔗</button>
-                        <button class="icon-only delete-btn" title="Delete note">🗑️</button>
+                el.innerHTML = `
+                    <div class="note-header">
+                        <a href="https://${host}/browse/${item.key}" target="_blank" class="note-key">${item.key}</a>
+                        <div class="note-actions">
+                            <button class="icon-only edit-btn" title="Edit note">✏️</button>
+                            <button class="icon-only copy-btn" title="Copy Link for Slack">🔗</button>
+                            <button class="icon-only delete-btn" title="Delete note">🗑️</button>
+                        </div>
                     </div>
-                </div>
-                ${summaryHtml}
-                ${item.text ? `<div class="note-text">${item.text}</div>` : ''}
-                ${reminderHtml}
-            `;
+                    ${summaryHtml}
+                    ${item.text ? `<div class="note-text">${item.text}</div>` : ''}
+                    ${reminderHtml}
+                `;
 
-            el.querySelector('.copy-btn').onclick = () => {
-                const url = `https://${host}/browse/${item.key}`;
-                const plainTextCopy = `${item.key} - ${summaryText}`;
-                const htmlLink = `<a href="${url}">${plainTextCopy}</a>`;
-                const markdownLink = `[${plainTextCopy}](${url})`;
+                el.querySelector('.edit-btn').onclick = renderEditView;
 
-                const data = [new ClipboardItem({
-                    'text/plain': new Blob([markdownLink], { type: 'text/plain' }),
-                    'text/html': new Blob([htmlLink], { type: 'text/html' })
-                })];
+                el.querySelector('.copy-btn').onclick = () => {
+                    const url = `https://${host}/browse/${item.key}`;
+                    const plainTextCopy = `${item.key} - ${summaryText}`;
+                    const htmlLink = `<a href="${url}">${plainTextCopy}</a>`;
+                    const markdownLink = `[${plainTextCopy}](${url})`;
 
-                navigator.clipboard.write(data).then(() => {
-                    const btn = el.querySelector('.copy-btn');
-                    const original = btn.textContent;
-                    btn.textContent = '✅';
-                    setTimeout(() => btn.textContent = original, 1500);
-                }).catch(err => {
-                    // Fallback
-                    navigator.clipboard.writeText(markdownLink).then(() => {
+                    const data = [new ClipboardItem({
+                        'text/plain': new Blob([markdownLink], { type: 'text/plain' }),
+                        'text/html': new Blob([htmlLink], { type: 'text/html' })
+                    })];
+
+                    navigator.clipboard.write(data).then(() => {
                         const btn = el.querySelector('.copy-btn');
                         const original = btn.textContent;
                         btn.textContent = '✅';
                         setTimeout(() => btn.textContent = original, 1500);
+                    }).catch(err => {
+                        // Fallback
+                        navigator.clipboard.writeText(markdownLink).then(() => {
+                            const btn = el.querySelector('.copy-btn');
+                            const original = btn.textContent;
+                            btn.textContent = '✅';
+                            setTimeout(() => btn.textContent = original, 1500);
+                        });
                     });
-                });
-            };
+                };
 
-            el.querySelector('.delete-btn').onclick = async () => {
-                if (confirm(`Delete note for ${item.key}?`)) {
-                    await storage.remove(`notes_jira:${item.key}`);
-                    await storage.remove(`reminder_jira:${item.key}`);
+                el.querySelector('.delete-btn').onclick = async () => {
+                    if (confirm(`Delete note for ${item.key}?`)) {
+                        await storage.remove(`notes_jira:${item.key}`);
+                        await storage.remove(`reminder_jira:${item.key}`);
+                        loadNotes();
+                    }
+                };
+            }
+
+            function renderEditView() {
+                const formatDateTimeLocal = (timestamp) => {
+                    if (!timestamp) return '';
+                    const d = new Date(timestamp);
+                    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                    return d.toISOString().slice(0, 16);
+                };
+
+                el.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <div class="note-header" style="margin-bottom: 0;">
+                            <span class="note-key">${item.key}</span>
+                        </div>
+                        <textarea class="edit-note-text" style="width:100%; min-height:80px; padding: 10px; border-radius: 6px; border: 1.5px solid var(--border-light); font-family: inherit; font-size: 13px; resize: vertical;">${item.text || ''}</textarea>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 11px; font-weight: 700; color: var(--text-subtle);">Reminder:</label>
+                            <input type="datetime-local" class="edit-reminder-input" style="padding: 8px; border-radius: 6px; border: 1.5px solid var(--border-light); font-family: inherit; font-size: 13px;" value="${formatDateTimeLocal(item.reminder)}">
+                        </div>
+                        
+                        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
+                            <button class="cancel-edit-btn" style="padding: 6px 12px; background: var(--bg-alt); color: var(--text-main); font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: background 0.2s;">Cancel</button>
+                            <button class="save-edit-btn" style="padding: 6px 12px; background: var(--primary-blue); color: white; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: background 0.2s;">Save</button>
+                        </div>
+                    </div>
+                `;
+
+                el.querySelector('.cancel-edit-btn').onclick = renderStandardView;
+
+                el.querySelector('.save-edit-btn').onclick = async () => {
+                    const newText = el.querySelector('.edit-note-text').value.trim();
+                    const newReminder = el.querySelector('.edit-reminder-input').value;
+
+                    if (newText) {
+                        await storage.set({ [`notes_jira:${item.key}`]: newText });
+                        item.text = newText;
+                    } else {
+                        await storage.remove(`notes_jira:${item.key}`);
+                        item.text = '';
+                    }
+
+                    if (newReminder) {
+                        const reminderTimestamp = new Date(newReminder).getTime();
+                        await storage.set({ [`reminder_jira:${item.key}`]: reminderTimestamp });
+                        item.reminder = reminderTimestamp;
+                    } else {
+                        await storage.remove(`reminder_jira:${item.key}`);
+                        item.reminder = null;
+                    }
+
+                    renderStandardView();
                     loadNotes();
-                }
-            };
+                };
+            }
 
+            renderStandardView();
             notesList.appendChild(el);
         });
     }
