@@ -30,13 +30,14 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
   - [📝 Note Drawer & Reminders (Global)](#-note-drawer--reminders-global)
   - [🔔 Persistent & Missed Alerts](#-persistent--missed-alerts)
   - [🌐 Multi-Source Logic (Prefixing)](#-multi-source-logic-prefixing)
-  - [📋 View All Notes — Extension Popup](#-view-all-notes--extension-popup)
+  - [📋 View, Edit & Sync Notes — Extension Popup](#-view-edit--sync-notes--extension-popup)
   - [⏱️ Time in State — List View](#%EF%B8%8F-time-in-state--list-view)
   - [⏱️ Time in State — Native Issue Table](#%EF%B8%8F-time-in-state--native-issue-table)
   - [⏱️ Time in State — Board Cards](#%EF%B8%8F-time-in-state--board-cards)
   - [⏱️ Time in State — Breadcrumb Navigation](#%EF%B8%8F-time-in-state--breadcrumb-navigation)
   - [📊 Story Points in Dashboard Gadgets](#-story-points-in-dashboard-gadgets)
   - [🚀 Velocity per Developer in Dashboard Gadgets](#-velocity-per-developer-in-dashboard-gadgets)
+  - [📹 Zoom Copy Transcript](#-zoom-copy-transcript)
 - [Architecture & Technical Details](#architecture--technical-details)
   - [Build System (Vite)](#build-system-vite)
   - [Modular File Structure](#modular-file-structure)
@@ -62,13 +63,14 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 | 5 | Missed Alerts Queue | Global (on Jira Load) | Automatically shows missed reminders |
 | 6 | Multi-Source Prefixes | Storage/Logic | Auto-migrates `notes_` keys to `notes_jira:` |
 | 7 | Notification Diagnostics | Extension Popup | "Test System Notification" button in settings |
-| 8 | View All Notes | Extension Popup | Click extension icon |
+| 8 | View, Edit & Sync Notes | Extension Popup | Click extension icon |
 | 9 | Time in State | Legacy list views | Auto-injected badge per row |
 | 10 | Time in State | Native issue table | Auto-injected badge per row |
 | 11 | Time in State | Board cards (Kanban/Scrum) | Auto-injected badge per card |
 | 12 | Time in State | Breadcrumb navigation | Auto-injected badge |
-| 13 | Story Points Summary | Dashboard gadgets | Auto-injected SP column |
+| 13 | Story Points Summary | Dashboard gadgets | Auto-injected SP column (by Assignee/Status) |
 | 14 | Velocity per Developer | Dashboard gadgets ("Velocity" title) | Auto-injected V-Avg column |
+| 15 | Zoom Copy Transcript | Zoom recording pages | 📋 "Copy Transcript" button |
 
 ---
 
@@ -190,7 +192,7 @@ The extension automatically migrates all legacy `notes_` and `reminder_` keys to
 
 ---
 
-### 📋 View All Notes — Extension Popup
+### 📋 View, Edit & Sync Notes — Extension Popup
 
 **Files:** `popup.html`, `popup.js`
 
@@ -198,7 +200,9 @@ Clicking the extension icon opens a popup that lists **all saved notes** across 
 
 **Features:**
 - **Notes list:** Shows every `notes_*` entry from `chrome.storage.local`, sorted alphabetically by ticket key.
-- **Summary & Assignee enrichment:** After the initial render, the popup fetches each ticket's **summary** and **assignee** from the Jira REST API (`/rest/api/2/issue/{key}?fields=summary,assignee`) in parallel. A metadata line is displayed below the ticket key showing the summary (truncated with ellipsis) and assignee separated by a `·` dot. If the API call fails, the card gracefully falls back to showing just the key.
+- **Inline Editing:** Directly edit note text and adjust reminder dates/times from within the popup, without having to navigate to Jira.
+- **Sync Statuses:** A dedicated "Sync notes" button manually fetches the latest system data (summary, status, assignee) for all your saved tickets using the Jira REST API, refreshing the list immediately.
+- **Summary, Assignee & Status enrichment:** The popup displays rich metadata for each ticket, showing the summary (truncated with ellipsis), the assignee, and a color-coded status badge.
 - **Search:** Real-time filtering by ticket key or note content (case-insensitive `input` listener).
 - **Clickable links:** Each ticket key is a hyperlink that opens the ticket in a new tab. The Jira hostname is auto-detected from the active tab and cached in `localStorage`.
 - **Copy button:** Copies `"KEY-123: note text"` to clipboard per note.
@@ -307,9 +311,10 @@ Enhances **stats gadgets** on Jira dashboards by adding a **Story Points (SP) co
      ```
    - Includes `X-Atlassian-Token: no-check` header for CSRF bypass.
 
-4. **Aggregate story points by assignee:**
-   - Groups issues by `assignee.displayName` (or `"Unassigned"`).
-   - Calculates per-assignee and grand totals.
+4. **Aggregate story points dynamically:**
+   - Detects the gadget's grouping category (e.g., automatically handles "Assignee" or "Status").
+   - Groups issues according to the gadget's configuration and aggregates Story Points per group.
+   - Calculates per-group and grand totals.
 
 5. **Modify the gadget table:**
    - **Hides** the percentage/progress bar column (`.stats-gadget-progress-indicator`).
@@ -372,6 +377,19 @@ Automatically detects dashboard gadgets whose title contains **"Velocity"** (cas
 **Guard:** Each gadget is tracked by a `vel-{gadgetId}` key in `_etProcessedVelocityGadgets` (separate from the Story Points set) to prevent reprocessing.
 
 **Error handling:** On failure, an error indicator with a **↻ Retry** button is shown in the header row. The gadget is not marked as processed, allowing auto-retry on the next DOM mutation.
+
+---
+
+### 📹 Zoom Copy Transcript
+
+**Function:** `zoom/main.js`
+
+Injects a **Copy Transcript** button into Zoom cloud recording pages to easily extract the entire meeting transcript.
+
+**Features:**
+- **Automatic Injection:** Automatically detects the transcript container on any Zoom recording share page.
+- **Clean Formatting:** Parses the DOM to copy the transcript in a highly readable format: `[Timestamp] Speaker: Text`.
+- **One-Click Copy:** Copies the fully formatted text directly to the clipboard, perfect for pasting into Jira tickets, Slack, or Notion.
 
 ---
 
