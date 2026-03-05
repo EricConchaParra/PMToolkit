@@ -11,6 +11,14 @@
         <h1 id="view-title">📝 My Notes</h1>
         <div class="header-actions">
             <span class="count" id="notes-count"></span>
+            <button id="sync-notes-btn" class="icon-btn" title="Sync Statuses">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+            </button>
             <button id="settings-toggle" class="icon-btn" title="Settings">⚙️</button>
         </div>
     </div>
@@ -99,7 +107,8 @@
                         <span>Developer Velocity (Dashboard)</span>
                         <p>Shows velocity metrics and completed ticket lists per developer.
                             <strong>Requirement:</strong> Add an 'Issue Statistics' gadget to your dashboard and include
-                            'Velocity' in its title.</p>
+                            'Velocity' in its title.
+                        </p>
                     </div>
                     <input type="checkbox" data-setting="jira_velocity_per_dev">
                 </label>
@@ -108,7 +117,8 @@
                         <span>Story Points Summary (Dashboard)</span>
                         <p>Calculates Story Points totals and lists pending tickets per assignee.
                             <strong>Requirement:</strong> Add an 'Issue Statistics' gadget to your dashboard (ensure
-                            title does NOT include 'Velocity').</p>
+                            title does NOT include 'Velocity').
+                        </p>
                     </div>
                     <input type="checkbox" data-setting="jira_sp_summary">
                 </label>

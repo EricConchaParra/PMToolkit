@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const notesView = document.getElementById('notes-view');
     const settingsView = document.getElementById('settings-view');
     const settingsToggle = document.getElementById('settings-toggle');
+    const syncNotesBtn = document.getElementById('sync-notes-btn');
     const viewTitle = document.getElementById('view-title');
     const notesList = document.getElementById('notes-list');
     const notesCount = document.getElementById('notes-count');
@@ -105,6 +106,51 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         renderNotes(allNotes);
     }
+
+    // --- Sync Logic ---
+    syncNotesBtn.addEventListener('click', async () => {
+        if (syncNotesBtn.classList.contains('syncing-spin')) return; // Prevent double clicks
+
+        syncNotesBtn.classList.add('syncing-spin');
+        viewTitle.textContent = '⏳ Syncing statuses...';
+
+        const data = await storage.getAll();
+        const allKeys = new Set();
+
+        // Find all keys we know about
+        Object.keys(data).forEach(key => {
+            if (key.startsWith('notes_jira:')) {
+                allKeys.add(key.replace('notes_jira:', ''));
+            } else if (key.startsWith('reminder_jira:')) {
+                allKeys.add(key.replace('reminder_jira:', ''));
+            } else if (key.startsWith('meta_jira:')) {
+                allKeys.add(key.replace('meta_jira:', ''));
+            }
+        });
+
+        // Force fetch fresh data for every key
+        for (const key of allKeys) {
+            try {
+                const details = await jiraApi.fetchIssueDetails(key);
+                if (details) {
+                    const freshMeta = {
+                        summary: details.summary,
+                        assignee: details.assignee,
+                        status: details.status
+                    };
+                    await storage.set({ [`meta_jira:${key}`]: freshMeta });
+                }
+            } catch (err) {
+                console.warn(`Failed to sync details for ${key}`, err);
+            }
+        }
+
+        viewTitle.textContent = '📝 My Notes';
+        syncNotesBtn.classList.remove('syncing-spin');
+
+        // Re-render
+        await loadNotes();
+    });
 
     function renderNotes(notes) {
         notesList.innerHTML = '';
