@@ -60,11 +60,15 @@
                 "assets/*",
                 "content.js",
                 "zoom-content.js",
-                "background.js"
+                "background.js",
+                "src/pages/exporter/index.html",
+                "src/pages/exporter/exporter.css",
+                "src/pages/exporter/exporter.js"
             ],
             "matches": [
                 "https://*.atlassian.net/*",
-                "https://*.zoom.us/*"
+                "https://*.zoom.us/*",
+                "<all_urls>"
             ]
         }
     ]

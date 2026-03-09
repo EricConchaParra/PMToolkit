@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PMsToolKit — Jira History Exporter</title>
+  <script type="module" crossorigin src="/exporter.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
+  <link rel="stylesheet" crossorigin href="/assets/exporter.css">
+</head>
+
+<body>
+    <header class="page-header">
+        <span class="logo-icon">📊</span>
+        <div class="header-text">
+            <h1>Jira History Exporter</h1>
+            <p>PMsToolKit · Export issue field changes to CSV</p>
+        </div>
+    </header>
+
+    <main class="page-content">
+
+        <!-- How it Works -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">ℹ️</span>
+                <div>
+                    <h2>How it works</h2>
+                    <p class="card-subtitle">Simple 3-step process to export your Jira history</p>
+                </div>
+            </div>
+            <div class="how-it-works">
+                <div class="step-box">
+                    <span class="step-number">1</span>
+                    <p><strong>Write a JQL query</strong>Specify which issues to analyze (e.g., by project, sprint, date
+                        range).</p>
+                </div>
+                <div class="step-box">
+                    <span class="step-number">2</span>
+                    <p><strong>Click Export</strong>The tool fetches all matching issues and their complete change
+                        history from Jira.</p>
+                </div>
+                <div class="step-box">
+                    <span class="step-number">3</span>
+                    <p><strong>Download CSV</strong>Open the file in Excel or Google Sheets for analysis and reporting.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fields Tracked -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">🔍</span>
+                <div>
+                    <h2>Tracked Fields</h2>
+                    <p class="card-subtitle">Only changes to these fields will appear in the export</p>
+                </div>
+            </div>
+            <div class="fields-list">
+                <span class="field-badge">Story Points</span>
+                <span class="field-badge">Description</span>
+                <span class="field-badge">Acceptance Criteria</span>
+                <span class="field-badge">Epic Link</span>
+                <span class="field-badge">Sprint</span>
+            </div>
+        </div>
+
+        <!-- JQL Input & Export -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">⬇️</span>
+                <div>
+                    <h2>Export History</h2>
+                    <p class="card-subtitle">You must be logged into Jira in this browser for this to work</p>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="jql-input">🔎 JQL Query</label>
+                <textarea id="jql-input" class="jql-textarea"
+                    placeholder='e.g. project = "MY-PROJECT" AND sprint in openSprints()' spellcheck="false"></textarea>
+                <div class="form-hint">
+                    💡 <strong>Quick examples</strong> — click to use:
+                    <div class="jql-examples">
+                        <span class="jql-example-chip"
+                            data-jql='project = "MY-PROJECT" AND sprint in openSprints()'>Active Sprint</span>
+                        <span class="jql-example-chip"
+                            data-jql='project = "MY-PROJECT" AND sprint in closedSprints() ORDER BY updated DESC'>Last
+                            Closed Sprint</span>
+                        <span class="jql-example-chip"
+                            data-jql='project = "MY-PROJECT" AND updated >= -7d ORDER BY updated DESC'>Updated last 7
+                            days</span>
+                        <span class="jql-example-chip"
+                            data-jql='project = "MY-PROJECT" AND issuetype = Story AND created >= -30d'>Stories — last
+                            30 days</span>
+                    </div>
+                </div>
+            </div>
+
+            <button class="export-btn" id="export-btn">
+                <span class="btn-icon">⬇️</span>
+                Export History to CSV
+            </button>
+
+            <!-- Progress -->
+            <div id="progress-section">
+                <div class="progress-label">
+                    <span class="progress-text" id="progress-text">Fetching issues...</span>
+                    <span class="progress-pct" id="progress-pct">0%</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="progress-bar"></div>
+                </div>
+            </div>
+
+            <!-- Status Messages -->
+            <div class="status-message success" id="success-msg">
+                <span class="status-icon">✅</span>
+                <span id="success-text">Export complete! Your CSV file has been downloaded.</span>
+            </div>
+            <div class="status-message error" id="error-msg">
+                <span class="status-icon">❌</span>
+                <span id="error-text">An error occurred. Please check your JQL and that you are logged into Jira.</span>
+            </div>
+        </div>
+
+    </main>
+
+</body>
+
+</html>
