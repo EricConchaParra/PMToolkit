@@ -71,6 +71,7 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 | 13 | Story Points Summary | Dashboard gadgets | Auto-injected SP column (by Assignee/Status) |
 | 14 | Velocity per Developer | Dashboard gadgets ("Velocity" title) | Auto-injected V-Avg column |
 | 15 | Zoom Copy Transcript | Zoom recording pages | 📋 "Copy Transcript" button |
+| 16 | Jira History Exporter | Dedicated Page (from Popup) | "Export History to CSV" button |
 
 ---
 
@@ -377,6 +378,36 @@ Automatically detects dashboard gadgets whose title contains **"Velocity"** (cas
 **Guard:** Each gadget is tracked by a `vel-{gadgetId}` key in `_etProcessedVelocityGadgets` (separate from the Story Points set) to prevent reprocessing.
 
 **Error handling:** On failure, an error indicator with a **↻ Retry** button is shown in the header row. The gadget is not marked as processed, allowing auto-retry on the next DOM mutation.
+
+---
+
+### 📊 Jira History Exporter (CSV)
+
+**Entry Point:** Extension Popup → "Export History to CSV" button.
+
+A specialized audit tool that allows Project Managers to reconstruct the "life" of Jira tasks by exporting their change history into a clean, queryable CSV format.
+
+**Key Features:**
+- **Two-Phase Extraction:**
+  1. **Phase 1 (Search):** Uses JQL to identify issues and fetch metadata including Epic Links and Epic Names.
+  2. **Phase 2 (History Audit):** Performs a deep dive into each issue's changelog to extract specific modifications.
+- **Smart Epic Resolution:** Automatically supports both **Classic** (custom fields) and **Next-Gen** (parent hierarchy) Jira projects to resolve Epic names and links.
+- **Tracked Fields:** Specifically audits changes in:
+    - Story Points
+    - Description
+    - Acceptance Criteria
+    - Epic Link
+    - Sprint (History of move events)
+- **Flattened Data Format:** Converts complex Jira history objects into a readable 10-column CSV:
+    - `Issue Key`, `Issue Summary`, `Issue Link` (Direct URL)
+    - `Epic Name`, `Epic Link` (Link to Epic)
+    - `Timestamp`, `Changed By`
+    - `Field`, `From Value`, `To Value`
+
+**Technical Logic:**
+- **Endpoints:** Uses `POST /rest/api/3/search/jql` for discovery and `GET /rest/api/3/issue/{key}/changelog` for auditing.
+- **Concurrency:** Processes changelogs in parallel batches (concurrency of 5) to optimize performance while respecting Jira API limits.
+- **Case-Insensitive Tracking:** Field matching is case-insensitive to handle various Jira configurations.
 
 ---
 
