@@ -220,18 +220,69 @@ async function fetchProjectStatuses(host, projectKey) {
 // ============================================================
 
 // Count working hours between now and a future date (Mon-Fri only)
+// Assumes sprint ends at 20:00 (8 PM) on the end date
 function workingHoursBetween(fromDate, toDate, hoursPerDay) {
     let hours = 0;
+
+    // Start from the beginning of fromDate's day (or fromDate itself if we want precision, 
+    // but the original logic jumped day by day so we'll maintain day-by-day logic)
     const cursor = new Date(fromDate);
     cursor.setHours(0, 0, 0, 0);
+
+    // End date is considered to be at 20:00
     const end = new Date(toDate);
-    end.setHours(0, 0, 0, 0);
+    end.setHours(20, 0, 0, 0);
+
+    // If we're already past the end date + 20:00, return 0
+    if (cursor > end) return 0;
+
+    // Special case: if today is the end date, calculate hours remaining today up to 20:00
+    const now = new Date();
+    if (now.toDateString() === end.toDateString() && now < end) {
+        // If it's a weekday
+        if (now.getDay() !== 0 && now.getDay() !== 6) {
+            // Calculate exact hours remaining today until 20:00
+            const hoursRemainingToday = (end.getTime() - Math.max(now.getTime(), now.setHours(20 - hoursPerDay, 0, 0, 0))) / (1000 * 60 * 60);
+            return Math.max(0, Math.min(hoursRemainingToday, hoursPerDay));
+        }
+    }
+
+    // Step day by day
     while (cursor < end) {
         const day = cursor.getDay();
-        if (day !== 0 && day !== 6) hours += hoursPerDay;
+
+        // If it's a weekday
+        if (day !== 0 && day !== 6) {
+            // If it's the very first day (today) and we're partway through it
+            if (cursor.toDateString() === now.toDateString()) {
+                // Approximate remaining hours today based on a 20:00 end-of-day
+                const eod = new Date(now);
+                eod.setHours(20, 0, 0, 0);
+                if (now < eod) {
+                    const startOfWorkday = new Date(now);
+                    startOfWorkday.setHours(20 - hoursPerDay, 0, 0, 0);
+                    // Hours left = time from MAX(now, startOfWorkday) to 20:00
+                    const msLeft = eod.getTime() - Math.max(now.getTime(), startOfWorkday.getTime());
+                    hours += Math.max(0, Math.min(msLeft / (1000 * 60 * 60), hoursPerDay));
+                }
+            }
+            // If it's the very last day (sprint end date)
+            else if (cursor.toDateString() === end.toDateString()) {
+                // On the last day, if they get `hoursPerDay` total, and the day ends at 20:00,
+                // we just grant the full `hoursPerDay` since the whole day is available.
+                hours += hoursPerDay;
+            }
+            // Any regular middle day
+            else {
+                hours += hoursPerDay;
+            }
+        }
         cursor.setDate(cursor.getDate() + 1);
+        cursor.setHours(0, 0, 0, 0); // reset to midnight for next iteration
     }
-    return hours;
+
+    // Round to 1 decimal place to avoid floating point weirdness
+    return Math.round(hours * 10) / 10;
 }
 
 // Given remaining hours and start date, compute ETA (skip weekends)
@@ -404,8 +455,15 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     const isLate = sprintEnd && eta > sprintEnd;
 
     // Overload
-    const isOverloaded = sprintHoursLeft !== null && remainingHours > sprintHoursLeft;
-    const capacityPct = sprintHoursLeft ? Math.min(Math.round((remainingHours / sprintHoursLeft) * 100), 150) : 0;
+    const isOverloaded = sprintHoursLeft !== null && (remainingHours > sprintHoursLeft);
+    let capacityPct = 0;
+    if (sprintHoursLeft !== null) {
+        if (sprintHoursLeft > 0) {
+            capacityPct = Math.min(Math.round((remainingHours / sprintHoursLeft) * 100), 150);
+        } else if (remainingHours > 0) {
+            capacityPct = 150; // Max out the bar
+        }
+    }
 
     // Overdue In Progress — issues that have been in progress longer than their SP time limit
     const overdueIssues = inProgressIssues.filter(i => {
@@ -513,7 +571,9 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                     <div class="capacity-bar-fill ${barClass}" style="width:${barWidth}%"></div>
                 </div>
                 <div class="eta-row">
-                    <span>${capacityPct}% of sprint capacity</span>
+                    <span class="capacity-tooltip" data-tooltip="${formatHours(remainingHours)} remaining / ${formatHours(sprintHoursLeft)} capacity">
+                        ${capacityPct}% of sprint capacity
+                    </span>
                     ${sprintEnd ? `<span class="eta-value ${etaClass}">ETA: ${formatDate(eta)}</span>` : ''}
                 </div>
                 ` : `<div class="eta-row"><span class="eta-value">ETA: ${formatDate(eta)}</span></div>`}
@@ -553,6 +613,150 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
 }
 
 // ============================================================
+// SPRINT OVERVIEW
+// ============================================================
+
+/**
+ * Renders the team-level sprint overview panel.
+ * @param {Array}  issues       - All sprint issues (with ._sp attached)
+ * @param {Object} sprint       - Active sprint object (startDate, endDate, name)
+ * @param {Object} settings     - Project settings {hoursPerDay, spHours, statusMap}
+ * @param {number} devCount     - Number of unique assignees in this sprint
+ * @param {number} teamVelAvg   - Average SP completed per sprint across all devs (from closed sprints, or 0)
+ * @param {number} totalCommittedSP - Total SP committed to the sprint
+ */
+function renderSprintOverview(issues, sprint, settings, devCount, teamVelAvg, totalCommittedSP) {
+    const { hoursPerDay, spHours } = settings;
+
+    // ---- Bucket issues using same sectionOf logic as dev cards ----
+    function sectionOf(issue) {
+        const name = issue.fields?.status?.name || '';
+        if (settings.statusMap && settings.statusMap[name]) return settings.statusMap[name];
+        const n = name.toLowerCase();
+        const cat = issue.fields?.status?.statusCategory?.key || '';
+        if (n.includes('in progress') || n.includes('in review')) return 'inProgress';
+        if (n.includes('qa') || n.includes('test')) return 'qa';
+        if (cat === 'done' || n === 'done') return 'done';
+        return 'todo';
+    }
+
+    const buckets = { todo: [], inProgress: [], qa: [], done: [] };
+    issues.forEach(i => { const s = sectionOf(i); if (buckets[s]) buckets[s].push(i); });
+
+    // ---- SP per bucket ----
+    const spFor = list => list.reduce((a, i) => a + (i._sp || 0), 0);
+    const spTodo = spFor(buckets.todo);
+    const spInProgress = spFor(buckets.inProgress);
+    const spQA = spFor(buckets.qa);
+    const spDone = spFor(buckets.done);
+    const spTotal = spTodo + spInProgress + spQA + spDone;
+
+    // ---- Progress bar: Done + QA + InProgress toward total ----
+    const donePct = spTotal > 0 ? Math.round((spDone / spTotal) * 100) : 0;
+    const qaPct = spTotal > 0 ? Math.round((spQA / spTotal) * 100) : 0;
+    const inProgPct = spTotal > 0 ? Math.round((spInProgress / spTotal) * 100) : 0;
+
+    // ---- Capacity model ----
+    const now = new Date();
+    const sprintEnd = sprint.endDate ? new Date(sprint.endDate) : null;
+    const sprintCapacityHoursPerDev = sprintEnd ? workingHoursBetween(now, sprintEnd, hoursPerDay) : null;
+    const teamCapacityHours = (sprintCapacityHoursPerDev !== null && devCount > 0)
+        ? sprintCapacityHoursPerDev * devCount
+        : null;
+
+    // Remaining work: Todo + InProgress + 50% QA buffer
+    const hoursFor = list => list.reduce((a, i) => a + spToHours(i._sp, spHours), 0);
+    const remainingHours = hoursFor(buckets.todo) + hoursFor(buckets.inProgress) + (hoursFor(buckets.qa) * 0.5);
+
+    // ---- Prediction ----
+    let predIcon, predLabel, predDetail, predClass;
+
+    // Safely calculate usage percentage to handle 0 team capacity
+    let usagePct = null;
+    if (teamCapacityHours !== null) {
+        if (teamCapacityHours > 0) {
+            usagePct = Math.round((remainingHours / teamCapacityHours) * 100);
+        } else if (remainingHours > 0) {
+            usagePct = Infinity;
+        } else {
+            usagePct = 0;
+        }
+    }
+
+    if (spDone === spTotal && spTotal > 0) {
+        predIcon = '🎉'; predLabel = 'Sprint Complete!'; predClass = 'on-track';
+        predDetail = `All ${spTotal} SP delivered.`;
+    } else if (teamCapacityHours === null) {
+        predIcon = '❓'; predLabel = 'No sprint end date'; predClass = 'unknown';
+        predDetail = 'Cannot predict completion without a sprint end date.';
+    } else if (teamCapacityHours === 0 && remainingHours > 0) {
+        predIcon = '🔴'; predLabel = 'Overloaded — Sprint at Risk'; predClass = 'overloaded';
+        predDetail = `Sprint ends today! Team still needs ${formatHours(remainingHours)}, but remaining capacity is 0h.`;
+    } else if (usagePct <= 75) {
+        predIcon = '🟢'; predLabel = 'On Track'; predClass = 'on-track';
+        predDetail = `Team is using ${usagePct}% of remaining capacity (${formatHours(remainingHours)} needed / ${formatHours(teamCapacityHours)} available).`;
+    } else if (usagePct <= 100) {
+        predIcon = '🟡'; predLabel = 'At Risk'; predClass = 'at-risk';
+        predDetail = `Team is using ${usagePct}% of remaining capacity — tight but possible. ${formatHours(remainingHours)} needed vs. ${formatHours(teamCapacityHours)} available.`;
+    } else {
+        predIcon = '🔴'; predLabel = 'Overloaded — Sprint at Risk'; predClass = 'overloaded';
+        predDetail = `Team needs ${formatHours(remainingHours)} but only has ${formatHours(teamCapacityHours)} remaining (${usagePct}% load). Consider re-scoping.`;
+    }
+
+    // Overcommitment signal vs. team historical velocity
+    let velocityHint = '';
+    let velocityClass = 'aligned';
+    if (teamVelAvg > 0 && totalCommittedSP > 0) {
+        const ratio = Math.round((totalCommittedSP / teamVelAvg) * 100);
+        if (ratio > 115) {
+            velocityHint = `⚠️ Overcommitted (${ratio}%): ${totalCommittedSP} SP planned vs. ${teamVelAvg} SP avg historical velocity.`;
+            velocityClass = 'overcommitted';
+        } else if (ratio < 75) {
+            velocityHint = `ℹ️ Under-committed (${ratio}%): ${totalCommittedSP} SP planned vs. ${teamVelAvg} SP avg historical velocity.`;
+            velocityClass = 'undercommitted';
+        } else {
+            velocityHint = `⚡ Healthy: Commitment aligns with historical capacity (${totalCommittedSP} SP vs. ${teamVelAvg} avg).`;
+            velocityClass = 'aligned';
+        }
+    }
+
+    // ---- Update DOM ----
+    document.getElementById('overview-subtitle').textContent =
+        `${issues.length} issues · ${spTotal} SP total · ${devCount} developer${devCount !== 1 ? 's' : ''}`;
+
+    document.getElementById('overview-todo-count').textContent = buckets.todo.length;
+    document.getElementById('overview-todo-sp').textContent = `${spTodo} SP`;
+    document.getElementById('overview-inprogress-count').textContent = buckets.inProgress.length;
+    document.getElementById('overview-inprogress-sp').textContent = `${spInProgress} SP`;
+    document.getElementById('overview-qa-count').textContent = buckets.qa.length;
+    document.getElementById('overview-qa-sp').textContent = `${spQA} SP`;
+    document.getElementById('overview-done-count').textContent = buckets.done.length;
+    document.getElementById('overview-done-sp').textContent = `${spDone} SP`;
+
+    document.getElementById('overview-bar-done').style.width = `${donePct}%`;
+    document.getElementById('overview-bar-qa').style.width = `${qaPct}%`;
+    const inProgBar = document.getElementById('overview-bar-inprogress');
+    if (inProgBar) inProgBar.style.width = `${inProgPct}%`;
+
+    document.getElementById('overview-progress-pct').textContent = `${donePct}% complete`;
+    document.getElementById('overview-progress-label').textContent =
+        `${spDone} SP done · ${spQA} SP in QA · ${spInProgress} SP in prog · ${spTodo} SP todo`;
+
+    const pred = document.getElementById('overview-prediction');
+    pred.className = `overview-prediction ${predClass}`;
+    document.getElementById('prediction-icon').textContent = predIcon;
+    document.getElementById('prediction-label').textContent = predLabel;
+    const detailEl = document.getElementById('prediction-detail');
+    detailEl.textContent = predDetail;
+    if (velocityHint) {
+        const hint = document.createElement('div');
+        hint.className = `prediction-velocity-hint ${velocityClass}`;
+        hint.innerHTML = `<span class="velocity-pill">Team Velocity: ${teamVelAvg} SP</span> ${velocityHint}`;
+        detailEl.after(hint);
+    }
+}
+
+// ============================================================
 // MAIN DASHBOARD LOGIC
 // ============================================================
 
@@ -567,6 +771,7 @@ function showDashState(state, msg = '') {
     document.getElementById('dash-placeholder').classList.add('hidden');
     document.getElementById('dev-cards-grid').classList.add('hidden');
     document.getElementById('sprint-banner').classList.add('hidden');
+    document.getElementById('sprint-overview').classList.add('hidden');
 
     if (state === 'loading') {
         document.getElementById('dash-loading').classList.remove('hidden');
@@ -580,6 +785,7 @@ function showDashState(state, msg = '') {
         document.getElementById('dash-placeholder').classList.remove('hidden');
     } else if (state === 'data') {
         document.getElementById('sprint-banner').classList.remove('hidden');
+        document.getElementById('sprint-overview').classList.remove('hidden');
         document.getElementById('dev-cards-grid').classList.remove('hidden');
     }
 }
@@ -625,7 +831,7 @@ async function loadDashboard(projectKey) {
         document.getElementById('sprint-start').textContent = sprintStart;
         document.getElementById('sprint-end').textContent = sprintEnd;
         document.getElementById('sprint-days-left').textContent = typeof daysLeft === 'number' ? `${daysLeft}d` : '—';
-        document.getElementById('sprint-hours-left').textContent = hoursLeft !== null ? `${hoursLeft}h` : '—';
+        document.getElementById('sprint-hours-left').textContent = hoursLeft !== null ? `${hoursLeft.toFixed(1)}h` : '—';
 
         showDashState('loading', 'Fetching sprint issues...');
         const issues = await fetchSprintIssues(host, sprint.id, spFieldId);
@@ -720,6 +926,18 @@ async function loadDashboard(projectKey) {
             );
             grid.appendChild(card);
         }
+
+        // Render sprint overview panel
+        const devCount = Object.keys(devMap).length;
+        const totalCommittedSP = issues.reduce((a, i) => a + (i._sp || 0), 0);
+        // Team velocity = sum of all devs' avg velocity
+        const teamVelAvg = Object.keys(devMap).reduce((sum, key) => {
+            const accountId = devMap[key].assignee?.accountId || key;
+            return sum + (getVelocity(accountId)?.avg || 0);
+        }, 0);
+        // Clear any stale velocity hint from previous load
+        document.querySelectorAll('.prediction-velocity-hint').forEach(el => el.remove());
+        renderSprintOverview(issues, sprint, settings, devCount, Math.round(teamVelAvg * 10) / 10, totalCommittedSP);
 
         // Event delegation — copy-for-Slack on overdue issue buttons
         grid.addEventListener('click', (e) => {

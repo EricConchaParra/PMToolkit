@@ -161,6 +161,71 @@
                 <p>Select a project above to load the active sprint dashboard.</p>
             </div>
 
+            <!-- Sprint Overview -->
+            <div id="sprint-overview" class="sprint-overview hidden">
+                <div class="overview-header">
+                    <span class="overview-title">📋 Sprint Overview</span>
+                    <span class="overview-subtitle" id="overview-subtitle">Team-level summary</span>
+                </div>
+                <div class="overview-stats" id="overview-stats">
+                    <div class="stat-pill todo">
+                        <span class="stat-pill-icon">⬜</span>
+                        <div class="stat-pill-body">
+                            <span class="stat-pill-label">To Do</span>
+                            <span class="stat-pill-value" id="overview-todo-count">—</span>
+                            <span class="stat-pill-sp" id="overview-todo-sp">— SP</span>
+                        </div>
+                    </div>
+                    <div class="stat-pill inprogress">
+                        <span class="stat-pill-icon">🔵</span>
+                        <div class="stat-pill-body">
+                            <span class="stat-pill-label">In Progress</span>
+                            <span class="stat-pill-value" id="overview-inprogress-count">—</span>
+                            <span class="stat-pill-sp" id="overview-inprogress-sp">— SP</span>
+                        </div>
+                    </div>
+                    <div class="stat-pill qa">
+                        <span class="stat-pill-icon">🟣</span>
+                        <div class="stat-pill-body">
+                            <span class="stat-pill-label">QA</span>
+                            <span class="stat-pill-value" id="overview-qa-count">—</span>
+                            <span class="stat-pill-sp" id="overview-qa-sp">— SP</span>
+                        </div>
+                    </div>
+                    <div class="stat-pill done">
+                        <span class="stat-pill-icon">✅</span>
+                        <div class="stat-pill-body">
+                            <span class="stat-pill-label">Done</span>
+                            <span class="stat-pill-value" id="overview-done-count">—</span>
+                            <span class="stat-pill-sp" id="overview-done-sp">— SP</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="overview-progress-section">
+                    <div class="overview-progress-labels">
+                        <span id="overview-progress-label">Sprint Progress</span>
+                        <span id="overview-progress-pct" class="overview-progress-pct">0%</span>
+                    </div>
+                    <div class="overview-progress-track">
+                        <div class="overview-progress-done" id="overview-bar-done" style="width:0%"></div>
+                        <div class="overview-progress-qa" id="overview-bar-qa" style="width:0%"></div>
+                        <div class="overview-progress-inprogress" id="overview-bar-inprogress" style="width:0%"></div>
+                    </div>
+                    <div class="overview-progress-legend">
+                        <span class="legend-dot done"></span><span>Done</span>
+                        <span class="legend-dot qa"></span><span>QA</span>
+                        <span class="legend-dot inprogress"></span><span>In Progress</span>
+                    </div>
+                </div>
+                <div class="overview-prediction" id="overview-prediction">
+                    <div class="prediction-icon" id="prediction-icon">—</div>
+                    <div class="prediction-body">
+                        <div class="prediction-label" id="prediction-label">Calculating…</div>
+                        <div class="prediction-detail" id="prediction-detail"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Developer Cards -->
             <div id="dev-cards-grid" class="dev-cards-grid hidden"></div>
         </div>
