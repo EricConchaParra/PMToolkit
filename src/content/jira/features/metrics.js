@@ -1,5 +1,5 @@
 import { jiraClient } from '../api-client';
-import { etEnsureCustomFields, formatAge, getColorClass, getGadgetTitle, getJiraHost, etGetRowIconTarget, etGetIconContainer, invokeBackgroundFetch } from '../utils';
+import { etEnsureCustomFields, formatAge, getColorClass, getGadgetTitle, getJiraHost, etGetRowIconTarget, etGetIconContainer, invokeBackgroundFetch, formatTooltipDate } from '../utils';
 
 const PROCESSED_BADGES = new Set();
 const PROCESSED_GADGETS = new Set();
@@ -37,13 +37,9 @@ export const MetricsFeature = {
                     const diff = Date.now() - new Date(data.changedDate);
                     badge.textContent = formatAge(diff);
                     badge.className = `et-age-badge ${getColorClass(diff)}`;
-                    const changedDate = new Date(data.changedDate);
-                    const month = changedDate.toLocaleString('en-US', { month: 'short' });
-                    const day = changedDate.getDate();
-                    const time = changedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                    const dateStr = `${month} ${day}, ${time}`;
+                    const dateStr = formatTooltipDate(data.changedDate);
                     const byText = data.changedBy ? ` by ${data.changedBy}` : '';
-                    badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} on ${dateStr}`);
+                    badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} ${dateStr}`);
                 } else {
                     badge.remove();
                 }
@@ -69,13 +65,9 @@ export const MetricsFeature = {
                         const diff = Date.now() - new Date(data.changedDate);
                         badge.textContent = formatAge(diff);
                         badge.className = `et-age-badge ${getColorClass(diff)}`;
-                        const changedDate = new Date(data.changedDate);
-                        const month = changedDate.toLocaleString('en-US', { month: 'short' });
-                        const day = changedDate.getDate();
-                        const time = changedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                        const dateStr = `${month} ${day}, ${time}`;
+                        const dateStr = formatTooltipDate(data.changedDate);
                         const byText = data.changedBy ? ` by ${data.changedBy}` : '';
-                        badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} on ${dateStr}`);
+                        badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} ${dateStr}`);
                     }
                 });
             }
@@ -115,13 +107,9 @@ export const MetricsFeature = {
                     const diff = Date.now() - new Date(data.changedDate);
                     badge.textContent = formatAge(diff);
                     badge.className = `et-age-badge ${getColorClass(diff)} et-board-age`;
-                    const changedDate = new Date(data.changedDate);
-                    const month = changedDate.toLocaleString('en-US', { month: 'short' });
-                    const day = changedDate.getDate();
-                    const time = changedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                    const dateStr = `${month} ${day}, ${time}`;
+                    const dateStr = formatTooltipDate(data.changedDate);
                     const byText = data.changedBy ? ` by ${data.changedBy}` : '';
-                    badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} on ${dateStr}`);
+                    badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} ${dateStr}`);
                 }
             });
         });
@@ -179,13 +167,9 @@ export const MetricsFeature = {
                     const diff = Date.now() - new Date(data.changedDate);
                     badge.textContent = formatAge(diff);
                     badge.className = `et-age-badge ${getColorClass(diff)} et-board-age`;
-                    const changedDate = new Date(data.changedDate);
-                    const month = changedDate.toLocaleString('en-US', { month: 'short' });
-                    const day = changedDate.getDate();
-                    const time = changedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                    const dateStr = `${month} ${day}, ${time}`;
+                    const dateStr = formatTooltipDate(data.changedDate);
                     const byText = data.changedBy ? ` by ${data.changedBy}` : '';
-                    badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} on ${dateStr}`);
+                    badge.setAttribute('data-tooltip', `Moved to: ${data.statusName}${byText} ${dateStr}`);
                 }
             });
         });

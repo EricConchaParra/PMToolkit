@@ -132,6 +132,32 @@ export function formatAge(diffMs) {
     return `${diffMonths}m`;
 }
 
+export function formatTooltipDate(date) {
+    const then = new Date(date);
+    const now = new Date();
+    const diffMs = now - then;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    const timeStr = then.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    if (diffDays < 7) {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const thenStart = new Date(then.getFullYear(), then.getMonth(), then.getDate());
+        const dayDiff = Math.round((todayStart - thenStart) / (1000 * 60 * 60 * 24));
+
+        if (dayDiff === 0) return `Today, ${timeStr}`;
+        if (dayDiff === 1) return `Yesterday, ${timeStr}`;
+
+        return `last ${dayNames[then.getDay()]}, ${timeStr}`;
+    } else {
+        const month = then.toLocaleString('en-US', { month: 'short' });
+        const day = then.getDate();
+        return `on ${month} ${day}, ${timeStr}`;
+    }
+}
+
 export function getColorClass(diffMs) {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     if (diffDays <= 2) return 'et-age-green';
