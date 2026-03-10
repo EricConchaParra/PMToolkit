@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PMsToolKit — Analytics Hub</title>
+  <script type="module" crossorigin src="/analytics.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
+  <link rel="stylesheet" crossorigin href="/assets/analytics.css">
+</head>
+
+<body>
+
+    <!-- ====== SIDEBAR ====== -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-icon">📊</span>
+            <div class="brand-text">
+                <span class="brand-name">PMsToolKit</span>
+                <span class="brand-sub">Analytics Hub</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <button class="nav-item active" data-view="sprint-dashboard">
+                <span class="nav-icon">🚀</span>
+                <span class="nav-label">Sprint Dashboard</span>
+            </button>
+            <button class="nav-item" data-view="csv-exporter">
+                <span class="nav-icon">📤</span>
+                <span class="nav-label">History Exporter</span>
+            </button>
+        </nav>
+
+        <div class="sidebar-footer">
+            <span>v0.3.0 · PMsToolKit</span>
+        </div>
+    </aside>
+
+    <!-- ====== MAIN CONTENT ====== -->
+    <main class="main-content">
+
+        <!-- ========== SPRINT DASHBOARD VIEW ========== -->
+        <div id="view-sprint-dashboard" class="view active">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>🚀 Sprint Dashboard</h1>
+                    <p>Real-time analysis of your active sprint per developer</p>
+                </div>
+                <div class="view-header-right">
+                    <div class="project-select-wrap">
+                        <label for="project-search">📁 Project</label>
+                        <div class="combo-wrapper" id="combo-wrapper">
+                            <input type="text" id="project-search" autocomplete="off" placeholder="Loading projects...">
+                            <span class="combo-arrow">▾</span>
+                            <div class="combo-dropdown hidden" id="project-dropdown">
+                            </div>
+                        </div>
+                    </div>
+                    <button id="settings-toggle-btn" class="icon-action-btn" title="Dashboard Settings">⚙️
+                        Settings</button>
+                    <button id="refresh-btn" class="icon-action-btn" title="Refresh">🔄 Refresh</button>
+                </div>
+            </div>
+
+            <!-- Settings Panel -->
+            <div id="settings-panel" class="settings-panel hidden">
+                <div class="settings-panel-inner">
+                    <h3>⚙️ Dashboard Settings</h3>
+                    <div class="settings-grid">
+                        <div class="settings-col">
+                            <h4>Working Hours</h4>
+                            <div class="setting-row">
+                                <label for="hours-per-day">Hours per day (Mon–Fri)</label>
+                                <select id="hours-per-day">
+                                    <option value="9">9 hours (default)</option>
+                                    <option value="8">8 hours</option>
+                                    <option value="7">7 hours</option>
+                                    <option value="6">6 hours</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-col">
+                            <h4>SP → Hours Scale</h4>
+                            <div class="sp-scale-grid">
+                                <div class="sp-row"><label>0 / null SP</label><input type="number" class="sp-input"
+                                        id="sp-0" min="0.5" step="0.25"></div>
+                                <div class="sp-row"><label>1 SP</label><input type="number" class="sp-input" id="sp-1"
+                                        min="0.5" step="0.25"></div>
+                                <div class="sp-row"><label>2 SP</label><input type="number" class="sp-input" id="sp-2"
+                                        min="0.5" step="0.25"></div>
+                                <div class="sp-row"><label>3 SP</label><input type="number" class="sp-input" id="sp-3"
+                                        min="0.5" step="0.25"></div>
+                                <div class="sp-row"><label>5 SP</label><input type="number" class="sp-input" id="sp-5"
+                                        min="0.5" step="0.25"></div>
+                                <div class="sp-row"><label>8 SP</label><input type="number" class="sp-input" id="sp-8"
+                                        min="0.5" step="0.25"></div>
+                                <div class="sp-row"><label>13 SP</label><input type="number" class="sp-input" id="sp-13"
+                                        min="0.5" step="0.25"></div>
+                            </div>
+                        </div>
+                        <div class="settings-col settings-col-map" id="status-map-col">
+                            <h4>Status Mapping</h4>
+                            <p class="status-map-hint">Select a project to configure status mapping.</p>
+                        </div>
+
+                    </div>
+                    <div class="settings-actions">
+                        <button id="save-settings-btn" class="btn-primary">💾 Save Settings</button>
+                        <button id="reset-settings-btn" class="btn-ghost">Reset to defaults</button>
+                        <span id="settings-saved-msg" class="save-msg hidden">✅ Saved!</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sprint Info Banner -->
+            <div id="sprint-banner" class="sprint-banner hidden">
+                <div class="sprint-banner-info">
+                    <span class="sprint-label">Active Sprint</span>
+                    <span class="sprint-name" id="sprint-name">—</span>
+                </div>
+                <div class="sprint-meta">
+                    <div class="sprint-meta-item">
+                        <span class="meta-label">Start</span>
+                        <span class="meta-value" id="sprint-start">—</span>
+                    </div>
+                    <div class="sprint-meta-item">
+                        <span class="meta-label">End</span>
+                        <span class="meta-value" id="sprint-end">—</span>
+                    </div>
+                    <div class="sprint-meta-item">
+                        <span class="meta-label">Days left</span>
+                        <span class="meta-value highlight" id="sprint-days-left">—</span>
+                    </div>
+                    <div class="sprint-meta-item">
+                        <span class="meta-label">Work hrs left</span>
+                        <span class="meta-value highlight" id="sprint-hours-left">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard States -->
+            <div id="dash-loading" class="state-box hidden">
+                <div class="spinner"></div>
+                <p id="dash-loading-text">Loading sprint data...</p>
+            </div>
+
+            <div id="dash-error" class="state-box error hidden">
+                <span class="state-icon">❌</span>
+                <p id="dash-error-text">An error occurred.</p>
+            </div>
+
+            <div id="dash-empty" class="state-box hidden">
+                <span class="state-icon">😴</span>
+                <p>No active sprint found for the selected project, or the sprint has no assigned issues.</p>
+            </div>
+
+            <div id="dash-placeholder" class="state-box">
+                <span class="state-icon">👆</span>
+                <p>Select a project above to load the active sprint dashboard.</p>
+            </div>
+
+            <!-- Developer Cards -->
+            <div id="dev-cards-grid" class="dev-cards-grid hidden"></div>
+        </div>
+
+        <!-- ========== CSV EXPORTER VIEW ========== -->
+        <div id="view-csv-exporter" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>📤 Jira History Exporter</h1>
+                    <p>Export issue field changes to CSV · You must be logged into Jira</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">ℹ️</span>
+                    <div>
+                        <h2>How it works</h2>
+                        <p class="card-subtitle">Simple 3-step process to export your Jira history</p>
+                    </div>
+                </div>
+                <div class="how-it-works">
+                    <div class="step-box">
+                        <span class="step-num">1</span>
+                        <p><strong>Write a JQL query</strong>Specify which issues to analyze (e.g., by project, sprint,
+                            date range).</p>
+                    </div>
+                    <div class="step-box">
+                        <span class="step-num">2</span>
+                        <p><strong>Click Export</strong>The tool fetches all matching issues and their complete change
+                            history from Jira.</p>
+                    </div>
+                    <div class="step-box">
+                        <span class="step-num">3</span>
+                        <p><strong>Download CSV</strong>Open the file in Excel or Google Sheets for analysis and
+                            reporting.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🔍</span>
+                    <div>
+                        <h2>Tracked Fields</h2>
+                        <p class="card-subtitle">Only changes to these fields will appear in the export</p>
+                    </div>
+                </div>
+                <div class="fields-list">
+                    <span class="field-badge">Story Points</span>
+                    <span class="field-badge">Description</span>
+                    <span class="field-badge">Acceptance Criteria</span>
+                    <span class="field-badge">Epic Link</span>
+                    <span class="field-badge">Sprint</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⬇️</span>
+                    <div>
+                        <h2>Export History</h2>
+                        <p class="card-subtitle">You must be logged into Jira in this browser for this to work</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="jql-input">🔎 JQL Query</label>
+                    <textarea id="jql-input" class="jql-textarea"
+                        placeholder='e.g. project = "MY-PROJECT" AND sprint in openSprints()'
+                        spellcheck="false"></textarea>
+                    <div class="form-hint">
+                        💡 <strong>Quick examples</strong> — click to use:
+                        <div class="jql-examples">
+                            <span class="jql-chip" data-jql='project = "MY-PROJECT" AND sprint in openSprints()'>Active
+                                Sprint</span>
+                            <span class="jql-chip"
+                                data-jql='project = "MY-PROJECT" AND sprint in closedSprints() ORDER BY updated DESC'>Last
+                                Closed Sprint</span>
+                            <span class="jql-chip"
+                                data-jql='project = "MY-PROJECT" AND updated >= -7d ORDER BY updated DESC'>Updated last
+                                7 days</span>
+                            <span class="jql-chip"
+                                data-jql='project = "MY-PROJECT" AND issuetype = Story AND created >= -30d'>Stories —
+                                last 30 days</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn-export" id="export-btn">
+                    <span>⬇️</span> Export History to CSV
+                </button>
+
+                <div id="exp-progress" class="progress-section hidden">
+                    <div class="progress-label">
+                        <span id="exp-progress-text">Fetching issues...</span>
+                        <span id="exp-progress-pct">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="exp-progress-bar"></div>
+                    </div>
+                </div>
+
+                <div class="status-msg success hidden" id="exp-success">
+                    <span>✅</span><span id="exp-success-text">Export complete!</span>
+                </div>
+                <div class="status-msg error hidden" id="exp-error">
+                    <span>❌</span><span id="exp-error-text">An error occurred.</span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+</body>
+
+</html>

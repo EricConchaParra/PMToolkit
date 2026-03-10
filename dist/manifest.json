@@ -63,7 +63,10 @@
                 "background.js",
                 "src/pages/exporter/index.html",
                 "src/pages/exporter/exporter.css",
-                "src/pages/exporter/exporter.js"
+                "src/pages/exporter/exporter.js",
+                "src/pages/analytics/index.html",
+                "src/pages/analytics/analytics.css",
+                "src/pages/analytics/analytics.js"
             ],
             "matches": [
                 "https://*.atlassian.net/*",
