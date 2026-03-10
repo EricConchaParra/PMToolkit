@@ -37,3 +37,6 @@ This document describes the structure and architecture of the PMToolkit Chrome E
 - Run `npm run dev` for development (Vite dev server) or `npm run build` to generate the `dist/` folder.
 - **CRITICAL AGENT INSTRUCTION:** After implementing any code changes, you MUST run `npm run build` to compile the changes into the `dist/` directory before asking the user to verify.
 - Load the unpacked extension in Chrome from the `dist/` directory.
+
+## Maintenance Tasks
+- **Updating Version:** When bumping the extension version, refer to [.agent/version_update.md](file:///Users/ericconcha/desarrollo/PMToolkit%20Extension/.agent/version_update.md) for a full checklist of locations to update.

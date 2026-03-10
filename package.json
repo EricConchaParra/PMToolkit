@@ -1,6 +1,6 @@
 {
   "name": "pmtoolkit-extension",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "> **Custom toolkit to enhance project management workflows on Jira Cloud.** > Created by **EricConcha**.",
   "main": "index.js",

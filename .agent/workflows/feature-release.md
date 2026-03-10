@@ -6,11 +6,10 @@ description: Standard workflow for releasing new features (Branch -> Commit -> P
 
 Follow these steps to safely release a new feature to the repository using Git and GitHub CLI.
 
-### 1. Update Documentation
-Always ensure the `README.md` is updated with the new feature details, including:
-- Screenshot/Description of the UI change.
-- New storage keys or API endpoints used.
-- Instructions on how to trigger the feature.
+### 1. Update Documentation & Version
+Always ensure the `README.md` is updated with the new feature details, and **bump the version number** in all required locations.
+- See [.agent/version_update.md](file:///Users/ericconcha/desarrollo/PMToolkit%20Extension/.agent/version_update.md) for the checklist of files to update.
+- Ensure the `README.md` includes screenshots/descriptions of UI changes, new storage keys, or API endpoints.
 
 ### 2. Create a Feature Branch
 Create a descriptive branch name starting with `feature/`.
