@@ -444,23 +444,28 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     const doneIssues = issues.filter(i => sectionOf(i) === 'done');
     const todoIssues = issues.filter(i => sectionOf(i) === 'todo');
 
-    // ---- SP remaining = In Progress issues only ----
+    // ---- SP remaining: In Progress only (for overdue checks); total committed = To Do + In Progress ----
     const remainingSP = inProgressIssues.reduce((acc, i) => acc + (i._sp || 0), 0);
     const remainingHours = inProgressIssues.reduce((acc, i) => acc + spToHours(i._sp, spHours), 0);
     const doneSP = doneIssues.reduce((acc, i) => acc + (i._sp || 0), 0);
     const qaSP = qaIssues.reduce((acc, i) => acc + (i._sp || 0), 0);
+    const todoSP = todoIssues.reduce((acc, i) => acc + (i._sp || 0), 0);
+    const todoHours = todoIssues.reduce((acc, i) => acc + spToHours(i._sp, spHours), 0);
+    // Total work for ETA and capacity bar: To Do + In Progress
+    const totalCommittedSP = remainingSP + todoSP;
+    const totalCommittedHours = remainingHours + todoHours;
 
-    // ETA
-    const eta = calculateETA(remainingHours, hoursPerDay);
+    // ETA — based on total committed hours (To Do + In Progress)
+    const eta = calculateETA(totalCommittedHours, hoursPerDay);
     const isLate = sprintEnd && eta > sprintEnd;
 
-    // Overload
-    const isOverloaded = sprintHoursLeft !== null && (remainingHours > sprintHoursLeft);
+    // Overload — based on total committed hours
+    const isOverloaded = sprintHoursLeft !== null && (totalCommittedHours > sprintHoursLeft);
     let capacityPct = 0;
     if (sprintHoursLeft !== null) {
         if (sprintHoursLeft > 0) {
-            capacityPct = Math.min(Math.round((remainingHours / sprintHoursLeft) * 100), 150);
-        } else if (remainingHours > 0) {
+            capacityPct = Math.min(Math.round((totalCommittedHours / sprintHoursLeft) * 100), 150);
+        } else if (totalCommittedHours > 0) {
             capacityPct = 150; // Max out the bar
         }
     }
@@ -524,6 +529,8 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
         ? `<div class="no-issues">No tickets done yet</div>`
         : doneIssues.map(i => issueChip(i)).join('');
 
+    const todoHtml = todoIssues.map(i => issueChip(i)).join('');
+
     // Velocity HTML
     let velocityHtml = '';
     if (velSprints.length === 0) {
@@ -560,18 +567,18 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
 
             <!-- Remaining Work -->
             <div class="dev-section">
-                <div class="dev-section-title">📊 Remaining Work <span class="section-note">(In Progress only)</span></div>
+                <div class="dev-section-title">📊 Committed Work <span class="section-note">(To Do + In Progress)</span></div>
                 <div class="remaining-summary">
-                    <span class="remaining-sp">${remainingSP}</span>
-                    <span class="remaining-sp-label">SP remaining</span>
-                    <span class="remaining-hours">${formatHours(remainingHours)}</span>
+                    <span class="remaining-sp">${remainingSP + todoIssues.reduce((a, i) => a + (i._sp || 0), 0)}</span>
+                    <span class="remaining-sp-label">SP total</span>
+                    <span class="remaining-hours">${formatHours(remainingHours + todoIssues.reduce((a, i) => a + spToHours(i._sp, spHours), 0))}</span>
                 </div>
                 ${sprintHoursLeft !== null ? `
                 <div class="capacity-bar-track">
                     <div class="capacity-bar-fill ${barClass}" style="width:${barWidth}%"></div>
                 </div>
                 <div class="eta-row">
-                    <span class="capacity-tooltip" data-tooltip="${formatHours(remainingHours)} remaining / ${formatHours(sprintHoursLeft)} capacity">
+                    <span class="capacity-tooltip" data-tooltip="${formatHours(totalCommittedHours)} needed / ${formatHours(sprintHoursLeft)} capacity">
                         ${capacityPct}% of sprint capacity
                     </span>
                     ${sprintEnd ? `<span class="eta-value ${etaClass}">ETA: ${formatDate(eta)}</span>` : ''}
@@ -600,6 +607,14 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                 <div class="dev-section-title">✅ Done <span class="section-count">(${doneIssues.length})</span></div>
                 <div class="issue-list">${doneHtml}</div>
             </div>
+
+            ${todoIssues.length > 0 ? `
+            <!-- To Do -->
+            <div class="dev-section">
+                <div class="dev-section-title">⬜ To Do <span class="section-count">(${todoIssues.length})</span></div>
+                <div class="issue-list">${todoHtml}</div>
+            </div>
+            ` : ''}
 
             <!-- Velocity -->
             <div class="dev-section">
@@ -763,6 +778,9 @@ function renderSprintOverview(issues, sprint, settings, devCount, teamVelAvg, to
 let currentHost = null;
 let currentSettings = null;
 let spFieldId = null;
+let currentBoardId = null;
+let currentSprints = [];
+let selectedSprintId = null;
 
 function showDashState(state, msg = '') {
     document.getElementById('dash-loading').classList.add('hidden');
@@ -805,17 +823,72 @@ async function loadDashboard(projectKey) {
 
         showDashState('loading', 'Finding Scrum board...');
         const boardId = await fetchBoardId(host, projectKey);
+        currentBoardId = boardId;
         if (!boardId) {
             showDashState('error', `No Scrum board found for project "${projectKey}". Make sure it has a Scrum board.`);
+            document.getElementById('sprint-select-container').classList.add('hidden');
             return;
         }
 
-        showDashState('loading', 'Fetching active sprint...');
-        const sprint = await fetchActiveSprint(host, boardId);
+        showDashState('loading', 'Fetching sprints...');
+        let allSprints = [];
+        let startAt = 0;
+        while (true) {
+            const data = await jiraFetch(host, `/rest/agile/1.0/board/${boardId}/sprint?state=active,future,closed&startAt=${startAt}&maxResults=50`);
+            allSprints = allSprints.concat(data.values || []);
+            if (data.isLast || (data.values || []).length === 0) break;
+            startAt += data.values.length;
+        }
+
+        currentSprints = allSprints.reverse();
+
+        const sprintContainer = document.getElementById('sprint-select-container');
+        if (currentSprints.length === 0) {
+            sprintContainer.classList.add('hidden');
+            showDashState('empty');
+            return;
+        }
+
+        sprintContainer.classList.remove('hidden');
+
+        let activeSprint = currentSprints.find(s => s.state === 'active');
+        if (!activeSprint) activeSprint = currentSprints[0];
+
+        selectedSprintId = activeSprint.id;
+        const sprintSearch = document.getElementById('sprint-search');
+        sprintSearch.value = `${activeSprint.state === 'active' ? '🟢 ' : ''}${activeSprint.name}`;
+
+        loadDashboardForSprint(activeSprint);
+
+    } catch (err) {
+        console.error('PMsToolKit Dashboard:', err);
+        showDashState('error', err.message || 'Unexpected error loading dashboard.');
+        document.getElementById('sprint-select-container').classList.add('hidden');
+    }
+}
+
+async function loadDashboardForSprint(sprint) {
+    showDashState('loading', 'Loading sprint details...');
+    try {
+        const host = currentHost;
+        const settings = currentSettings;
+        const boardId = currentBoardId;
+
         if (!sprint) {
             showDashState('empty');
             return;
         }
+
+        // Ensure SP field is resolved
+        if (!spFieldId) {
+            showDashState('loading', 'Detecting Story Points field...');
+            spFieldId = await fetchSpFieldId(host);
+        }
+
+        // Sprint banner — update label to reflect sprint state
+        const sprintStateLabelMap = { active: 'Active Sprint', closed: 'Closed Sprint', future: 'Future Sprint' };
+        const sprintBannerLabel = document.querySelector('.sprint-banner .sprint-label');
+        if (sprintBannerLabel) sprintBannerLabel.textContent = sprintStateLabelMap[sprint.state] || 'Sprint';
 
         // Sprint banner
         const sprintStart = sprint.startDate ? formatDate(new Date(sprint.startDate)) : '—';
@@ -965,7 +1038,7 @@ async function loadDashboard(projectKey) {
 
     } catch (err) {
         console.error('PMsToolKit Dashboard:', err);
-        showDashState('error', err.message || 'Unexpected error loading dashboard.');
+        showDashState('error', err.message || 'Unexpected error loading sprint.');
     }
 }
 
@@ -1224,12 +1297,83 @@ document.addEventListener('DOMContentLoaded', async () => {
         await selectProject(lastProject);
     }
 
+    // Load sprints combobox (Sprint Dropdown)
+    const sprintSearch = document.getElementById('sprint-search');
+    const sprintDropdown = document.getElementById('sprint-dropdown');
+    const sprintComboWrapper = document.getElementById('sprint-combo-wrapper');
+
+    function renderSprintComboOptions(filterText = '') {
+        const term = filterText.toLowerCase();
+        const filtered = currentSprints.filter(s => !term || s.name.toLowerCase().includes(term) || String(s.id).includes(term) || s.state.toLowerCase().includes(term));
+
+        if (filtered.length === 0) {
+            sprintDropdown.innerHTML = `<div class="combo-msg">No sprints found</div>`;
+            return;
+        }
+
+        sprintDropdown.innerHTML = filtered.map(s => {
+            let stateIndicator = '';
+            if (s.state === 'active') stateIndicator = '🟢 ';
+            else if (s.state === 'future') stateIndicator = '🗓️ ';
+            else stateIndicator = '📦 ';
+
+            return `
+            <div class="combo-option ${s.id === selectedSprintId ? 'selected' : ''}" data-id="${s.id}" data-name="${escapeHtml(s.name)}" data-state="${s.state}">
+                <span class="combo-option-key">${stateIndicator}${s.state}</span>${escapeHtml(s.name)}
+            </div>
+            `;
+        }).join('');
+    }
+
+    sprintSearch.addEventListener('focus', () => {
+        sprintSearch.select();
+        sprintDropdown.classList.remove('hidden');
+        renderSprintComboOptions('');
+    });
+
+    sprintSearch.addEventListener('input', (e) => {
+        sprintDropdown.classList.remove('hidden');
+        renderSprintComboOptions(e.target.value);
+    });
+
+    sprintDropdown.addEventListener('click', (e) => {
+        const option = e.target.closest('.combo-option');
+        if (!option) return;
+        const id = parseInt(option.dataset.id, 10);
+        selectedSprintId = id;
+        const sprint = currentSprints.find(s => s.id === id);
+        sprintSearch.value = `${sprint.state === 'active' ? '🟢 ' : ''}${sprint.name}`;
+        sprintDropdown.classList.add('hidden');
+        loadDashboardForSprint(sprint);
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!sprintComboWrapper.contains(e.target)) {
+            sprintDropdown.classList.add('hidden');
+            if (selectedSprintId) {
+                const s = currentSprints.find(sr => sr.id === selectedSprintId);
+                if (s) sprintSearch.value = `${s.state === 'active' ? '🟢 ' : ''}${s.name}`;
+            } else {
+                sprintSearch.value = '';
+            }
+        }
+    });
+
     // Remove now-redundant old Refresh listener and replace
     // Refresh
     document.getElementById('refresh-btn').addEventListener('click', () => {
         if (selectedProjectKey) {
             spFieldId = null;
-            loadDashboard(selectedProjectKey);
+            if (selectedSprintId) {
+                const sprint = currentSprints.find(s => s.id === selectedSprintId);
+                if (sprint) {
+                    loadDashboardForSprint(sprint);
+                } else {
+                    loadDashboard(selectedProjectKey);
+                }
+            } else {
+                loadDashboard(selectedProjectKey);
+            }
         }
     });
 

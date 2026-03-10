@@ -243,7 +243,8 @@ body {
     pointer-events: none;
 }
 
-#project-search {
+#project-search,
+#sprint-search {
     width: 100%;
     padding: 8px 32px 8px 12px;
     border: 1.5px solid var(--border);
@@ -257,7 +258,8 @@ body {
     outline: none;
 }
 
-#project-search:focus {
+#project-search:focus,
+#sprint-search:focus {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-glow);
 }
@@ -314,7 +316,8 @@ body {
     color: var(--text-sub);
     margin-right: 6px;
     display: inline-block;
-    min-width: 40px;
+    min-width: 65px;
+    text-transform: capitalize;
 }
 
 .icon-action-btn {
