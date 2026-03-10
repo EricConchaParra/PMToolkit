@@ -72,6 +72,7 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 | 14 | Velocity per Developer | Dashboard gadgets ("Velocity" title) | Auto-injected V-Avg column |
 | 15 | Zoom Copy Transcript | Zoom recording pages | 📋 "Copy Transcript" button |
 | 16 | Jira History Exporter | Dedicated Page (from Popup) | "Export History to CSV" button |
+| 17 | Sprint Dashboard & Analytics Hub | Dedicated Page (from Popup) | 🚀 "Sprint Dashboard" tab |
 
 ---
 
@@ -408,6 +409,39 @@ A specialized audit tool that allows Project Managers to reconstruct the "life" 
 - **Endpoints:** Uses `POST /rest/api/3/search/jql` for discovery and `GET /rest/api/3/issue/{key}/changelog` for auditing.
 - **Concurrency:** Processes changelogs in parallel batches (concurrency of 5) to optimize performance while respecting Jira API limits.
 - **Case-Insensitive Tracking:** Field matching is case-insensitive to handle various Jira configurations.
+
+---
+
+### 🚀 Analytics Hub — Sprint Dashboard
+
+**Entry Point:** Extension Popup → 📊 Button (opens Analytics Hub in a new tab).
+
+A dedicated, real-time control center for Project Managers to monitor active sprints, analyze developer workload, and predict ETAs based on remaining Story Points.
+
+**Key Features:**
+- **Per-Project Configuration:**
+  - Settings are saved per Jira project (`sdk_settings_<projectKey>`).
+  - **Dynamic Status Mapping:** Automatically fetches all project-specific workflow statuses. Allows you to map any custom Jira status to one of four analytical buckets: `To Do`, `In Progress`, `QA`, and `Done`.
+  - **Custom Working Hours:** Configure the standard working hours per day (default 9h) to calibrate the ETA engine.
+  - **SP to Hours Scale:** Fully customizable conversion scale (e.g., 1 SP = 2.25h, 13 SP = 45h).
+- **Auto-Restore Memory:** The dashboard automatically remembers and loads the last selected project to save time on startup.
+- **Developer Cards:**
+  - Visually distinct cards per developer summarizing their workload in the active sprint.
+  - **Remaining Work:** Shows remaining SP (only counting `In Progress` statuses), estimated hours remaining, and a color-coded capacity bar.
+  - **Smart ETA:** Predicts the completion date by dividing remaining work hours by the daily working hours (ignoring weekends).
+  - **Overload Warning:** Highlights the developer card in red if their remaining work hours exceed the time left in the sprint.
+- **Issue Tracking by Stage:**
+  - Categorizes and displays issues into collapsible chips for `In Progress`, `QA`, and `Done`.
+  - **Overdue Detection:** Flags `In Progress` issues that have exceeded their designated SP time allowance.
+  - **1-Click Slack Share:** Each issue has a 🔗 button that copies the `Issue Key + Summary` and `URL` in both plain and rich text for immediate sharing.
+- **Velocity Tracking:**
+  - Automatically fetches the last 3 closed sprints.
+  - Calculates and displays the historical average velocity (Story Points per sprint) per developer.
+
+**Technical Logic:**
+- Uses the `fetchProjects`, `fetchBoardId`, and `fetchActiveSprint` Jira APIs to automatically discover the current active sprint for the selected project.
+- Relies on caching and decoupled fetching to ensure the UI remains responsive while pulling down full issue details and changelogs.
+- Uses the Chrome Extension Storage API to persist status mappings and working hour configurations securely within the browser.
 
 ---
 

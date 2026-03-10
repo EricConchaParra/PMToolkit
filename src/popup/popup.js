@@ -50,11 +50,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // --- Open Exporter in new tab ---
+    // --- Open Analytics Hub in new tab ---
     const openExporterBtn = document.getElementById('open-exporter-btn');
     openExporterBtn.addEventListener('click', () => {
-        const exporterUrl = chrome.runtime.getURL('src/pages/exporter/index.html');
-        chrome.tabs.create({ url: exporterUrl });
+        const analyticsUrl = chrome.runtime.getURL('src/pages/analytics/index.html');
+        chrome.tabs.create({ url: analyticsUrl });
     });
 
     // --- Notes Logic ---
