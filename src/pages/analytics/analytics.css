@@ -1389,9 +1389,34 @@ body {
     white-space: nowrap;
 }
 
-.overdue-copy-btn {
+.issue-chip-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0;
     align-self: center;
+}
+
+.issue-chip-actions .et-notes-btn {
+    margin-right: 0;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3.5px 6px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text-sub);
+    transition: all 0.15s;
+    line-height: 1;
+}
+
+.issue-chip-actions .et-notes-btn:hover {
+    background: var(--accent);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.overdue-copy-btn {
     background: none;
     border: 1px solid var(--border);
     border-radius: 6px;

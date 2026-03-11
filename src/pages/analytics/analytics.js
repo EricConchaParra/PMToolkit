@@ -3,6 +3,8 @@
  * Sprint Dashboard + History Exporter
  */
 
+import { NoteDrawer } from '../../content/jira/ui/NoteDrawer.js';
+
 // ============================================================
 // DEFAULTS & CONSTANTS
 // ============================================================
@@ -510,7 +512,10 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                     </div>
                     <div class="issue-chip-summary" title="${escapeHtml(i.fields?.summary || '')}">${escapeHtml(i.fields?.summary || '')}</div>
                 </div>
-                <button class="overdue-copy-btn" title="Copy for Slack" data-key="${i.key}" data-summary="${escapeHtml(i.fields?.summary || '')}" data-url="https://${jiraHost}/browse/${i.key}">🔗</button>
+                <div class="issue-chip-actions">
+                    <button class="et-notes-btn" data-issue-key="${i.key}" data-summary="${escapeHtml(i.fields?.summary || '')}" title="Notes">📝</button>
+                    <button class="overdue-copy-btn" title="Copy for Slack" data-key="${i.key}" data-summary="${escapeHtml(i.fields?.summary || '')}" data-url="https://${jiraHost}/browse/${i.key}">🔗</button>
+                </div>
             </div>
         `;
     }
@@ -1012,29 +1017,41 @@ async function loadDashboardForSprint(sprint) {
         document.querySelectorAll('.prediction-velocity-hint').forEach(el => el.remove());
         renderSprintOverview(issues, sprint, settings, devCount, Math.round(teamVelAvg * 10) / 10, totalCommittedSP);
 
-        // Event delegation — copy-for-Slack on overdue issue buttons
+        // Event delegation — copy-for-Slack on overdue issue buttons and Notes
         grid.addEventListener('click', (e) => {
-            const btn = e.target.closest('.overdue-copy-btn');
-            if (!btn) return;
-            const { key, summary, url } = btn.dataset;
-            const plainText = `${key} ${summary}\n${url}`;
-            const htmlLink = `<a href="${url}">${key} ${summary}</a>`;
-            try {
-                navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/plain': new Blob([plainText], { type: 'text/plain' }),
-                        'text/html': new Blob([htmlLink], { type: 'text/html' }),
-                    })
-                ]).then(() => {
-                    const orig = btn.textContent;
-                    btn.textContent = '✅';
-                    btn.style.color = '#36b37e';
-                    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
-                });
-            } catch {
-                navigator.clipboard.writeText(plainText);
+            const copyBtn = e.target.closest('.overdue-copy-btn');
+            if (copyBtn) {
+                const { key, summary, url } = copyBtn.dataset;
+                const plainText = `${key} ${summary}\n${url}`;
+                const htmlLink = `<a href="${url}">${key} ${summary}</a>`;
+                try {
+                    navigator.clipboard.write([
+                        new ClipboardItem({
+                            'text/plain': new Blob([plainText], { type: 'text/plain' }),
+                            'text/html': new Blob([htmlLink], { type: 'text/html' }),
+                        })
+                    ]).then(() => {
+                        const orig = copyBtn.textContent;
+                        copyBtn.textContent = '✅';
+                        copyBtn.style.color = '#36b37e';
+                        setTimeout(() => { copyBtn.textContent = orig; copyBtn.style.color = ''; }, 1500);
+                    });
+                } catch {
+                    navigator.clipboard.writeText(plainText);
+                }
+                return;
+            }
+
+            const notesBtn = e.target.closest('.et-notes-btn');
+            if (notesBtn) {
+                const { issueKey, summary } = notesBtn.dataset;
+                if (issueKey) NoteDrawer.open(issueKey, summary);
+                return;
             }
         }, { once: false });
+
+        // Initialize note indicators
+        NoteDrawer.initIndicators();
 
     } catch (err) {
         console.error('PMsToolKit Dashboard:', err);
