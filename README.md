@@ -15,7 +15,7 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 *   **Context at a Glance:** Instantly see how long a ticket has been in its current state with color-coded badges, helping you spot bottlenecks before they become blockers.
 *   **Personal Knowledge Base:** Maintain private, Notion-like notes for any ticket. Keep your thoughts organized without cluttering the official Jira comments.
 *   **Intelligent Reminders:** Set follow-up alerts for yourself. The toolkit ensures you never miss a deadline by surfacing missed notifications the moment you log in.
-*   **Data-Driven Decisions:** View Story Point summaries and developer velocity directly on your dashboards, giving you real-time insights into team performance.
+*   **Data-Driven Decisions:** View Story Point summaries directly on your dashboards, and track developer velocity through the dedicated Sprint Dashboard.
 
 **Built for speed, privacy, and simplicity.** PMsToolKit requires zero Jira admin configuration and stores all your personal data locally in your browser.
 
@@ -36,7 +36,6 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
   - [⏱️ Time in State — Board Cards](#%EF%B8%8F-time-in-state--board-cards)
   - [⏱️ Time in State — Breadcrumb Navigation](#%EF%B8%8F-time-in-state--breadcrumb-navigation)
   - [📊 Story Points in Dashboard Gadgets](#-story-points-in-dashboard-gadgets)
-  - [🚀 Velocity per Developer in Dashboard Gadgets](#-velocity-per-developer-in-dashboard-gadgets)
   - [📹 Zoom Copy Transcript](#-zoom-copy-transcript)
 - [Architecture & Technical Details](#architecture--technical-details)
   - [Build System (Vite)](#build-system-vite)
@@ -69,7 +68,6 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 | 11 | Time in State | Board cards (Kanban/Scrum) | Auto-injected badge per card |
 | 12 | Time in State | Breadcrumb navigation | Auto-injected badge |
 | 13 | Story Points Summary | Dashboard gadgets | Auto-injected SP column (by Assignee/Status) |
-| 14 | Velocity per Developer | Dashboard gadgets ("Velocity" title) | Auto-injected V-Avg column |
 | 15 | Zoom Copy Transcript | Zoom recording pages | 📋 "Copy Transcript" button |
 | 16 | Jira History Exporter | Dedicated Page (from Popup) | "Export History to CSV" button |
 | 17 | Sprint Dashboard & Analytics Hub | Dedicated Page (from Popup) | 🚀 "Sprint Dashboard" tab |
@@ -330,57 +328,6 @@ Enhances **stats gadgets** on Jira dashboards by adding a **Story Points (SP) co
 
 ---
 
-### 🚀 Velocity per Developer in Dashboard Gadgets
-
-**Functions:** `injectVelocityPerDeveloper()`, `_etGetBoardIdForProject()`, `_etGetLastClosedSprints()`, `_etFetchCompletedIssuesForSprint()`
-
-Automatically detects dashboard gadgets whose title contains **"Velocity"** (case-insensitive) and adds a **V-Avg column** showing each developer's average velocity across the last N closed sprints.
-
-**Workflow:**
-
-1. **Detect Velocity gadgets:**
-   - Scans all `table.stats-gadget-table` elements on the dashboard.
-   - Uses `_etGetGadgetTitle()` to read the gadget's header title.
-   - Only processes gadgets whose title includes "Velocity" — all other gadgets are left for the Story Points feature.
-
-2. **Extract project key from JQL:**
-   - Parses the `jql=` parameter from the gadget's "Total" row link.
-   - Extracts the project key via regex (`project = XYZ`).
-
-3. **Resolve the Scrum board:**
-   - Calls `GET /rest/agile/1.0/board?projectKeyOrId={key}&type=scrum&maxResults=1`.
-   - Caches the board ID per project key in-memory (`_etBoardIdCache`).
-
-4. **Fetch the last closed sprints:**
-   - Calls `GET /rest/agile/1.0/board/{boardId}/sprint?state=closed&maxResults=50`.
-   - Takes the last `ET_VELOCITY_SPRINT_COUNT` sprints (default: **2**).
-
-5. **Fetch completed issues per sprint (in parallel):**
-   - For each sprint: `POST /rest/api/3/search/jql` with `sprint = {id} AND statusCategory = Done`.
-   - Returns `[{ assigneeName, sp }]` per sprint.
-
-6. **Aggregate and calculate averages:**
-   - Groups story points by `assignee.displayName` across all sprints.
-   - Computes per-developer average: `totalSP / sprintCount`.
-   - Builds per-developer tooltip showing the breakdown (e.g., `Sprint 12 (14 SP) + Sprint 13 (16 SP)`).
-
-7. **Modify the gadget table:**
-   - **Hides** the percentage/progress bar column and the Count column.
-   - **Adds** a "V-Avg" header column.
-   - **Inserts** a velocity badge (`et-velocity-badge`) per data row, matching assignees by name.
-   - **Adds** the grand average in the footer row.
-   - Each badge uses the **global tooltip system** to show the sprint-by-sprint breakdown on hover.
-
-**Configuration:**
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `ET_VELOCITY_SPRINT_COUNT` | `2` | Number of closed sprints to average |
-
-**Guard:** Each gadget is tracked by a `vel-{gadgetId}` key in `_etProcessedVelocityGadgets` (separate from the Story Points set) to prevent reprocessing.
-
-**Error handling:** On failure, an error indicator with a **↻ Retry** button is shown in the header row. The gadget is not marked as processed, allowing auto-retry on the next DOM mutation.
-
----
 
 ### 📊 Jira History Exporter (CSV)
 

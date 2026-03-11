@@ -12,7 +12,6 @@ const DEFAULT_SETTINGS = {
     jira_age_indicators: true,
     jira_board_age: true,
     jira_sp_summary: true,
-    jira_velocity_per_dev: true,
     jira_native_table_icons: true,
     zoom_copy_transcript: true
 };

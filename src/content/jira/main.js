@@ -23,7 +23,6 @@ const DEFAULT_SETTINGS = {
     jira_age_indicators: true,
     jira_board_age: true,
     jira_sp_summary: true,
-    jira_velocity_per_dev: true,
     jira_native_table_icons: true
 };
 
@@ -80,7 +79,6 @@ async function runAll() {
         if (settings.jira_age_indicators) MetricsFeature.injectAgeIndicators();
         if (settings.jira_board_age) MetricsFeature.injectBoardCardAgeIndicators();
         if (settings.jira_sp_summary) MetricsFeature.injectStoryPointsSummary();
-        if (settings.jira_velocity_per_dev) MetricsFeature.injectVelocityPerDeveloper();
 
     } catch (e) {
         console.error('PMsToolKit: Error in runAll', e);
