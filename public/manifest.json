@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "PMsToolKit",
-    "version": "0.4.0",
-    "description": "Personal toolkit to enhance project management workflows on Jira Cloud. (Beta v0.4.0)",
+    "version": "0.5.0",
+    "description": "Personal toolkit to enhance project management workflows on Jira Cloud. (Beta v0.5.0)",
     "permissions": [
         "clipboardWrite",
         "storage",
@@ -12,7 +12,8 @@
     ],
     "host_permissions": [
         "https://*.atlassian.net/*",
-        "https://*.zoom.us/*"
+        "https://*.zoom.us/*",
+        "https://api.github.com/*"
     ],
     "background": {
         "service_worker": "background.js",

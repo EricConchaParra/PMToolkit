@@ -71,6 +71,7 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 | 15 | Zoom Copy Transcript | Zoom recording pages | 📋 "Copy Transcript" button |
 | 16 | Jira History Exporter | Dedicated Page (from Popup) | "Export History to CSV" button |
 | 17 | Sprint Dashboard & Analytics Hub | Dedicated Page (from Popup) | 🚀 "Sprint Dashboard" tab |
+| 18 | GitHub PR Link | Sprint Dashboard | Direct link in ticket chips (In Review) |
 
 ---
 
@@ -392,6 +393,26 @@ A dedicated, real-time control center for Project Managers to monitor active spr
 
 ---
 
+### 🐙 GitHub PR Link
+
+**Feature:** Integration with GitHub API.
+
+When enabled in **Settings**, the toolkit automatically identifies Jira tickets in the **In Progress** or **In Review** stages on the **Sprint Dashboard** and searches for matching Pull Requests in GitHub.
+
+**Key Features:**
+- **Automated Search:** Scans GitHub PR titles and branch names for the Jira issue key (e.g., `MMZ-423`).
+- **Classic PAT Support:** Securely uses your GitHub **Personal Access Token (Classic)** with `repo` permissions to access private repositories.
+- **Smart Staggering:** Requests are staggered (500ms delay) to stay within GitHub API search rate limits.
+- **Loading Indicators:** Displays a subtle, pulsing GitHub logo icon while searching, transforming into a clickable link once a PR is found.
+- **Developer Workflow:** Streamlines the Tech Lead's review process by providing direct links from the planning hub to the code.
+
+**Technical Logic:**
+- Uses `GET https://api.github.com/search/issues?q={ticketId}+type:pr`.
+- Filters results based on ticket key matching in title, branch name, or body.
+- Stores the PAT locally in `chrome.storage.sync` for cross-device availability (if enabled).
+
+---
+
 ### 📹 Zoom Copy Transcript
 
 **Function:** `zoom/main.js`
@@ -511,7 +532,7 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-## Installation (Beta v0.4.0)
+## Installation (Beta v0.5.0)
 
 1. Clone or download this repository.
 2. Run `npm install` followed by `npm run build`.
@@ -522,4 +543,4 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-*PMsToolKit v0.4.0 (Beta) — Created by EricConcha*
+*PMsToolKit v0.5.0 (Beta) — Created by EricConcha*

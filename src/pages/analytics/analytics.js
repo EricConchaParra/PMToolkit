@@ -113,6 +113,35 @@ async function jiraFetch(host, path, opts = {}) {
     return resp.json();
 }
 
+// GitHub API helper
+async function githubFetch(path, token) {
+    const url = path.startsWith('http') ? path : `https://api.github.com${path}`;
+    const resp = await fetch(url, {
+        headers: {
+            'Accept': 'application/vnd.github+json',
+            'Authorization': `Bearer ${token}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+        },
+    });
+    if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
+    return resp.json();
+}
+
+// Search for a PR by ticket ID; returns the PR html_url or null
+async function findPrForTicket(ticketId, token) {
+    try {
+        const data = await githubFetch(`/search/issues?q=${encodeURIComponent(ticketId)}+type:pr&per_page=5`, token);
+        const pr = (data.items || []).find(item =>
+            (item.title || '').toLowerCase().includes(ticketId.toLowerCase()) ||
+            (item.body || '').toLowerCase().includes(ticketId.toLowerCase()) ||
+            (item.head?.ref || '').toLowerCase().includes(ticketId.toLowerCase())
+        );
+        return pr ? pr.html_url : null;
+    } catch {
+        return null;
+    }
+}
+
 async function fetchProjects(host) {
     let all = [];
     let startAt = 0;
@@ -456,6 +485,7 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     // Total work for ETA and capacity bar: To Do + In Progress
     const totalCommittedSP = remainingSP + todoSP;
     const totalCommittedHours = remainingHours + todoHours;
+    const grandTotalSP = totalCommittedSP + qaSP + doneSP;
 
     // ETA — based on total committed hours (To Do + In Progress)
     const eta = calculateETA(totalCommittedHours, hoursPerDay);
@@ -501,8 +531,9 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     // ---- Helper: compact issue chip ----
     function issueChip(i, opts = {}) {
         const isOverdue = opts.isOverdue;
+        const isInProgress = opts.isInProgress;
         return `
-            <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''}">
+            <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''}${isInProgress ? ' in-progress-chip' : ''}" data-gh-key="${i.key}">
                 <div class="issue-chip-main">
                     <div class="issue-chip-top">
                         <a class="issue-chip-key" href="https://${jiraHost}/browse/${i.key}" target="_blank">${i.key}</a>
@@ -524,7 +555,7 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
 
     const inProgressHtml = inProgressIssues.length === 0
         ? `<div class="no-issues">No tickets in progress</div>`
-        : inProgressIssues.map(i => issueChip(i, { isOverdue: overdueSet.has(i.key) })).join('');
+        : inProgressIssues.map(i => issueChip(i, { isOverdue: overdueSet.has(i.key), isInProgress: true })).join('');
 
     const qaHtml = qaIssues.length === 0
         ? `<div class="no-issues">No tickets in QA</div>`
@@ -575,7 +606,7 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                 <div class="dev-section-title">📊 Committed Work <span class="section-note">(To Do + In Progress)</span></div>
                 <div class="remaining-summary">
                     <span class="remaining-sp">${remainingSP + todoIssues.reduce((a, i) => a + (i._sp || 0), 0)}</span>
-                    <span class="remaining-sp-label">SP total</span>
+                    <span class="remaining-sp-label">SP remaining</span>
                     <span class="remaining-hours">${formatHours(remainingHours + todoIssues.reduce((a, i) => a + spToHours(i._sp, spHours), 0))}</span>
                 </div>
                 ${sprintHoursLeft !== null ? `
@@ -589,7 +620,7 @@ function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                     ${sprintEnd ? `<span class="eta-value ${etaClass}">ETA: ${formatDate(eta)}</span>` : ''}
                 </div>
                 ` : `<div class="eta-row"><span class="eta-value">ETA: ${formatDate(eta)}</span></div>`}
-                ${doneSP > 0 || qaSP > 0 ? `<div class="done-summary">${doneSP > 0 ? `<span class="done-sp">${doneSP} SP</span> done` : ''}${doneSP > 0 && qaSP > 0 ? ' · ' : ''}${qaSP > 0 ? `<span class="qa-sp">${qaSP} SP</span> in QA` : ''}</div>` : ''}
+                ${doneSP > 0 || qaSP > 0 ? `<div class="done-summary">${doneSP > 0 ? `<span class="done-sp">${doneSP} SP</span> Done (${grandTotalSP} in total)` : ''}${doneSP > 0 && qaSP > 0 ? ' · ' : ''}${qaSP > 0 ? `<span class="qa-sp">${qaSP} SP</span> in QA` : ''}</div>` : ''}
             </div>
 
             <!-- In Progress (In Progress + In Review) -->
@@ -812,6 +843,54 @@ function showDashState(state, msg = '') {
         document.getElementById('dev-cards-grid').classList.remove('hidden');
     }
 }
+// ============================================================
+// GITHUB PR ENRICHMENT
+// ============================================================
+
+async function enrichGitHubPRLinks() {
+    // 1. Check if the feature is enabled and we have a token
+    if (typeof chrome === 'undefined' || !chrome.storage) return;
+
+    const stored = await new Promise(resolve =>
+        chrome.storage.sync.get({ github_pr_link: false, github_pat: '' }, resolve)
+    );
+    if (!stored.github_pr_link || !stored.github_pat) return;
+
+    const token = stored.github_pat;
+    const chips = document.querySelectorAll('.in-progress-chip[data-gh-key]');
+    if (chips.length === 0) return;
+
+    // 2. For each In Progress chip, fetch the PR asynchronously (staggered)
+    chips.forEach((chip, idx) => {
+        const ticketId = chip.dataset.ghKey;
+        const actions = chip.querySelector('.issue-chip-actions');
+        if (!actions || !ticketId) return;
+
+        // Show a loading placeholder immediately
+        const loadingBtn = document.createElement('button');
+        loadingBtn.className = 'gh-pr-btn gh-pr-loading';
+        loadingBtn.title = 'Looking up GitHub PR...';
+        loadingBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>`;
+        actions.appendChild(loadingBtn);
+
+        // Stagger requests to be safe (500ms between each)
+        setTimeout(async () => {
+            const prUrl = await findPrForTicket(ticketId, token);
+            loadingBtn.remove();
+
+            if (prUrl) {
+                const prBtn = document.createElement('a');
+                prBtn.href = prUrl;
+                prBtn.target = '_blank';
+                prBtn.rel = 'noopener noreferrer';
+                prBtn.className = 'gh-pr-btn gh-pr-found';
+                prBtn.title = `Open GitHub PR: ${prUrl}`;
+                prBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>`;
+                actions.appendChild(prBtn);
+            }
+        }, idx * 500);
+    });
+}
 
 async function loadDashboard(projectKey) {
     if (!projectKey) { showDashState('placeholder'); return; }
@@ -1016,6 +1095,9 @@ async function loadDashboardForSprint(sprint) {
         // Clear any stale velocity hint from previous load
         document.querySelectorAll('.prediction-velocity-hint').forEach(el => el.remove());
         renderSprintOverview(issues, sprint, settings, devCount, Math.round(teamVelAvg * 10) / 10, totalCommittedSP);
+
+        // --- GitHub PR enrichment (In Progress only) ---
+        enrichGitHubPRLinks();
 
         // Event delegation — copy-for-Slack on overdue issue buttons and Notes
         grid.addEventListener('click', (e) => {

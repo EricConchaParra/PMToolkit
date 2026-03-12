@@ -140,6 +140,31 @@
             </div>
 
             <div class="settings-group">
+                <h3>GitHub Integration</h3>
+                <label class="setting-item">
+                    <div class="setting-info">
+                        <span>Show GH PR Link on Sprint Dashboard</span>
+                        <p>
+                            Adds a direct link to the GitHub Pull Request for each ticket <strong>In Progress / In Review</strong>.
+                            Requires a GitHub <strong>Personal Access Token (Classic)</strong> with all the <strong>repo</strong> permissions activated.
+                        </p>
+                    </div>
+                    <input type="checkbox" data-setting="github_pr_link" id="github-pr-link-toggle">
+                </label>
+                <div id="github-pat-section" style="display: none; padding: 8px 0 4px 0;">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.05em;">Personal Access Token</label>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <input type="password" id="github-pat-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                                style="flex: 1; padding: 7px 10px; border-radius: 6px; border: 1.5px solid var(--border-light); font-family: inherit; font-size: 12px; background: var(--bg-alt); color: var(--text-main);">
+                            <button id="github-pat-save-btn" class="et-notes-save-btn" style="margin: 0; white-space: nowrap;">Save Token</button>
+                        </div>
+                        <div id="github-pat-status" style="font-size: 11px; color: #36b37e; display: none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-group">
                 <h3>Diagnostics</h3>
                 <div class="setting-item"
                     style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px;">

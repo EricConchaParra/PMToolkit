@@ -13,7 +13,8 @@ const DEFAULT_SETTINGS = {
     jira_board_age: true,
     jira_sp_summary: true,
     jira_native_table_icons: true,
-    zoom_copy_transcript: true
+    zoom_copy_transcript: true,
+    github_pr_link: false,
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -28,6 +29,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const searchInput = document.getElementById('search');
     const testNotifBtn = document.getElementById('test-notification-btn');
     const notifStatus = document.getElementById('notif-status');
+    const githubToggle = document.getElementById('github-pr-link-toggle');
+    const githubPatSection = document.getElementById('github-pat-section');
+    const githubPatInput = document.getElementById('github-pat-input');
+    const githubPatSaveBtn = document.getElementById('github-pat-save-btn');
+    const githubPatStatus = document.getElementById('github-pat-status');
 
     let allNotes = [];
     let isSettingsOpen = false;
@@ -336,6 +342,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 input.checked = settings[key];
             }
         });
+
+        // GitHub PAT: show section if already enabled, and pre-fill the stored token
+        const isGhEnabled = settings['github_pr_link'] === true;
+        syncGitHubPatSection(isGhEnabled);
+        if (isGhEnabled) {
+            const ghData = await syncStorage.get({ github_pat: '' });
+            if (ghData.github_pat) githubPatInput.value = ghData.github_pat;
+        }
     }
 
     document.querySelectorAll('input[data-setting]').forEach(input => {
@@ -352,6 +366,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         notifStatus.textContent = 'Test signal sent to background...';
         notifStatus.style.display = 'block';
         setTimeout(() => notifStatus.style.display = 'none', 3000);
+    });
+
+    // --- GitHub PAT Logic ---
+    function syncGitHubPatSection(isEnabled) {
+        githubPatSection.style.display = isEnabled ? 'block' : 'none';
+    }
+
+    githubToggle.addEventListener('change', () => {
+        syncGitHubPatSection(githubToggle.checked);
+    });
+
+    githubPatSaveBtn.addEventListener('click', async () => {
+        const token = githubPatInput.value.trim();
+        if (!token) {
+            githubPatStatus.textContent = 'Please enter a token.';
+            githubPatStatus.style.color = '#ff5630';
+            githubPatStatus.style.display = 'block';
+            return;
+        }
+        await syncStorage.set({ github_pat: token });
+        githubPatStatus.textContent = '✅ Token saved!';
+        githubPatStatus.style.color = '#36b37e';
+        githubPatStatus.style.display = 'block';
+        setTimeout(() => githubPatStatus.style.display = 'none', 2500);
     });
 
     // --- Initialization ---

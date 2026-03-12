@@ -12,7 +12,8 @@
     ],
     "host_permissions": [
         "https://*.atlassian.net/*",
-        "https://*.zoom.us/*"
+        "https://*.zoom.us/*",
+        "https://api.github.com/*"
     ],
     "background": {
         "service_worker": "background.js",
