@@ -81,6 +81,11 @@ function issueChip(i, jiraHost, opts = {}) {
 function buildSlackText(tickets, host, notesMap, alertsMap) {
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     
+    const lines = [
+        `🗓️ *Standup Action Items — ${today}*`,
+        ''
+    ];
+
     // Group tickets by assignee
     const groups = {};
     tickets.forEach(ticket => {
@@ -92,13 +97,8 @@ function buildSlackText(tickets, host, notesMap, alertsMap) {
     // Sort assignees alphabetically
     const sortedAssignees = Object.keys(groups).sort();
 
-    const lines = [
-        `*_Standup Action Items — ${today}_*`,
-        ''
-    ];
-
     sortedAssignees.forEach((assignee, index) => {
-        lines.push(`*${assignee.toUpperCase()}*`);
+        lines.push(`👤 *${assignee}*`);
         
         groups[assignee].forEach(i => {
             const summary = i.fields?.summary || '';
@@ -106,20 +106,22 @@ function buildSlackText(tickets, host, notesMap, alertsMap) {
             const noteText = notesMap[i.key];
             const reminderTs = alertsMap[i.key];
 
-            lines.push(`• *${i.key}:* ${summary}`);
+            lines.push('');
+            lines.push(`📋 *${i.key}:* ${summary}`);
             
             if (noteText) {
-                lines.push(`  _Note:_ ${noteText}`);
+                lines.push(`_Note: ${noteText}_`);
             } else if (reminderTs) {
                 const dateStr = new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                lines.push(`  _Reminder:_ ${dateStr}`);
+                lines.push(`_Reminder: ${dateStr}_`);
             }
-            
-            lines.push(`  ${url}`);
+            lines.push(url);
         });
 
-        // Add an extra newline between people
+        // Separator between people
         if (index < sortedAssignees.length - 1) {
+            lines.push('');
+            lines.push('-------------------------------------------');
             lines.push('');
         }
     });
