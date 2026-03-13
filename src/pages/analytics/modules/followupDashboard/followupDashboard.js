@@ -79,25 +79,57 @@ function issueChip(i, jiraHost, opts = {}) {
 // ============================================================
 
 function buildSlackText(tickets, host, notesMap, alertsMap) {
-    const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const lines = [`📋 Standup Action Items — ${today}`, ''];
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    /*const intro = "Aquí tienes el resumen de los Action Items del Standup, organizado por responsable y optimizado para Slack:";*/
+    
+    // Group tickets by assignee
+    const groups = {};
+    tickets.forEach(ticket => {
+        const assignee = ticket.fields?.assignee?.displayName || 'Unassigned';
+        if (!groups[assignee]) groups[assignee] = [];
+        groups[assignee].push(ticket);
+    });
 
-    tickets.forEach(i => {
-        const assignee = i.fields?.assignee?.displayName || 'Unassigned';
-        const summary = i.fields?.summary || '';
-        const url = `https://${host}/browse/${i.key}`;
-        const noteText = notesMap[i.key];
-        const reminderTs = alertsMap[i.key];
+    // Sort assignees alphabetically
+    const sortedAssignees = Object.keys(groups).sort();
 
-        lines.push(`🗒️ ${i.key} · ${assignee}`);
-        lines.push(`   "${summary}"`);
-        if (noteText) lines.push(`   Note: ${noteText}`);
-        if (reminderTs) {
-            const dateStr = new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            lines.push(`   🔔 Reminder: ${dateStr}`);
-        }
-        lines.push(`   🔗 ${url}`);
+    const lines = [
+        intro,
+        '',
+        '---',
+        '',
+        `### *Standup Action Items — ${today}*`,
+        ''
+    ];
+
+    sortedAssignees.forEach((assignee, index) => {
+        lines.push(`**${assignee}**`);
         lines.push('');
+        
+        groups[assignee].forEach(i => {
+            const summary = i.fields?.summary || '';
+            const url = `https://${host}/browse/${i.key}`;
+            const noteText = notesMap[i.key];
+            const reminderTs = alertsMap[i.key];
+
+            lines.push(`* **${i.key}:** ${summary}`);
+            
+            // Prioritize user note, fallback to reminder if no note exists
+            if (noteText) {
+                lines.push(`* **Note:** ${noteText}`);
+            } else if (reminderTs) {
+                const dateStr = new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                lines.push(`* **Reminder:** ${dateStr}`);
+            }
+            
+            lines.push(`* [${url}](${url})`);
+            lines.push(''); // Gap between tickets of same person
+        });
+
+        // Add an extra newline between people, except for the last one
+        if (index < sortedAssignees.length - 1) {
+            lines.push('');
+        }
     });
 
     return lines.join('\n').trim();
