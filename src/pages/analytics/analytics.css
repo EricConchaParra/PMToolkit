@@ -2394,8 +2394,14 @@ body {
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 10px 4px;
+    padding: 12px 14px;
     border-bottom: 1px solid var(--bg);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.fu-engineer-row:hover {
+    background-color: var(--bg);
 }
 
 .fu-engineer-row:last-child {
@@ -2407,19 +2413,43 @@ body {
     height: 36px;
     flex-shrink: 0;
     font-size: 13px;
+    align-self: flex-start;
+    margin-top: 2px;
 }
 
 .fu-engineer-info {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
+    min-width: 0;
+}
+
+.fu-engineer-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .fu-engineer-name {
     font-size: 13px;
     font-weight: 700;
     color: var(--text);
+}
+
+.fu-engineer-overdue-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    background: #ffebe6;
+    color: #bf2600;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    border: 1px solid rgba(222,53,11,0.2);
+    flex-shrink: 0;
 }
 
 .fu-engineer-bar {
@@ -2430,19 +2460,90 @@ body {
     overflow: visible;
 }
 
+.fu-engineer-stat-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.fu-engineer-stat {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-sub);
+    background: var(--bg);
+    padding: 2px 7px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.fu-engineer-hours {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-sub);
+    margin-left: auto;
+    white-space: nowrap;
+}
+
 .fu-engineer-pct {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 800;
     letter-spacing: -0.02em;
     min-width: 48px;
     text-align: right;
     flex-shrink: 0;
     cursor: default;
+    align-self: flex-start;
+    margin-top: 2px;
 }
 
 .fu-engineer-pct.safe   { color: var(--success); }
 .fu-engineer-pct.warning { color: var(--warning); }
 .fu-engineer-pct.danger  { color: var(--danger); }
+
+/* Copy All for Slack button in Notes section header */
+.fu-copy-all-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    background: var(--accent);
+    color: var(--primary);
+    border: 1.5px solid rgba(0, 82, 204, 0.2);
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.fu-copy-all-btn:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.fu-copy-all-btn.hidden {
+    display: none;
+}
+
+/* Time in state badge for In Review chips */
+.fu-time-in-state-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    background: #e8f0fe;
+    color: #1a56db;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    border: 1px solid rgba(26, 86, 219, 0.2);
+    flex-shrink: 0;
+}
 
 /* ==============================
    GITHUB PR META (shared by Sprint + Follow-up)
@@ -2488,4 +2589,23 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+/* Highlight Pulse for Sprint Dashboard */
+.highlight-pulse {
+    animation: highlightPulse 2s ease-out;
+}
+
+@keyframes highlightPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(0, 82, 204, 0.4);
+        background-color: #e8f0fe;
+    }
+    30% {
+        box-shadow: 0 0 0 10px rgba(0, 82, 204, 0);
+        background-color: #e8f0fe;
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(0, 82, 204, 0);
+        background-color: var(--bg-card);
+    }
 }

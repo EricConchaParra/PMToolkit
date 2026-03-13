@@ -1,6 +1,6 @@
 /**
  * PMsToolKit — Analytics Hub
- * Follow-up Work Dashboard — notes/alerts, in-review, overdue, capacity
+ * Follow-up Work Dashboard — notes/alerts, in-review, capacity
  */
 
 import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
@@ -10,6 +10,8 @@ import {
 import { escapeHtml, spToHours, workingHoursBetween, timeSince } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
 import { enrichChips, clearPrCache } from '../githubPrCache.js';
+import { switchToView } from '../nav.js';
+import { highlightEngineer } from '../sprintDashboard/sprintDashboard.js';
 
 // ============================================================
 // SECTION CLASSIFIER
@@ -32,10 +34,16 @@ function sectionOf(issue, statusMap = {}) {
 // ============================================================
 
 function issueChip(i, jiraHost, opts = {}) {
-    const { isOverdue, reminderTs } = opts;
-    const badgeHtml = isOverdue
-        ? `<span class="overdue-time-badge">⏰ ${timeSince(i._inProgressSince)}</span>`
-        : (reminderTs ? `<span class="overdue-time-badge">🔔 ${new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>` : '');
+    const { isOverdue, reminderTs, showTimeInState } = opts;
+
+    let badgeHtml = '';
+    if (showTimeInState && i._inProgressSince) {
+        badgeHtml = `<span class="fu-time-in-state-badge">⏱️ ${timeSince(i._inProgressSince)}</span>`;
+    } else if (isOverdue) {
+        badgeHtml = `<span class="overdue-time-badge">⏰ ${timeSince(i._inProgressSince)}</span>`;
+    } else if (reminderTs) {
+        badgeHtml = `<span class="overdue-time-badge">🔔 ${new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>`;
+    }
 
     const { initials, imgUrl } = getInitialsOrImg(i.fields?.assignee);
     const avatarHtml = imgUrl
@@ -66,11 +74,43 @@ function issueChip(i, jiraHost, opts = {}) {
     `;
 }
 
+// ============================================================
+// SLACK TEXT BUILDER — for Copy All Notes
+// ============================================================
 
+function buildSlackText(tickets, host, notesMap, alertsMap) {
+    const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const lines = [`📋 Standup Action Items — ${today}`, ''];
+
+    tickets.forEach(i => {
+        const assignee = i.fields?.assignee?.displayName || 'Unassigned';
+        const summary = i.fields?.summary || '';
+        const url = `https://${host}/browse/${i.key}`;
+        const noteText = notesMap[i.key];
+        const reminderTs = alertsMap[i.key];
+
+        lines.push(`🗒️ ${i.key} · ${assignee}`);
+        lines.push(`   "${summary}"`);
+        if (noteText) lines.push(`   Note: ${noteText}`);
+        if (reminderTs) {
+            const dateStr = new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            lines.push(`   🔔 Reminder: ${dateStr}`);
+        }
+        lines.push(`   🔗 ${url}`);
+        lines.push('');
+    });
+
+    return lines.join('\n').trim();
+}
+
+// ============================================================
+// EVENT DELEGATION
+// ============================================================
 
 function attachFollowupEvents(container) {
     if (container.dataset.fuDelegated) return;
     container.addEventListener('click', (e) => {
+        // Copy single ticket link
         const copyBtn = e.target.closest('.overdue-copy-btn');
         if (copyBtn) {
             if (copyBtn.dataset.isCopying) return;
@@ -90,10 +130,49 @@ function attachFollowupEvents(container) {
             try { doCopy(); } catch { navigator.clipboard.writeText(plainText).then(() => flash(copyBtn, orig)).catch(() => { delete copyBtn.dataset.isCopying; }); }
             return;
         }
+
+        // Copy ALL notes for Slack
+        const copyAllBtn = e.target.closest('.fu-copy-all-btn');
+        if (copyAllBtn) {
+            if (copyAllBtn.dataset.isCopying) return;
+            copyAllBtn.dataset.isCopying = 'true';
+            const host = copyAllBtn.dataset.host;
+            const tickets = JSON.parse(copyAllBtn.dataset.tickets || '[]');
+            const notesMap = JSON.parse(copyAllBtn.dataset.notesMap || '{}');
+            const alertsMap = JSON.parse(copyAllBtn.dataset.alertsMap || '{}');
+            const text = buildSlackText(tickets, host, notesMap, alertsMap);
+            const orig = copyAllBtn.innerHTML;
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    copyAllBtn.innerHTML = '✅ Copied!';
+                    copyAllBtn.style.color = '#36b37e';
+                    setTimeout(() => {
+                        copyAllBtn.innerHTML = orig;
+                        copyAllBtn.style.color = '';
+                        delete copyAllBtn.dataset.isCopying;
+                    }, 2000);
+                })
+                .catch(() => { delete copyAllBtn.dataset.isCopying; });
+            return;
+        }
+
+        // Open notes drawer
         const notesBtn = e.target.closest('.et-notes-btn');
         if (notesBtn) {
             const { issueKey, summary } = notesBtn.dataset;
             if (issueKey) NoteDrawer.open(issueKey, summary);
+            return;
+        }
+
+        // Navigate to Sprint Dashboard + highlight engineer
+        const engRow = e.target.closest('.fu-engineer-row');
+        if (engRow) {
+            const accId = engRow.dataset.accountId;
+            if (accId) {
+                switchToView('sprint-dashboard');
+                // Small delay to ensure view is visible and cards are rendered
+                setTimeout(() => highlightEngineer(accId), 100);
+            }
         }
     });
     container.dataset.fuDelegated = 'true';
@@ -166,8 +245,8 @@ export async function loadFollowupDashboard(projectKey, host, settings) {
         const issues = await fetchSprintIssues(host, activeSprint.id, spFieldId);
         issues.forEach(i => { i._sp = spFieldId ? (Number(i.fields?.[spFieldId]) || 0) : 0; });
 
-        // --- Enrich In Progress since for overdue calc ---
-        showFollowupState('loading', 'Checking In Progress durations...');
+        // --- Enrich In Progress since for time-in-state ---
+        showFollowupState('loading', 'Checking In Progress / In Review durations...');
         const { hoursPerDay = 9, spHours = {}, statusMap = {} } = settings || {};
         const inProgressOrReview = issues.filter(i => {
             const sec = sectionOf(i, statusMap);
@@ -188,7 +267,6 @@ export async function loadFollowupDashboard(projectKey, host, settings) {
         let alertsMap = {};  // key → reminderTimestamp
 
         if (typeof chrome !== 'undefined' && chrome.storage) {
-            // Build lookup keys for all sprint issues
             const storageKeys = [];
             issues.forEach(i => {
                 storageKeys.push(`notes_jira:${i.key}`, `reminder_jira:${i.key}`);
@@ -198,7 +276,7 @@ export async function loadFollowupDashboard(projectKey, host, settings) {
                 const noteVal = stored[`notes_jira:${i.key}`];
                 const reminderVal = stored[`reminder_jira:${i.key}`];
                 if (noteVal) notesMap[i.key] = noteVal;
-                if (reminderVal && reminderVal > now) alertsMap[i.key] = reminderVal; // only future reminders
+                if (reminderVal && reminderVal > now) alertsMap[i.key] = reminderVal;
             });
         }
 
@@ -213,18 +291,7 @@ export async function loadFollowupDashboard(projectKey, host, settings) {
         const inReviewTickets = issues.filter(i => sectionOf(i, statusMap) === 'inReview');
 
         // =====================================================
-        // SECTION 3 — Overdue tickets (In Progress / In Review longer than their SP budget)
-        // =====================================================
-        const overdueTickets = inProgressOrReview.filter(i => {
-            const since = i._inProgressSince;
-            if (!since) return false;
-            const elapsedHours = (now - new Date(since).getTime()) / (1000 * 60 * 60);
-            const allowed = spToHours(i._sp, spHours);
-            return elapsedHours > allowed;
-        });
-
-        // =====================================================
-        // SECTION 4 — Engineers at ≥75% capacity
+        // SECTION 3 — Engineers at ≥75% capacity (with richer stats)
         // =====================================================
         const sprintEnd = activeSprint.endDate ? new Date(activeSprint.endDate) : null;
         const sprintHoursLeft = sprintEnd ? workingHoursBetween(new Date(), sprintEnd, hoursPerDay) : null;
@@ -242,13 +309,25 @@ export async function loadFollowupDashboard(projectKey, host, settings) {
                 return sec === 'inProgress' || sec === 'inReview' || sec === 'todo';
             });
             const committedHours = pending.reduce((acc, i) => acc + spToHours(i._sp, spHours), 0);
+            const spLeft = pending.reduce((acc, i) => acc + (i._sp || 0), 0);
+            const ticketsLeft = pending.length;
+
+            // Overdue: ticket has been in progress/review longer than its SP budget
+            const overdueCount = pending.filter(i => {
+                const since = i._inProgressSince;
+                if (!since) return false;
+                const elapsedHours = (now - new Date(since).getTime()) / (1000 * 60 * 60);
+                const allowed = spToHours(i._sp, spHours);
+                return elapsedHours > allowed;
+            }).length;
+
             let capacityPct = 0;
             if (sprintHoursLeft !== null && sprintHoursLeft > 0) {
                 capacityPct = Math.min(Math.round((committedHours / sprintHoursLeft) * 100), 150);
             } else if (committedHours > 0) {
                 capacityPct = 150;
             }
-            return { assignee: dev.assignee, capacityPct, committedHours };
+            return { assignee: dev.assignee, capacityPct, committedHours, ticketsLeft, spLeft, overdueCount };
         }).filter(e => e.capacityPct >= 75)
           .sort((a, b) => b.capacityPct - a.capacityPct);
 
@@ -258,8 +337,7 @@ export async function loadFollowupDashboard(projectKey, host, settings) {
         showFollowupState('content');
         renderSection1(notedTickets, issues, host, notesMap, alertsMap);
         renderSection2(inReviewTickets, host, settings);
-        renderSection3(overdueTickets, host, settings);
-        renderSection4(engineers, sprintHoursLeft);
+        renderSection3(engineers, sprintHoursLeft);
 
         // Attach events to the whole content container
         const content = document.getElementById('fu-content');
@@ -292,6 +370,27 @@ function renderSection1(tickets, allIssues, host, notesMap, alertsMap) {
 
     const countEl = document.getElementById('fu-notes-count');
     if (countEl) countEl.textContent = tickets.length;
+
+    // Render the Copy All button in the section header
+    const copyAllBtn = document.getElementById('fu-notes-copy-all');
+    if (copyAllBtn) {
+        if (tickets.length === 0) {
+            copyAllBtn.classList.add('hidden');
+        } else {
+            copyAllBtn.classList.remove('hidden');
+            // Serialize data for the click handler (avoid closures on re-render)
+            copyAllBtn.dataset.host = host;
+            copyAllBtn.dataset.tickets = JSON.stringify(tickets.map(i => ({
+                key: i.key,
+                fields: {
+                    summary: i.fields?.summary,
+                    assignee: i.fields?.assignee,
+                },
+            })));
+            copyAllBtn.dataset.notesMap = JSON.stringify(notesMap);
+            copyAllBtn.dataset.alertsMap = JSON.stringify(alertsMap);
+        }
+    }
 
     if (tickets.length === 0) {
         el.innerHTML = `<div class="fu-empty-state">✅ No tickets with notes or reminders</div>`;
@@ -347,24 +446,10 @@ function renderSection2(tickets, host, settings) {
         el.innerHTML = `<div class="fu-empty-state">✅ No tickets currently In Review</div>`;
         return;
     }
-    el.innerHTML = tickets.map(i => issueChip(i, host)).join('');
+    el.innerHTML = tickets.map(i => issueChip(i, host, { showTimeInState: true })).join('');
 }
 
-function renderSection3(tickets, host, settings) {
-    const el = document.getElementById('fu-overdue-list');
-    if (!el) return;
-
-    const countEl = document.getElementById('fu-overdue-count');
-    if (countEl) countEl.textContent = tickets.length;
-
-    if (tickets.length === 0) {
-        el.innerHTML = `<div class="fu-empty-state">✅ No overdue tickets</div>`;
-        return;
-    }
-    el.innerHTML = tickets.map(i => issueChip(i, host, { isOverdue: true })).join('');
-}
-
-function renderSection4(engineers, sprintHoursLeft) {
+function renderSection3(engineers, sprintHoursLeft) {
     const el = document.getElementById('fu-capacity-list');
     if (!el) return;
 
@@ -384,20 +469,36 @@ function renderSection4(engineers, sprintHoursLeft) {
         const barClass = e.capacityPct > 110 ? 'danger' : e.capacityPct > 85 ? 'warning' : 'safe';
         const barWidth = Math.min(e.capacityPct, 100);
         const name = escapeHtml(e.assignee?.displayName || 'Unassigned');
-        const tooltip = sprintHoursLeft !== null
-            ? `${e.committedHours.toFixed(1)}h needed / ${sprintHoursLeft.toFixed(1)}h capacity`
+        const hoursTooltip = sprintHoursLeft !== null
+            ? `${e.committedHours.toFixed(1)}h needed / ${sprintHoursLeft.toFixed(1)}h remaining`
+            : `${e.committedHours.toFixed(1)}h committed`;
+
+        const overdueHtml = e.overdueCount > 0
+            ? `<span class="fu-engineer-overdue-badge">⚠️ ${e.overdueCount} overdue</span>`
             : '';
 
+        const hoursHtml = sprintHoursLeft !== null
+            ? `<span class="fu-engineer-hours">${e.committedHours.toFixed(1)}h / ${sprintHoursLeft.toFixed(1)}h cap</span>`
+            : `<span class="fu-engineer-hours">${e.committedHours.toFixed(1)}h committed</span>`;
+
         return `
-            <div class="fu-engineer-row">
+            <div class="fu-engineer-row" data-account-id="${e.assignee?.accountId || 'unassigned'}">
                 <div class="dev-avatar fu-engineer-avatar">${avatarHtml}</div>
                 <div class="fu-engineer-info">
-                    <div class="fu-engineer-name">${name}</div>
+                    <div class="fu-engineer-name-row">
+                        <span class="fu-engineer-name">${name}</span>
+                        ${overdueHtml}
+                    </div>
                     <div class="capacity-bar-track fu-engineer-bar">
                         <div class="capacity-bar-fill ${barClass}" style="width:${barWidth}%"></div>
                     </div>
+                    <div class="fu-engineer-stat-row">
+                        <span class="fu-engineer-stat">🎫 ${e.ticketsLeft} ticket${e.ticketsLeft !== 1 ? 's' : ''}</span>
+                        <span class="fu-engineer-stat">⚡ ${e.spLeft} SP</span>
+                        ${hoursHtml}
+                    </div>
                 </div>
-                <div class="fu-engineer-pct ${barClass}" data-tooltip="${tooltip}">
+                <div class="fu-engineer-pct ${barClass}" title="${hoursTooltip}">
                     ${e.capacityPct}%
                 </div>
             </div>

@@ -356,3 +356,12 @@ export async function loadDashboardForSprint(sprint) {
         showDashState('error', err.message || 'Unexpected error loading sprint.');
     }
 }
+
+export function highlightEngineer(accountId) {
+    const card = document.querySelector(`.dev-card[data-account-id="${accountId}"]`);
+    if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('highlight-pulse');
+        setTimeout(() => card.classList.remove('highlight-pulse'), 3000);
+    }
+}
