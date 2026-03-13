@@ -165,7 +165,9 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     const etaClass = isLate ? 'eta-late' : 'eta-ok';
 
     const card = document.createElement('div');
+    const accountId = assignee?.accountId || 'unassigned';
     card.className = `dev-card${isOverloaded ? ' overloaded' : ''}`;
+    card.dataset.accountId = accountId;
     card.innerHTML = `
         <div class="dev-card-header">
             <div class="dev-avatar">${avatarHtml}</div>

@@ -43,7 +43,7 @@
         </nav>
 
         <div class="sidebar-footer">
-            <span>v0.6.0 · PMsToolKit</span>
+            <span>v0.6.5 · PMsToolKit</span>
         </div>
     </aside>
 
@@ -326,7 +326,7 @@
             <div class="view-header">
                 <div class="view-header-left">
                     <h1>🔔 Follow-up Work</h1>
-                    <p>Tickets needing attention — notes, in review, overdue, and capacity alerts</p>
+                    <p>Tickets needing attention — notes, in review, and capacity alerts</p>
                 </div>
                 <div class="view-header-right">
                     <div class="project-select-wrap">
@@ -367,6 +367,7 @@
                             <span class="fu-section-title">Notes &amp; Reminders</span>
                             <span class="fu-section-sub">Tickets with personal notes or active alerts</span>
                         </div>
+                        <button class="fu-copy-all-btn hidden" id="fu-notes-copy-all" title="Copy all as Slack action items">📋 Copy All for Slack</button>
                         <span class="fu-count-badge" id="fu-notes-count">0</span>
                     </div>
                     <div class="fu-issue-list" id="fu-notes-list"></div>
@@ -385,18 +386,6 @@
                     <div class="fu-issue-list" id="fu-review-list"></div>
                 </div>
 
-                <!-- Section 3: Overdue -->
-                <div class="fu-section-card">
-                    <div class="fu-section-header">
-                        <span class="fu-section-icon">⏰</span>
-                        <div class="fu-section-title-wrap">
-                            <span class="fu-section-title">Overdue Tickets</span>
-                            <span class="fu-section-sub">In Progress longer than their SP estimate allows</span>
-                        </div>
-                        <span class="fu-count-badge fu-count-danger" id="fu-overdue-count">0</span>
-                    </div>
-                    <div class="fu-issue-list" id="fu-overdue-list"></div>
-                </div>
 
                 <!-- Section 4: Capacity -->
                 <div class="fu-section-card">
