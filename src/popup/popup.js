@@ -228,7 +228,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 el.querySelector('.edit-btn').onclick = renderEditView;
 
-                el.querySelector('.copy-btn').onclick = () => {
+                el.querySelector('.copy-btn').onclick = (e) => {
+                    const btn = e.currentTarget;
+                    if (btn.dataset.isCopying) return;
+                    btn.dataset.isCopying = 'true';
+
                     const url = `https://${host}/browse/${item.key}`;
                     const plainTextCopy = `${item.key} - ${summaryText}`;
                     const htmlLink = `<a href="${url}">${plainTextCopy}</a>`;
@@ -239,18 +243,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                         'text/html': new Blob([htmlLink], { type: 'text/html' })
                     })];
 
+                    const original = btn.textContent;
+
                     navigator.clipboard.write(data).then(() => {
-                        const btn = el.querySelector('.copy-btn');
-                        const original = btn.textContent;
                         btn.textContent = '✅';
-                        setTimeout(() => btn.textContent = original, 1500);
+                        setTimeout(() => {
+                            btn.textContent = original;
+                            delete btn.dataset.isCopying;
+                        }, 1500);
                     }).catch(err => {
                         // Fallback
                         navigator.clipboard.writeText(markdownLink).then(() => {
-                            const btn = el.querySelector('.copy-btn');
-                            const original = btn.textContent;
                             btn.textContent = '✅';
-                            setTimeout(() => btn.textContent = original, 1500);
+                            setTimeout(() => {
+                                btn.textContent = original;
+                                delete btn.dataset.isCopying;
+                            }, 1500);
+                        }).catch(e => {
+                            delete btn.dataset.isCopying;
                         });
                     });
                 };

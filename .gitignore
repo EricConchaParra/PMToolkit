@@ -10,4 +10,8 @@
 
 # Zip files
 *.zip
+
+# AI Agent
+.agent
+
 ```

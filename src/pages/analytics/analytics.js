@@ -1100,37 +1100,70 @@ async function loadDashboardForSprint(sprint) {
         enrichGitHubPRLinks();
 
         // Event delegation — copy-for-Slack on overdue issue buttons and Notes
-        grid.addEventListener('click', (e) => {
-            const copyBtn = e.target.closest('.overdue-copy-btn');
-            if (copyBtn) {
-                const { key, summary, url } = copyBtn.dataset;
-                const plainText = `${key} ${summary}\n${url}`;
-                const htmlLink = `<a href="${url}">${key} ${summary}</a>`;
-                try {
-                    navigator.clipboard.write([
-                        new ClipboardItem({
-                            'text/plain': new Blob([plainText], { type: 'text/plain' }),
-                            'text/html': new Blob([htmlLink], { type: 'text/html' }),
-                        })
-                    ]).then(() => {
-                        const orig = copyBtn.textContent;
-                        copyBtn.textContent = '✅';
-                        copyBtn.style.color = '#36b37e';
-                        setTimeout(() => { copyBtn.textContent = orig; copyBtn.style.color = ''; }, 1500);
-                    });
-                } catch {
-                    navigator.clipboard.writeText(plainText);
-                }
-                return;
-            }
+        if (!grid.dataset.delegated) {
+            grid.addEventListener('click', (e) => {
+                const copyBtn = e.target.closest('.overdue-copy-btn');
+                if (copyBtn) {
+                    if (copyBtn.dataset.isCopying) return;
+                    copyBtn.dataset.isCopying = 'true';
 
-            const notesBtn = e.target.closest('.et-notes-btn');
-            if (notesBtn) {
-                const { issueKey, summary } = notesBtn.dataset;
-                if (issueKey) NoteDrawer.open(issueKey, summary);
-                return;
-            }
-        }, { once: false });
+                    const { key, summary, url } = copyBtn.dataset;
+                    const plainText = `${key} ${summary}\n${url}`;
+                    const htmlLink = `<a href="${url}">${key} ${summary}</a>`;
+                    const orig = copyBtn.textContent;
+
+                    try {
+                        navigator.clipboard.write([
+                            new ClipboardItem({
+                                'text/plain': new Blob([plainText], { type: 'text/plain' }),
+                                'text/html': new Blob([htmlLink], { type: 'text/html' }),
+                            })
+                        ]).then(() => {
+                            copyBtn.textContent = '✅';
+                            copyBtn.style.color = '#36b37e';
+                            setTimeout(() => {
+                                copyBtn.textContent = orig;
+                                copyBtn.style.color = '';
+                                delete copyBtn.dataset.isCopying;
+                            }, 1500);
+                        }).catch(() => {
+                            navigator.clipboard.writeText(plainText).then(() => {
+                                copyBtn.textContent = '✅';
+                                copyBtn.style.color = '#36b37e';
+                                setTimeout(() => { 
+                                    copyBtn.textContent = orig; 
+                                    copyBtn.style.color = ''; 
+                                    delete copyBtn.dataset.isCopying; 
+                                }, 1500);
+                            }).catch(() => {
+                                delete copyBtn.dataset.isCopying;
+                            });
+                        });
+                    } catch {
+                        navigator.clipboard.writeText(plainText).then(() => {
+                            copyBtn.textContent = '✅';
+                            copyBtn.style.color = '#36b37e';
+                            setTimeout(() => { 
+                                copyBtn.textContent = orig; 
+                                copyBtn.style.color = ''; 
+                                delete copyBtn.dataset.isCopying; 
+                            }, 1500);
+                        }).catch(() => {
+                            delete copyBtn.dataset.isCopying;
+                        });
+                    }
+                    return;
+                }
+
+                const notesBtn = e.target.closest('.et-notes-btn');
+                if (notesBtn) {
+                    const { issueKey, summary } = notesBtn.dataset;
+                    if (issueKey) NoteDrawer.open(issueKey, summary);
+                    return;
+                }
+            }, { once: false });
+            grid.dataset.delegated = 'true';
+        }
 
         // Initialize note indicators
         NoteDrawer.initIndicators();

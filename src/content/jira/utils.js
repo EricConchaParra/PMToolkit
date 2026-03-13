@@ -174,6 +174,9 @@ export function getGadgetTitle(gadgetContainer) {
 }
 
 export function etCopyTicketLink(issueKey, summaryText, url, feedbackEl) {
+    if (feedbackEl.dataset.isCopying) return;
+    feedbackEl.dataset.isCopying = 'true';
+
     const plainText = `${issueKey} ${summaryText}`;
     const htmlLink = `<a href="${url}">${issueKey} ${summaryText}</a>`;
 
@@ -190,7 +193,11 @@ export function etCopyTicketLink(issueKey, summaryText, url, feedbackEl) {
         setTimeout(() => {
             feedbackEl.innerHTML = original;
             feedbackEl.style.backgroundColor = originalBg || '';
+            delete feedbackEl.dataset.isCopying;
         }, 1500);
+    }).catch((err) => {
+        console.error('Clipboard write failed', err);
+        delete feedbackEl.dataset.isCopying;
     });
 }
 
