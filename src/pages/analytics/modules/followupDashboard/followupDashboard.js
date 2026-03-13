@@ -80,7 +80,6 @@ function issueChip(i, jiraHost, opts = {}) {
 
 function buildSlackText(tickets, host, notesMap, alertsMap) {
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    /*const intro = "Aquí tienes el resumen de los Action Items del Standup, organizado por responsable y optimizado para Slack:";*/
     
     // Group tickets by assignee
     const groups = {};
@@ -94,17 +93,12 @@ function buildSlackText(tickets, host, notesMap, alertsMap) {
     const sortedAssignees = Object.keys(groups).sort();
 
     const lines = [
-        intro,
-        '',
-        '---',
-        '',
-        `### *Standup Action Items — ${today}*`,
+        `*_Standup Action Items — ${today}_*`,
         ''
     ];
 
     sortedAssignees.forEach((assignee, index) => {
-        lines.push(`**${assignee}**`);
-        lines.push('');
+        lines.push(`*${assignee.toUpperCase()}*`);
         
         groups[assignee].forEach(i => {
             const summary = i.fields?.summary || '';
@@ -112,21 +106,19 @@ function buildSlackText(tickets, host, notesMap, alertsMap) {
             const noteText = notesMap[i.key];
             const reminderTs = alertsMap[i.key];
 
-            lines.push(`* **${i.key}:** ${summary}`);
+            lines.push(`• *${i.key}:* ${summary}`);
             
-            // Prioritize user note, fallback to reminder if no note exists
             if (noteText) {
-                lines.push(`* **Note:** ${noteText}`);
+                lines.push(`  _Note:_ ${noteText}`);
             } else if (reminderTs) {
                 const dateStr = new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                lines.push(`* **Reminder:** ${dateStr}`);
+                lines.push(`  _Reminder:_ ${dateStr}`);
             }
             
-            lines.push(`* [${url}](${url})`);
-            lines.push(''); // Gap between tickets of same person
+            lines.push(`  ${url}`);
         });
 
-        // Add an extra newline between people, except for the last one
+        // Add an extra newline between people
         if (index < sortedAssignees.length - 1) {
             lines.push('');
         }
