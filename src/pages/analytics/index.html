@@ -26,6 +26,16 @@
                 <span class="nav-icon">🚀</span>
                 <span class="nav-label">Sprint Dashboard</span>
             </button>
+            <button class="nav-item" data-view="performance-dashboard">
+                <span class="nav-icon">📈</span>
+                <span class="nav-label">Team Performance</span>
+                <span class="nav-badge-new">NEW</span>
+            </button>
+            <button class="nav-item" data-view="followup-dashboard">
+                <span class="nav-icon">🔔</span>
+                <span class="nav-label">Follow-up Work</span>
+                <span class="nav-badge-new">NEW</span>
+            </button>
             <button class="nav-item" data-view="csv-exporter">
                 <span class="nav-icon">📤</span>
                 <span class="nav-label">History Exporter</span>
@@ -33,7 +43,7 @@
         </nav>
 
         <div class="sidebar-footer">
-            <span>v0.5.0 · PMsToolKit</span>
+            <span>v0.6.0 · PMsToolKit</span>
         </div>
     </aside>
 
@@ -236,6 +246,172 @@
 
             <!-- Developer Cards -->
             <div id="dev-cards-grid" class="dev-cards-grid hidden"></div>
+        </div>
+
+        <!-- ========== PERFORMANCE DASHBOARD VIEW ========== -->
+        <div id="view-performance-dashboard" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>📈 Team Performance</h1>
+                    <p>Cycle time, throughput and team health metrics</p>
+                </div>
+                <div class="view-header-right">
+                    <div class="project-select-wrap">
+                        <label for="perf-project-search">📁 Project</label>
+                        <div class="combo-wrapper" id="perf-combo-wrapper">
+                            <input type="text" id="perf-project-search" autocomplete="off"
+                                placeholder="Select a project...">
+                            <span class="combo-arrow">▾</span>
+                            <div class="combo-dropdown hidden" id="perf-project-dropdown"></div>
+                        </div>
+                    </div>
+                    <button id="perf-refresh-btn" class="icon-action-btn" title="Refresh">🔄 Refresh</button>
+                </div>
+            </div>
+
+            <!-- States -->
+            <div id="perf-placeholder" class="state-box">
+                <span class="state-icon">👆</span>
+                <p>Select a project above to load team performance metrics.</p>
+            </div>
+            <div id="perf-loading" class="state-box hidden">
+                <div class="spinner"></div>
+                <p id="perf-loading-text">Loading metrics...</p>
+            </div>
+            <div id="perf-error" class="state-box error hidden">
+                <span class="state-icon">❌</span>
+                <p id="perf-error-text">An error occurred.</p>
+            </div>
+
+            <!-- Metrics Content -->
+            <div id="perf-content" class="perf-content hidden">
+
+                <!-- KPI Row -->
+                <div class="perf-kpis" id="perf-kpis"></div>
+
+                <!-- Charts row -->
+                <div class="perf-charts-row">
+                    <!-- Throughput -->
+                    <div class="perf-chart-card">
+                        <div class="perf-chart-header">
+                            <span class="perf-chart-title">🏁 Throughput</span>
+                            <span class="perf-chart-sub">Issues completed per sprint (last 5)</span>
+                        </div>
+                        <div class="perf-bar-chart" id="perf-throughput-chart"></div>
+                    </div>
+                    <!-- Velocity -->
+                    <div class="perf-chart-card">
+                        <div class="perf-chart-header">
+                            <span class="perf-chart-title">⚡ Story Point Velocity</span>
+                            <span class="perf-chart-sub">Team SP delivered per sprint (last 5)</span>
+                        </div>
+                        <div class="perf-bar-chart" id="perf-velocity-chart"></div>
+                    </div>
+                </div>
+
+                <!-- Top contributors -->
+                <div class="perf-section-card">
+                    <div class="perf-chart-header">
+                        <span class="perf-chart-title">🏆 Top Contributors</span>
+                        <span class="perf-chart-sub">SP delivered in last 5 sprints</span>
+                    </div>
+                    <div class="perf-contributors" id="perf-contributors"></div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========== FOLLOW-UP WORK VIEW ========== -->
+        <div id="view-followup-dashboard" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>🔔 Follow-up Work</h1>
+                    <p>Tickets needing attention — notes, in review, overdue, and capacity alerts</p>
+                </div>
+                <div class="view-header-right">
+                    <div class="project-select-wrap">
+                        <label for="fu-project-search">📁 Project</label>
+                        <div class="combo-wrapper" id="fu-combo-wrapper">
+                            <input type="text" id="fu-project-search" autocomplete="off"
+                                placeholder="Loading projects...">
+                            <span class="combo-arrow">▾</span>
+                            <div class="combo-dropdown hidden" id="fu-project-dropdown"></div>
+                        </div>
+                    </div>
+                    <button id="fu-refresh-btn" class="icon-action-btn" title="Refresh">🔄 Refresh</button>
+                </div>
+            </div>
+
+            <!-- States -->
+            <div id="fu-placeholder" class="state-box">
+                <span class="state-icon">👆</span>
+                <p>Select a project above to load follow-up items.</p>
+            </div>
+            <div id="fu-loading" class="state-box hidden">
+                <div class="spinner"></div>
+                <p id="fu-loading-text">Loading...</p>
+            </div>
+            <div id="fu-error" class="state-box error hidden">
+                <span class="state-icon">❌</span>
+                <p id="fu-error-text">An error occurred.</p>
+            </div>
+
+            <!-- Content -->
+            <div id="fu-content" class="fu-content hidden">
+
+                <!-- Section 1: Notes & Alerts -->
+                <div class="fu-section-card">
+                    <div class="fu-section-header">
+                        <span class="fu-section-icon">🗒️</span>
+                        <div class="fu-section-title-wrap">
+                            <span class="fu-section-title">Notes &amp; Reminders</span>
+                            <span class="fu-section-sub">Tickets with personal notes or active alerts</span>
+                        </div>
+                        <span class="fu-count-badge" id="fu-notes-count">0</span>
+                    </div>
+                    <div class="fu-issue-list" id="fu-notes-list"></div>
+                </div>
+
+                <!-- Section 2: In Review -->
+                <div class="fu-section-card">
+                    <div class="fu-section-header">
+                        <span class="fu-section-icon">🔎</span>
+                        <div class="fu-section-title-wrap">
+                            <span class="fu-section-title">In Review</span>
+                            <span class="fu-section-sub">All tickets currently waiting for review</span>
+                        </div>
+                        <span class="fu-count-badge" id="fu-review-count">0</span>
+                    </div>
+                    <div class="fu-issue-list" id="fu-review-list"></div>
+                </div>
+
+                <!-- Section 3: Overdue -->
+                <div class="fu-section-card">
+                    <div class="fu-section-header">
+                        <span class="fu-section-icon">⏰</span>
+                        <div class="fu-section-title-wrap">
+                            <span class="fu-section-title">Overdue Tickets</span>
+                            <span class="fu-section-sub">In Progress longer than their SP estimate allows</span>
+                        </div>
+                        <span class="fu-count-badge fu-count-danger" id="fu-overdue-count">0</span>
+                    </div>
+                    <div class="fu-issue-list" id="fu-overdue-list"></div>
+                </div>
+
+                <!-- Section 4: Capacity -->
+                <div class="fu-section-card">
+                    <div class="fu-section-header">
+                        <span class="fu-section-icon">🔴</span>
+                        <div class="fu-section-title-wrap">
+                            <span class="fu-section-title">High Capacity Engineers</span>
+                            <span class="fu-section-sub">At 75% or more of sprint capacity · busiest first</span>
+                        </div>
+                        <span class="fu-count-badge fu-count-warning" id="fu-capacity-count">0</span>
+                    </div>
+                    <div class="fu-issue-list" id="fu-capacity-list"></div>
+                </div>
+
+            </div>
         </div>
 
         <!-- ========== CSV EXPORTER VIEW ========== -->
