@@ -5,10 +5,11 @@
 
 import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
 import {
-    fetchBoardId, fetchSprintIssues, fetchIssueInProgressSince, fetchSpFieldId, findPrForTicket, jiraFetch,
+    fetchBoardId, fetchSprintIssues, fetchIssueInProgressSince, fetchSpFieldId, jiraFetch,
 } from '../jiraApi.js';
 import { escapeHtml, spToHours, workingHoursBetween, timeSince } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
+import { enrichChips, clearPrCache } from '../githubPrCache.js';
 
 // ============================================================
 // SECTION CLASSIFIER
@@ -36,6 +37,12 @@ function issueChip(i, jiraHost, opts = {}) {
         ? `<span class="overdue-time-badge">⏰ ${timeSince(i._inProgressSince)}</span>`
         : (reminderTs ? `<span class="overdue-time-badge">🔔 ${new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>` : '');
 
+    const { initials, imgUrl } = getInitialsOrImg(i.fields?.assignee);
+    const avatarHtml = imgUrl
+        ? `<img src="${imgUrl}" alt="${escapeHtml(i.fields?.assignee?.displayName || '?')}">`
+        : initials;
+    const assigneeName = escapeHtml(i.fields?.assignee?.displayName || 'Unassigned');
+
     return `
         <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''} in-progress-chip" data-gh-key="${i.key}">
             <div class="issue-chip-main">
@@ -44,6 +51,10 @@ function issueChip(i, jiraHost, opts = {}) {
                     <span class="issue-chip-status">${escapeHtml(i.fields?.status?.name || '?')}</span>
                     <span class="issue-chip-sp">${i._sp ?? '?'} SP</span>
                     ${badgeHtml}
+                </div>
+                <div class="issue-chip-assignee">
+                    <div class="dev-avatar issue-chip-avatar" title="${assigneeName}">${avatarHtml}</div>
+                    <span class="issue-chip-assignee-name">${assigneeName}</span>
                 </div>
                 <div class="issue-chip-summary" title="${escapeHtml(i.fields?.summary || '')}">${escapeHtml(i.fields?.summary || '')}</div>
             </div>
@@ -55,56 +66,7 @@ function issueChip(i, jiraHost, opts = {}) {
     `;
 }
 
-// ============================================================
-// GITHUB PR ENRICHMENT (for this view's chips)
-// ============================================================
 
-async function enrichFollowupGithubPRLinks(containerId) {
-    if (typeof chrome === 'undefined' || !chrome.storage) return;
-
-    const stored = await new Promise(resolve =>
-        chrome.storage.sync.get({ github_pr_link: false, github_pat: '' }, resolve)
-    );
-    if (!stored.github_pr_link || !stored.github_pat) return;
-
-    const token = stored.github_pat;
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const chips = container.querySelectorAll('.in-progress-chip[data-gh-key]');
-    if (chips.length === 0) return;
-
-    chips.forEach((chip, idx) => {
-        const ticketId = chip.dataset.ghKey;
-        const actions = chip.querySelector('.issue-chip-actions');
-        if (!actions || !ticketId) return;
-
-        const loadingBtn = document.createElement('button');
-        loadingBtn.className = 'gh-pr-btn gh-pr-loading';
-        loadingBtn.title = 'Looking up GitHub PR...';
-        loadingBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>`;
-        actions.appendChild(loadingBtn);
-
-        setTimeout(async () => {
-            const prUrl = await findPrForTicket(ticketId, token).catch(() => null);
-            loadingBtn.remove();
-            if (prUrl) {
-                const prBtn = document.createElement('a');
-                prBtn.href = prUrl;
-                prBtn.target = '_blank';
-                prBtn.rel = 'noopener noreferrer';
-                prBtn.className = 'gh-pr-btn gh-pr-found';
-                prBtn.title = `Open GitHub PR: ${prUrl}`;
-                prBtn.innerHTML = loadingBtn.innerHTML;
-                actions.appendChild(prBtn);
-            }
-        }, idx * 500);
-    });
-}
-
-// ============================================================
-// COPY-FOR-SLACK + NOTES event delegation
-// ============================================================
 
 function attachFollowupEvents(container) {
     if (container.dataset.fuDelegated) return;
@@ -303,7 +265,16 @@ export async function loadFollowupDashboard(projectKey, host, settings) {
         const content = document.getElementById('fu-content');
         attachFollowupEvents(content);
         NoteDrawer.initIndicators();
-        enrichFollowupGithubPRLinks('fu-content');
+
+        // GitHub PR enrichment — uses shared cache (no duplicates with Sprint Dashboard)
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+            const stored = await new Promise(resolve =>
+                chrome.storage.sync.get({ github_pr_link: false, github_pat: '' }, resolve)
+            );
+            if (stored.github_pr_link && stored.github_pat) {
+                enrichChips(content, stored.github_pat);
+            }
+        }
 
     } catch (err) {
         console.error('PMsToolKit Follow-up Dashboard:', err);
@@ -334,6 +305,12 @@ function renderSection1(tickets, allIssues, host, notesMap, alertsMap) {
         if (noteText) tags.push(`<span class="fu-tag fu-tag-note">📝 Note</span>`);
         if (reminderTs) tags.push(`<span class="fu-tag fu-tag-alert">🔔 Alert ${new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`);
 
+        const { initials, imgUrl } = getInitialsOrImg(i.fields?.assignee);
+        const avatarHtml = imgUrl
+            ? `<img src="${imgUrl}" alt="${escapeHtml(i.fields?.assignee?.displayName || '?')}">`
+            : initials;
+        const assigneeName = escapeHtml(i.fields?.assignee?.displayName || 'Unassigned');
+
         return `
             <div class="issue-chip in-progress-chip" data-gh-key="${i.key}">
                 <div class="issue-chip-main">
@@ -342,6 +319,10 @@ function renderSection1(tickets, allIssues, host, notesMap, alertsMap) {
                         <span class="issue-chip-status">${escapeHtml(i.fields?.status?.name || '?')}</span>
                         <span class="issue-chip-sp">${i._sp ?? '?'} SP</span>
                         ${tags.join('')}
+                    </div>
+                    <div class="issue-chip-assignee">
+                        <div class="dev-avatar issue-chip-avatar" title="${assigneeName}">${avatarHtml}</div>
+                        <span class="issue-chip-assignee-name">${assigneeName}</span>
                     </div>
                     <div class="issue-chip-summary" title="${escapeHtml(i.fields?.summary || '')}">${escapeHtml(i.fields?.summary || '')}</div>
                     ${noteText ? `<div class="fu-note-preview">${escapeHtml(noteText)}</div>` : ''}

@@ -52,7 +52,10 @@ export async function githubFetch(path, token) {
     return resp.json();
 }
 
-// Search for a PR by ticket ID; returns the PR html_url or null
+/**
+ * Search for a PR by ticket ID.
+ * @returns {{ url: string, state: string, draft: boolean, labels: string[] } | null}
+ */
 export async function findPrForTicket(ticketId, token) {
     try {
         const data = await githubFetch(`/search/issues?q=${encodeURIComponent(ticketId)}+type:pr&per_page=5`, token);
@@ -61,7 +64,13 @@ export async function findPrForTicket(ticketId, token) {
             (item.body || '').toLowerCase().includes(ticketId.toLowerCase()) ||
             (item.head?.ref || '').toLowerCase().includes(ticketId.toLowerCase())
         );
-        return pr ? pr.html_url : null;
+        if (!pr) return null;
+        return {
+            url:    pr.html_url,
+            state:  pr.state || 'open',
+            draft:  pr.draft || false,
+            labels: (pr.labels || []).map(l => l.name).filter(Boolean),
+        };
     } catch {
         return null;
     }
