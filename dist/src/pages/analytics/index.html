@@ -190,20 +190,12 @@
                     <span class="overview-subtitle" id="overview-subtitle">Team-level summary</span>
                 </div>
                 <div class="overview-stats" id="overview-stats">
-                    <div class="stat-pill todo">
-                        <span class="stat-pill-icon">⬜</span>
+                    <div class="stat-pill done">
+                        <span class="stat-pill-icon">✅</span>
                         <div class="stat-pill-body">
-                            <span class="stat-pill-label">To Do</span>
-                            <span class="stat-pill-value" id="overview-todo-count">—</span>
-                            <span class="stat-pill-sp" id="overview-todo-sp">— SP</span>
-                        </div>
-                    </div>
-                    <div class="stat-pill inprogress">
-                        <span class="stat-pill-icon">🔵</span>
-                        <div class="stat-pill-body">
-                            <span class="stat-pill-label">In Progress</span>
-                            <span class="stat-pill-value" id="overview-inprogress-count">—</span>
-                            <span class="stat-pill-sp" id="overview-inprogress-sp">— SP</span>
+                            <span class="stat-pill-label">Done</span>
+                            <span class="stat-pill-value" id="overview-done-count">—</span>
+                            <span class="stat-pill-sp" id="overview-done-sp">— SP</span>
                         </div>
                     </div>
                     <div class="stat-pill qa">
@@ -214,12 +206,36 @@
                             <span class="stat-pill-sp" id="overview-qa-sp">— SP</span>
                         </div>
                     </div>
-                    <div class="stat-pill done">
-                        <span class="stat-pill-icon">✅</span>
+                    <div class="stat-pill inreview">
+                        <span class="stat-pill-icon">🔎</span>
                         <div class="stat-pill-body">
-                            <span class="stat-pill-label">Done</span>
-                            <span class="stat-pill-value" id="overview-done-count">—</span>
-                            <span class="stat-pill-sp" id="overview-done-sp">— SP</span>
+                            <span class="stat-pill-label">In Review</span>
+                            <span class="stat-pill-value" id="overview-inreview-count">—</span>
+                            <span class="stat-pill-sp" id="overview-inreview-sp">— SP</span>
+                        </div>
+                    </div>
+                    <div class="stat-pill inprogress">
+                        <span class="stat-pill-icon">🔵</span>
+                        <div class="stat-pill-body">
+                            <span class="stat-pill-label">In Progress</span>
+                            <span class="stat-pill-value" id="overview-inprogress-count">—</span>
+                            <span class="stat-pill-sp" id="overview-inprogress-sp">— SP</span>
+                        </div>
+                    </div>
+                    <div class="stat-pill blocked">
+                        <span class="stat-pill-icon">🚫</span>
+                        <div class="stat-pill-body">
+                            <span class="stat-pill-label">Blocked</span>
+                            <span class="stat-pill-value" id="overview-blocked-count">—</span>
+                            <span class="stat-pill-sp" id="overview-blocked-sp">— SP</span>
+                        </div>
+                    </div>
+                    <div class="stat-pill todo">
+                        <span class="stat-pill-icon">⬜</span>
+                        <div class="stat-pill-body">
+                            <span class="stat-pill-label">To Do</span>
+                            <span class="stat-pill-value" id="overview-todo-count">—</span>
+                            <span class="stat-pill-sp" id="overview-todo-sp">— SP</span>
                         </div>
                     </div>
                 </div>
@@ -231,12 +247,17 @@
                     <div class="overview-progress-track">
                         <div class="overview-progress-done" id="overview-bar-done" style="width:0%"></div>
                         <div class="overview-progress-qa" id="overview-bar-qa" style="width:0%"></div>
+                        <div class="overview-progress-inreview" id="overview-bar-inreview" style="width:0%"></div>
                         <div class="overview-progress-inprogress" id="overview-bar-inprogress" style="width:0%"></div>
+                        <div class="overview-progress-blocked" id="overview-bar-blocked" style="width:0%"></div>
                     </div>
                     <div class="overview-progress-legend">
                         <span class="legend-dot done"></span><span>Done</span>
                         <span class="legend-dot qa"></span><span>QA</span>
+                        <span class="legend-dot inreview"></span><span>In Review</span>
                         <span class="legend-dot inprogress"></span><span>In Progress</span>
+                        <span class="legend-dot blocked"></span><span>Blocked</span>
+                        <span class="legend-dot todo"></span><span>To Do</span>
                     </div>
                 </div>
                 <div class="overview-prediction" id="overview-prediction">

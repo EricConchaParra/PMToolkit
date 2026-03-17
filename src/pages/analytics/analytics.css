@@ -757,7 +757,7 @@ body {
 /* ---- Stat Pills ---- */
 .overview-stats {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 0;
     border-bottom: 1px solid var(--border);
 }
@@ -839,6 +839,30 @@ body {
     color: #8b5ec7;
 }
 
+.stat-pill.inreview {
+    background: #e0faff;
+}
+
+.stat-pill.inreview .stat-pill-value {
+    color: #008da6;
+}
+
+.stat-pill.inreview .stat-pill-sp {
+    color: #00a3bf;
+}
+
+.stat-pill.blocked {
+    background: #fff0eb;
+}
+
+.stat-pill.blocked .stat-pill-value {
+    color: #bf2600;
+}
+
+.stat-pill.blocked .stat-pill-sp {
+    color: #de350b;
+}
+
 .stat-pill.done {
     background: #e6f9f0;
 }
@@ -914,9 +938,21 @@ body {
     transition: width 0.5s ease;
 }
 
+.overview-progress-inreview {
+    height: 100%;
+    background: #00c7e4;
+    transition: width 0.5s ease;
+}
+
 .overview-progress-inprogress {
     height: 100%;
     background: #4b72d4;
+    transition: width 0.5s ease;
+}
+
+.overview-progress-blocked {
+    height: 100%;
+    background: #de350b;
     transition: width 0.5s ease;
 }
 
@@ -946,8 +982,20 @@ body {
     background: #a855f7;
 }
 
+.legend-dot.inreview {
+    background: #00c7e4;
+}
+
 .legend-dot.inprogress {
     background: #4b72d4;
+}
+
+.legend-dot.blocked {
+    background: #de350b;
+}
+
+.legend-dot.todo {
+    background: #dfe1e6;
 }
 
 /* ---- Prediction Banner ---- */
@@ -1523,6 +1571,26 @@ body {
     border-color: rgba(222, 53, 11, 0.2);
 }
 
+.issue-chip.done-chip {
+    background: #f6fffa;
+    border-color: #d1efdf;
+    opacity: 0.85;
+}
+
+.issue-chip.done-chip .issue-chip-key {
+    color: #1b7a4a;
+}
+
+.issue-chip.done-chip .issue-chip-status {
+    background: rgba(54, 179, 126, 0.08);
+    color: #1b7a4a;
+    border-color: rgba(54, 179, 126, 0.2);
+}
+
+.issue-chip.done-chip .issue-chip-summary {
+    color: #6b778c;
+}
+
 .issue-chip-main {
     flex: 1;
     display: flex;
@@ -1589,6 +1657,41 @@ body {
     font-size: 10px;
     font-weight: 700;
     white-space: nowrap;
+}
+
+/* Status-specific chip colors */
+.issue-chip[data-status*="Progress"] .issue-chip-status,
+.in-progress-chip .issue-chip-status {
+    background: rgba(75, 114, 212, 0.1);
+    color: #4b72d4;
+    border-color: rgba(75, 114, 212, 0.3);
+}
+
+.issue-chip[data-status*="Review"] .issue-chip-status {
+    background: rgba(0, 199, 228, 0.1);
+    color: #008da6;
+    border-color: rgba(0, 199, 228, 0.3);
+}
+
+.issue-chip[data-status*="Blocked"] .issue-chip-status,
+.issue-chip[data-status*="Hold"] .issue-chip-status {
+    background: #fff0eb;
+    color: #bf2600;
+    border-color: #ffbdad;
+}
+
+.issue-chip[data-status*="QA"] .issue-chip-status,
+.issue-chip[data-status*="Test"] .issue-chip-status {
+    background: rgba(168, 85, 247, 0.1);
+    color: #7e22ce;
+    border-color: rgba(168, 85, 247, 0.3);
+}
+
+.issue-chip[data-status*="To Do"] .issue-chip-status,
+.issue-chip[data-status*="Todo"] .issue-chip-status {
+    background: #f4f5f7;
+    color: #42526e;
+    border-color: #dfe1e6;
 }
 
 .issue-chip-sp {

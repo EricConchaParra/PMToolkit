@@ -10,13 +10,15 @@ import { escapeHtml, spToHours, workingHoursBetween, formatHours } from '../util
 // ============================================================
 
 function sectionOf(issue, settings) {
-    const name = issue.fields?.status?.name || '';
-    if (settings.statusMap && settings.statusMap[name]) return settings.statusMap[name];
-    const n = name.toLowerCase();
+    const name = (issue.fields?.status?.name || '').toLowerCase();
+    if (settings.statusMap && settings.statusMap[issue.fields?.status?.name]) return settings.statusMap[issue.fields?.status?.name];
     const cat = issue.fields?.status?.statusCategory?.key || '';
-    if (n.includes('in progress') || n.includes('in review')) return 'inProgress';
-    if (n.includes('qa') || n.includes('test')) return 'qa';
-    if (cat === 'done' || n === 'done') return 'done';
+    
+    if (name.includes('blocked') || name.includes('hold') || name.includes('impediment')) return 'blocked';
+    if (name.includes('in review') || name.includes('reviewing') || name.includes('peer review')) return 'inReview';
+    if (name.includes('in progress') || name.includes('progress')) return 'inProgress';
+    if (name.includes('qa') || name.includes('test')) return 'qa';
+    if (cat === 'done' || name === 'done') return 'done';
     return 'todo';
 }
 
@@ -36,21 +38,26 @@ function sectionOf(issue, settings) {
 export function renderSprintOverview(issues, sprint, settings, devCount, teamVelAvg, totalCommittedSP) {
     const { hoursPerDay, spHours } = settings;
 
-    const buckets = { todo: [], inProgress: [], qa: [], done: [] };
+    const buckets = { todo: [], inProgress: [], inReview: [], blocked: [], qa: [], done: [] };
     issues.forEach(i => { const s = sectionOf(i, settings); if (buckets[s]) buckets[s].push(i); });
 
     // ---- SP per bucket ----
     const spFor = list => list.reduce((a, i) => a + (i._sp || 0), 0);
     const spTodo = spFor(buckets.todo);
     const spInProgress = spFor(buckets.inProgress);
+    const spInReview = spFor(buckets.inReview);
+    const spBlocked = spFor(buckets.blocked);
     const spQA = spFor(buckets.qa);
     const spDone = spFor(buckets.done);
-    const spTotal = spTodo + spInProgress + spQA + spDone;
+    const spTotal = spTodo + spInProgress + spInReview + spBlocked + spQA + spDone;
 
     // ---- Progress bar ----
-    const donePct = spTotal > 0 ? Math.round((spDone / spTotal) * 100) : 0;
-    const qaPct = spTotal > 0 ? Math.round((spQA / spTotal) * 100) : 0;
-    const inProgPct = spTotal > 0 ? Math.round((spInProgress / spTotal) * 100) : 0;
+    const getPct = sp => spTotal > 0 ? Math.round((sp / spTotal) * 100) : 0;
+    const donePct = getPct(spDone);
+    const qaPct = getPct(spQA);
+    const inReviewPct = getPct(spInReview);
+    const inProgPct = getPct(spInProgress);
+    const blockedPct = getPct(spBlocked);
 
     // ---- Capacity model ----
     const now = new Date();
@@ -61,7 +68,7 @@ export function renderSprintOverview(issues, sprint, settings, devCount, teamVel
         : null;
 
     const hoursFor = list => list.reduce((a, i) => a + spToHours(i._sp, spHours), 0);
-    const remainingHours = hoursFor(buckets.todo) + hoursFor(buckets.inProgress) + (hoursFor(buckets.qa) * 0.5);
+    const remainingHours = hoursFor(buckets.todo) + hoursFor(buckets.inProgress) + hoursFor(buckets.blocked) + hoursFor(buckets.inReview) + (hoursFor(buckets.qa) * 0.5);
 
     // ---- Prediction ----
     let predIcon, predLabel, predDetail, predClass;
@@ -118,23 +125,29 @@ export function renderSprintOverview(issues, sprint, settings, devCount, teamVel
     document.getElementById('overview-subtitle').textContent =
         `${issues.length} issues · ${spTotal} SP total · ${devCount} developer${devCount !== 1 ? 's' : ''}`;
 
-    document.getElementById('overview-todo-count').textContent = buckets.todo.length;
-    document.getElementById('overview-todo-sp').textContent = `${spTodo} SP`;
-    document.getElementById('overview-inprogress-count').textContent = buckets.inProgress.length;
-    document.getElementById('overview-inprogress-sp').textContent = `${spInProgress} SP`;
-    document.getElementById('overview-qa-count').textContent = buckets.qa.length;
-    document.getElementById('overview-qa-sp').textContent = `${spQA} SP`;
     document.getElementById('overview-done-count').textContent = buckets.done.length;
     document.getElementById('overview-done-sp').textContent = `${spDone} SP`;
+    document.getElementById('overview-qa-count').textContent = buckets.qa.length;
+    document.getElementById('overview-qa-sp').textContent = `${spQA} SP`;
+    document.getElementById('overview-inreview-count').textContent = buckets.inReview.length;
+    document.getElementById('overview-inreview-sp').textContent = `${spInReview} SP`;
+    document.getElementById('overview-inprogress-count').textContent = buckets.inProgress.length;
+    document.getElementById('overview-inprogress-sp').textContent = `${spInProgress} SP`;
+    document.getElementById('overview-blocked-count').textContent = buckets.blocked.length;
+    document.getElementById('overview-blocked-sp').textContent = `${spBlocked} SP`;
+    document.getElementById('overview-todo-count').textContent = buckets.todo.length;
+    document.getElementById('overview-todo-sp').textContent = `${spTodo} SP`;
 
     document.getElementById('overview-bar-done').style.width = `${donePct}%`;
     document.getElementById('overview-bar-qa').style.width = `${qaPct}%`;
-    const inProgBar = document.getElementById('overview-bar-inprogress');
-    if (inProgBar) inProgBar.style.width = `${inProgPct}%`;
+    if (document.getElementById('overview-bar-inreview')) document.getElementById('overview-bar-inreview').style.width = `${inReviewPct}%`;
+    if (document.getElementById('overview-bar-inprogress')) document.getElementById('overview-bar-inprogress').style.width = `${inProgPct}%`;
+    if (document.getElementById('overview-bar-blocked')) document.getElementById('overview-bar-blocked').style.width = `${blockedPct}%`;
 
     document.getElementById('overview-progress-pct').textContent = `${donePct}% complete`;
     document.getElementById('overview-progress-label').textContent =
-        `${spDone} SP done · ${spQA} SP in QA · ${spInProgress} SP in prog · ${spTodo} SP todo`;
+        `${spDone} SP done · ${spQA} SP in QA · ${spInReview} SP in review · ${spInProgress} SP in prog · ${spBlocked} SP blocked · ${spTodo} SP todo`;
+
 
     const pred = document.getElementById('overview-prediction');
     pred.className = `overview-prediction ${predClass}`;

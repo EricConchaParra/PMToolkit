@@ -108,8 +108,10 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     function issueChip(i, opts = {}) {
         const isOverdue = opts.isOverdue;
         const isInProgress = opts.isInProgress;
+        const isDone = opts.isDone;
+
         return `
-            <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''}${isInProgress ? ' in-progress-chip' : ''}" data-gh-key="${i.key}">
+            <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''}${isInProgress ? ' in-progress-chip' : ''}${isDone ? ' done-chip' : ''}" data-gh-key="${i.key}" data-status="${escapeHtml(i.fields?.status?.name || '?')}">
                 <div class="issue-chip-main">
                     <div class="issue-chip-top">
                         <a class="issue-chip-key" href="https://${jiraHost}/browse/${i.key}" target="_blank">${i.key}</a>
@@ -139,7 +141,7 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
 
     const doneHtml = doneIssues.length === 0
         ? `<div class="no-issues">No tickets done yet</div>`
-        : doneIssues.map(i => issueChip(i)).join('');
+        : doneIssues.map(i => issueChip(i, { isDone: true })).join('');
 
     const todoHtml = todoIssues.map(i => issueChip(i)).join('');
 
@@ -198,7 +200,7 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                     ${sprintEnd ? `<span class="eta-value ${etaClass}">ETA: ${formatDate(eta)}</span>` : ''}
                 </div>
                 ` : `<div class="eta-row"><span class="eta-value">ETA: ${formatDate(eta)}</span></div>`}
-                ${doneSP > 0 || qaSP > 0 ? `<div class="done-summary">${doneSP > 0 ? `<span class="done-sp">${doneSP} SP</span> Done (${grandTotalSP} in total)` : ''}${doneSP > 0 && qaSP > 0 ? ' · ' : ''}${qaSP > 0 ? `<span class="qa-sp">${qaSP} SP</span> in QA` : ''}</div>` : ''}
+                ${qaSP > 0 || doneSP > 0 ? `<div class="done-summary">${qaSP > 0 ? `<span class="qa-sp">${qaSP} SP</span> in QA` : ''}${qaSP > 0 && doneSP > 0 ? ' · ' : ''}${doneSP > 0 ? `<span class="done-sp">${doneSP} SP</span> Done (${grandTotalSP} in total)` : ''}</div>` : ''}
             </div>
 
             <!-- In Progress -->
@@ -216,12 +218,6 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                 <div class="issue-list">${qaHtml}</div>
             </div>
 
-            <!-- Done -->
-            <div class="dev-section">
-                <div class="dev-section-title">✅ Done <span class="section-count">(${doneIssues.length})</span></div>
-                <div class="issue-list">${doneHtml}</div>
-            </div>
-
             ${todoIssues.length > 0 ? `
             <!-- To Do -->
             <div class="dev-section">
@@ -229,6 +225,13 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
                 <div class="issue-list">${todoHtml}</div>
             </div>
             ` : ''}
+
+            <!-- Done -->
+            <div class="dev-section">
+                <div class="dev-section-title">✅ Done <span class="section-count">(${doneIssues.length})</span></div>
+                <div class="issue-list">${doneHtml}</div>
+            </div>
+
 
             <!-- Velocity -->
             <div class="dev-section">
