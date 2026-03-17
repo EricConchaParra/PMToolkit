@@ -1,10 +1,23 @@
-import { storage } from '../../../common/storage';
+import { storage } from '../../../common/storage.js';
+import { createTagEditor } from '../../../common/tagEditor.js';
+import {
+    TAG_DEFS_STORAGE_KEY,
+    ensureTagDefinition,
+    getNotesStorageKey,
+    getReminderStorageKey,
+    getTagsStorageKey,
+    hasTrackedContent,
+    normalizeTagDefs,
+    normalizeTagList,
+} from '../../../common/tagging.js';
 
 export const NoteDrawer = {
     el: null,
     backdrop: null,
     currentKey: null,
     saveTimeout: null,
+    tagEditor: null,
+    currentTagDefs: {},
 
     async initIndicators() {
         const buttons = document.querySelectorAll('.et-notes-btn:not(.et-indicator-checked), .et-ticket-notes-toggle:not(.et-indicator-checked)');
@@ -22,7 +35,7 @@ export const NoteDrawer = {
         const storageKeys = [];
         keys.forEach(k => {
             const cleanKey = k.includes(':') ? k : `jira:${k}`;
-            storageKeys.push(`notes_${cleanKey}`, `reminder_${cleanKey}`);
+            storageKeys.push(`notes_${cleanKey}`, `reminder_${cleanKey}`, `tags_${cleanKey}`);
         });
 
         const result = await storage.get(storageKeys);
@@ -31,7 +44,8 @@ export const NoteDrawer = {
             const cleanKey = k.includes(':') ? k : `jira:${k}`;
             const hasNote = !!result[`notes_${cleanKey}`];
             const hasReminder = !!result[`reminder_${cleanKey}`];
-            const hasActiveItem = hasNote || hasReminder;
+            const hasTags = Array.isArray(result[`tags_${cleanKey}`]) && result[`tags_${cleanKey}`].length > 0;
+            const hasActiveItem = hasNote || hasReminder || hasTags;
 
             if (hasActiveItem) {
                 const cleanSuffix = k.split(':').pop();
@@ -82,6 +96,10 @@ export const NoteDrawer = {
                         <button class="et-shortcut-btn" data-time="2days">2 Days 9am</button>
                     </div>
                 </div>
+                <div class="et-drawer-section">
+                    <label class="et-drawer-label">Tags</label>
+                    <div class="et-drawer-tags-host"></div>
+                </div>
             </div>
             <div class="et-drawer-footer">
                 <button class="et-drawer-save">Save Note</button>
@@ -102,6 +120,30 @@ export const NoteDrawer = {
 
         const textarea = this.el.querySelector('.et-drawer-textarea');
         const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
+        const tagsHost = this.el.querySelector('.et-drawer-tags-host');
+
+        this.tagEditor = createTagEditor(tagsHost, {
+            value: [],
+            tagDefs: {},
+            placeholder: 'Type a tag or create one...',
+            onCreateTag: async (label, color) => {
+                const created = await ensureTagDefinition(label, color);
+                if (!created) return false;
+                this.currentTagDefs = {
+                    ...this.currentTagDefs,
+                    [created.normalized]: {
+                        label: created.label,
+                        color: created.color,
+                    },
+                };
+                this.tagEditor?.setTagDefs(this.currentTagDefs);
+                return created;
+            },
+            onChange: () => {
+                clearTimeout(this.saveTimeout);
+                this.saveTimeout = setTimeout(() => this.save(), 350);
+            },
+        });
 
         textarea.oninput = () => {
             clearTimeout(this.saveTimeout);
@@ -156,14 +198,19 @@ export const NoteDrawer = {
 
         textarea.value = '';
         reminderInput.value = '';
+        this.currentTagDefs = {};
+        this.tagEditor?.setTagDefs({});
+        this.tagEditor?.setValue([]);
 
         const prefixedKey = issueKey.includes(':') ? issueKey : `jira:${issueKey}`;
-        const storageKey = `notes_${prefixedKey}`;
-        const reminderKey = `reminder_${prefixedKey}`;
+        const storageKey = getNotesStorageKey(issueKey);
+        const reminderKey = getReminderStorageKey(issueKey);
+        const tagsKey = getTagsStorageKey(issueKey);
 
-        const result = await storage.get([storageKey, reminderKey]);
+        const result = await storage.get([storageKey, reminderKey, tagsKey, TAG_DEFS_STORAGE_KEY]);
         if (this.currentKey !== issueKey) return;
 
+        this.currentTagDefs = normalizeTagDefs(result[TAG_DEFS_STORAGE_KEY] || {});
         if (result[storageKey]) textarea.value = result[storageKey];
         if (result[reminderKey]) {
             const date = new Date(result[reminderKey]);
@@ -171,6 +218,8 @@ export const NoteDrawer = {
             const localISODate = new Date(date.getTime() - offset).toISOString().slice(0, 16);
             reminderInput.value = localISODate;
         }
+        this.tagEditor?.setTagDefs(this.currentTagDefs);
+        this.tagEditor?.setValue(normalizeTagList(result[tagsKey], this.currentTagDefs));
 
         this.backdrop.classList.add('visible');
         this.el.classList.add('visible');
@@ -188,20 +237,22 @@ export const NoteDrawer = {
     async delete() {
         if (!this.currentKey) return;
 
-        if (!confirm('Are you sure you want to delete this note and reminder?')) {
+        if (!confirm('Are you sure you want to delete this note, reminder, and tags?')) {
             return;
         }
 
         const prefixedKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
-        const storageKey = `notes_${prefixedKey}`;
-        const reminderKey = `reminder_${prefixedKey}`;
+        const storageKey = getNotesStorageKey(this.currentKey);
+        const reminderKey = getReminderStorageKey(this.currentKey);
+        const tagsKey = getTagsStorageKey(this.currentKey);
         const ignoredKey = `ignored_${prefixedKey}`;
 
-        await storage.remove([storageKey, reminderKey, ignoredKey]);
+        await storage.remove([storageKey, reminderKey, tagsKey, ignoredKey]);
 
         // Reset fields
         this.el.querySelector('.et-drawer-textarea').value = '';
         this.el.querySelector('.et-drawer-reminder-input').value = '';
+        this.tagEditor?.setValue([]);
 
         this.updateIndicators(false);
         this.close(true); // Close without saving (it's already deleted)
@@ -216,9 +267,10 @@ export const NoteDrawer = {
 
         const value = textarea.value.trim();
         const reminderValue = reminderInput.value;
+        const tagsValue = normalizeTagList(this.tagEditor?.getValue() || [], this.currentTagDefs);
 
-        const storageKey = this.currentKey.includes(':') ? `notes_${this.currentKey}` : `notes_jira:${this.currentKey}`;
-        const reminderKey = this.currentKey.includes(':') ? `reminder_${this.currentKey}` : `reminder_jira:${this.currentKey}`;
+        const storageKey = getNotesStorageKey(this.currentKey);
+        const reminderKey = getReminderStorageKey(this.currentKey);
         const finalKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
 
         if (value) {
@@ -236,10 +288,15 @@ export const NoteDrawer = {
             await storage.remove(`ignored_${finalKey}`);
         }
 
+        await storage.remove(getTagsStorageKey(this.currentKey));
+        if (tagsValue.length) {
+            await storage.set({ [getTagsStorageKey(this.currentKey)]: tagsValue });
+        }
+
         status.classList.add('show');
         setTimeout(() => status.classList.remove('show'), 1500);
 
-        this.updateIndicators(value || reminderValue);
+        this.updateIndicators(hasTrackedContent(value, reminderValue, tagsValue));
     },
 
     updateIndicators(hasActiveItem) {

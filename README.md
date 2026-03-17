@@ -72,6 +72,7 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 | 16 | Jira History Exporter | Dedicated Page (from Popup) | "Export History to CSV" button |
 | 18 | GitHub PR Link | Sprint Dashboard | Direct link in ticket chips (In Review) |
 | 19 | Follow-up Work Dashboard | Dedicated Page (from Popup) | 🔔 "Follow-up Work" tab |
+| 20 | Jira Tagging System | All views / Note Drawer | Use Tag Editor to label tickets |
 
 ---
 
@@ -549,7 +550,7 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-## Installation (Beta v0.6.0)
+## Installation (Beta v0.7.0)
 
 1. Clone or download this repository.
 2. Run `npm install` followed by `npm run build`.
@@ -560,4 +561,4 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-*PMsToolKit v0.6.0 (Beta) — Created by EricConcha*
+*PMsToolKit v0.7.0 (Beta) — Created by EricConcha*

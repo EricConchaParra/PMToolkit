@@ -2510,6 +2510,69 @@ body {
     color: #7a4f00;
 }
 
+.fu-tag-filter-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 220px;
+    margin-left: auto;
+}
+
+.fu-tag-filter-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.fu-tag-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.fu-tag-list {
+    flex: 1;
+}
+
+.fu-real-tag {
+    margin-right: 6px;
+    margin-bottom: 6px;
+}
+
+.fu-tag-empty {
+    font-size: 11px;
+    color: var(--text-sub);
+    font-weight: 600;
+}
+
+.fu-tag-edit-btn {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.fu-tag-edit-btn:hover {
+    background: var(--panel-alt);
+}
+
+.fu-tag-editor-panel {
+    margin-top: 10px;
+}
+
+.fu-tag-editor-panel.hidden {
+    display: none;
+}
+
 /* Engineer capacity rows */
 .fu-engineer-row {
     display: flex;

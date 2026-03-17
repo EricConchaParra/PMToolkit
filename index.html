@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="src/assets/popup.css">
+    <link rel="stylesheet" href="src/assets/tag-editor.css">
 </head>
 
 <body>
@@ -26,6 +27,10 @@
     <div id="notes-view">
         <div class="search-bar">
             <input type="text" id="search" placeholder="Search by ticket or content...">
+            <div class="popup-tag-filter-wrap">
+                <div class="popup-tag-filter-label">Filter by tags</div>
+                <div id="tag-filter-host"></div>
+            </div>
         </div>
         <div class="notes-list" id="notes-list"></div>
     </div>
@@ -174,7 +179,7 @@
         </div>
     </div>
     <div class="about-footer">
-        <strong>PMsToolKit v0.6.5</strong> — Created by EricConcha
+        <strong>PMsToolKit v0.7.0</strong> — Created by EricConcha
     </div>
     <script type="module" src="src/popup/popup.js"></script>
 </body>
