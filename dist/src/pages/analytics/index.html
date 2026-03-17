@@ -8,7 +8,9 @@
   <script type="module" crossorigin src="/analytics.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
+  <link rel="modulepreload" crossorigin href="/assets/tagEditor.js">
   <link rel="modulepreload" crossorigin href="/assets/jira-styles.js">
+  <link rel="stylesheet" crossorigin href="/assets/tagEditor.css">
   <link rel="stylesheet" crossorigin href="/assets/jira-styles.css">
   <link rel="stylesheet" crossorigin href="/assets/analytics.css">
 </head>
@@ -47,7 +49,7 @@
         </nav>
 
         <div class="sidebar-footer">
-            <span>v0.6.5 · PMsToolKit</span>
+            <span>v0.7.0 · PMsToolKit</span>
         </div>
     </aside>
 
@@ -390,7 +392,11 @@
                         <span class="fu-section-icon">🗒️</span>
                         <div class="fu-section-title-wrap">
                             <span class="fu-section-title">Notes &amp; Reminders</span>
-                            <span class="fu-section-sub">Tickets with personal notes or active alerts</span>
+                            <span class="fu-section-sub">Tickets with personal notes, active alerts, or tracking tags</span>
+                        </div>
+                        <div class="fu-tag-filter-wrap">
+                            <div class="fu-tag-filter-label">Filter tags</div>
+                            <div id="fu-tag-filter-host"></div>
                         </div>
                         <button class="fu-copy-all-btn hidden" id="fu-notes-copy-all" title="Copy all as Slack action items">📋 Copy All for Slack</button>
                         <span class="fu-count-badge" id="fu-notes-count">0</span>

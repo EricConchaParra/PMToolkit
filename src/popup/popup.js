@@ -1,5 +1,20 @@
 import { storage, syncStorage } from '../common/storage.js';
 import { jiraApi } from '../common/jira-api.js';
+import { createTagEditor } from '../common/tagEditor.js';
+import {
+    ensureTagDefinition,
+    escapeHtml,
+    getNotesStorageKey,
+    getReminderStorageKey,
+    getTagsStorageKey,
+    getTagInlineStyle,
+    getTagObjects,
+    hasTrackingStorageChange,
+    matchesSearchTerm,
+    matchesTagFilter,
+    normalizeTagList,
+    parseTrackingStorage,
+} from '../common/tagging.js';
 
 const DEFAULT_SETTINGS = {
     jira_hide_elements: true,
@@ -18,7 +33,6 @@ const DEFAULT_SETTINGS = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // UI Elements
     const notesView = document.getElementById('notes-view');
     const settingsView = document.getElementById('settings-view');
     const settingsToggle = document.getElementById('settings-toggle');
@@ -27,6 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const notesList = document.getElementById('notes-list');
     const notesCount = document.getElementById('notes-count');
     const searchInput = document.getElementById('search');
+    const tagFilterHost = document.getElementById('tag-filter-host');
     const testNotifBtn = document.getElementById('test-notification-btn');
     const notifStatus = document.getElementById('notif-status');
     const githubToggle = document.getElementById('github-pr-link-toggle');
@@ -38,8 +53,284 @@ document.addEventListener('DOMContentLoaded', async () => {
     let allNotes = [];
     let isSettingsOpen = false;
     let currentJiraHost = 'jira.atlassian.net';
+    let popupTagDefs = {};
+    let selectedFilterTags = [];
+    let tagFilterEditor = null;
+    let storageReloadTimer = null;
 
-    // --- View Toggling ---
+    function setPrimaryTitle(text) {
+        if (!isSettingsOpen) viewTitle.textContent = text;
+    }
+
+    function renderTagList(tagLabels = [], extraClass = '') {
+        const tags = getTagObjects(tagLabels, popupTagDefs);
+        if (!tags.length) return '';
+
+        return `
+            <div class="et-tag-read-list ${extraClass}">
+                ${tags.map(tag => `
+                    <span class="et-tag-chip" style="${getTagInlineStyle(tag.color)}">
+                        <span class="et-tag-chip-dot"></span>
+                        <span class="et-tag-chip-label">${escapeHtml(tag.label)}</span>
+                    </span>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function applyFiltersAndRender() {
+        const filtered = allNotes.filter(item => (
+            matchesSearchTerm(item, searchInput.value) &&
+            matchesTagFilter(item.tags, selectedFilterTags)
+        ));
+        renderNotes(filtered);
+    }
+
+    async function loadNotes() {
+        const data = await storage.getAll();
+        const parsed = parseTrackingStorage(data);
+        const metaMap = { ...parsed.metaMap };
+        popupTagDefs = parsed.tagDefs;
+
+        const missingMetaKeys = parsed.allKeys.filter(key => !metaMap[key] || !metaMap[key].status);
+        if (missingMetaKeys.length > 0) {
+            setPrimaryTitle('⏳ Loading info...');
+            for (const key of missingMetaKeys) {
+                const details = await jiraApi.fetchIssueDetails(key);
+                if (details) {
+                    metaMap[key] = {
+                        summary: details.summary,
+                        assignee: details.assignee,
+                        status: details.status,
+                    };
+                    await storage.set({ [`meta_jira:${key}`]: metaMap[key] });
+                }
+            }
+            setPrimaryTitle('📝 My Notes');
+        }
+
+        allNotes = parsed.allKeys.map(key => ({
+            key,
+            text: parsed.notesMap[key] || '',
+            reminder: parsed.remindersMap[key] || null,
+            tags: parsed.tagsMap[key] || [],
+            meta: metaMap[key] || null,
+        })).sort((a, b) => b.key.localeCompare(a.key));
+
+        tagFilterEditor?.setTagDefs(popupTagDefs);
+        selectedFilterTags = tagFilterEditor?.getValue() || selectedFilterTags;
+        applyFiltersAndRender();
+    }
+
+    function renderNotes(notes) {
+        notesList.innerHTML = '';
+        notesCount.textContent = notes.length;
+
+        if (notes.length === 0) {
+            const hasFilters = Boolean(searchInput.value.trim() || selectedFilterTags.length);
+            notesList.innerHTML = `
+                <div class="empty-state">
+                    <div class="emoji">${hasFilters ? '🔎' : '📝'}</div>
+                    <p>${hasFilters ? 'No notes, reminders or tags match your filters.' : 'No notes, reminders or tags found.'}</p>
+                </div>
+            `;
+            return;
+        }
+
+        notes.forEach(item => {
+            const el = document.createElement('div');
+            el.className = 'note-item';
+
+            function renderStandardView() {
+                const isOverdue = item.reminder && item.reminder < Date.now();
+                const reminderHtml = item.reminder ? `
+                    <div class="note-reminder-badge ${isOverdue ? 'overdue' : 'future'}">
+                        <span>🔔</span> ${escapeHtml(new Date(item.reminder).toLocaleString())}
+                    </div>
+                ` : '';
+
+                const summaryText = item.meta ? item.meta.summary : 'No summary loaded';
+                const assigneeText = item.meta ? item.meta.assignee : 'Unknown assignee';
+                const status = item.meta ? item.meta.status : null;
+                let statusClass = '';
+                if (status) {
+                    const normalized = status.name.toLowerCase();
+                    if (normalized.includes('blocked') || normalized.includes('hold')) statusClass = 'status-blocked';
+                    else if (normalized.includes('review') || normalized.includes('reviewing')) statusClass = 'status-inreview';
+                    else if (normalized.includes('qa') || normalized.includes('test')) statusClass = 'status-qa';
+                    else if (normalized.includes('in progress') || normalized.includes('progress')) statusClass = 'status-inprogress-specific';
+                }
+
+                const statusHtml = status ? `
+                    <div class="note-status-badge status-${escapeHtml(status.category)} ${statusClass}">${escapeHtml(status.name)}</div>
+                ` : '';
+
+                const host = currentJiraHost;
+
+                el.innerHTML = `
+                    <div class="note-header">
+                        <a href="https://${host}/browse/${item.key}" target="_blank" class="note-key">${escapeHtml(item.key)}</a>
+                        <div class="note-actions">
+                            <button class="icon-only edit-btn" title="Edit note">✏️</button>
+                            <button class="icon-only copy-btn" title="Copy Link for Slack">🔗</button>
+                            <button class="icon-only delete-btn" title="Delete tracked item">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="note-meta">
+                        <div class="note-meta-top">
+                            ${statusHtml}
+                            <div class="note-summary" title="${escapeHtml(summaryText)}">${escapeHtml(summaryText)}</div>
+                        </div>
+                        <div class="note-meta-bottom">
+                            👤 ${escapeHtml(assigneeText)}
+                        </div>
+                    </div>
+                    ${renderTagList(item.tags, 'popup-note-tags')}
+                    ${item.text ? `<div class="note-text">${escapeHtml(item.text)}</div>` : ''}
+                    ${reminderHtml}
+                `;
+
+                el.querySelector('.edit-btn').onclick = renderEditView;
+
+                el.querySelector('.copy-btn').onclick = e => {
+                    const btn = e.currentTarget;
+                    if (btn.dataset.isCopying) return;
+                    btn.dataset.isCopying = 'true';
+
+                    const url = `https://${host}/browse/${item.key}`;
+                    const plainTextCopy = `${item.key} - ${summaryText}`;
+                    const htmlLink = `<a href="${url}">${escapeHtml(plainTextCopy)}</a>`;
+                    const markdownLink = `[${plainTextCopy}](${url})`;
+                    const original = btn.textContent;
+                    const data = [new ClipboardItem({
+                        'text/plain': new Blob([markdownLink], { type: 'text/plain' }),
+                        'text/html': new Blob([htmlLink], { type: 'text/html' }),
+                    })];
+
+                    navigator.clipboard.write(data).then(() => {
+                        btn.textContent = '✅';
+                        setTimeout(() => {
+                            btn.textContent = original;
+                            delete btn.dataset.isCopying;
+                        }, 1500);
+                    }).catch(() => {
+                        navigator.clipboard.writeText(markdownLink).then(() => {
+                            btn.textContent = '✅';
+                            setTimeout(() => {
+                                btn.textContent = original;
+                                delete btn.dataset.isCopying;
+                            }, 1500);
+                        }).catch(() => {
+                            delete btn.dataset.isCopying;
+                        });
+                    });
+                };
+
+                el.querySelector('.delete-btn').onclick = async () => {
+                    if (!confirm(`Delete note, reminder, and tags for ${item.key}?`)) return;
+                    await storage.remove([
+                        getNotesStorageKey(item.key),
+                        getReminderStorageKey(item.key),
+                        getTagsStorageKey(item.key),
+                    ]);
+                    await loadNotes();
+                };
+            }
+
+            function renderEditView() {
+                const formatDateTimeLocal = timestamp => {
+                    if (!timestamp) return '';
+                    const date = new Date(timestamp);
+                    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+                    return date.toISOString().slice(0, 16);
+                };
+
+                let editedTags = item.tags.slice();
+
+                el.innerHTML = `
+                    <div class="popup-edit-card">
+                        <div class="note-header popup-edit-header">
+                            <span class="note-key">${escapeHtml(item.key)}</span>
+                        </div>
+                        <textarea class="edit-note-text popup-edit-text"></textarea>
+                        <div class="popup-edit-field">
+                            <label>Reminder</label>
+                            <input type="datetime-local" class="edit-reminder-input popup-edit-reminder" value="${formatDateTimeLocal(item.reminder)}">
+                        </div>
+                        <div class="popup-edit-field">
+                            <label>Tags</label>
+                            <div class="popup-edit-tags-host"></div>
+                        </div>
+                        <div class="popup-edit-actions">
+                            <button class="cancel-edit-btn">Cancel</button>
+                            <button class="save-edit-btn">Save</button>
+                        </div>
+                    </div>
+                `;
+
+                const noteInput = el.querySelector('.edit-note-text');
+                noteInput.value = item.text || '';
+
+                const tagEditor = createTagEditor(el.querySelector('.popup-edit-tags-host'), {
+                    value: item.tags,
+                    tagDefs: popupTagDefs,
+                    placeholder: 'Add or create tags...',
+                    onCreateTag: async (label, color) => {
+                        const created = await ensureTagDefinition(label, color);
+                        if (!created) return false;
+                        popupTagDefs = {
+                            ...popupTagDefs,
+                            [created.normalized]: {
+                                label: created.label,
+                                color: created.color,
+                            },
+                        };
+                        tagFilterEditor?.setTagDefs(popupTagDefs);
+                        tagEditor.setTagDefs(popupTagDefs);
+                        return created;
+                    },
+                    onChange: tags => {
+                        editedTags = tags.slice();
+                    },
+                });
+
+                el.querySelector('.cancel-edit-btn').onclick = () => {
+                    tagEditor.destroy();
+                    renderStandardView();
+                };
+
+                el.querySelector('.save-edit-btn').onclick = async () => {
+                    const newText = noteInput.value.trim();
+                    const newReminder = el.querySelector('.edit-reminder-input').value;
+                    const finalTags = normalizeTagList(editedTags, popupTagDefs);
+
+                    if (newText) await storage.set({ [getNotesStorageKey(item.key)]: newText });
+                    else await storage.remove(getNotesStorageKey(item.key));
+
+                    if (newReminder) {
+                        const reminderTimestamp = new Date(newReminder).getTime();
+                        await storage.set({ [getReminderStorageKey(item.key)]: reminderTimestamp });
+                    } else {
+                        await storage.remove(getReminderStorageKey(item.key));
+                    }
+
+                    if (finalTags.length) await storage.set({ [getTagsStorageKey(item.key)]: finalTags });
+                    else await storage.remove(getTagsStorageKey(item.key));
+
+                    item.text = newText;
+                    item.reminder = newReminder ? new Date(newReminder).getTime() : null;
+                    item.tags = finalTags;
+
+                    tagEditor.destroy();
+                    await loadNotes();
+                };
+            }
+
+            renderStandardView();
+            notesList.appendChild(el);
+        });
+    }
+
     settingsToggle.addEventListener('click', () => {
         isSettingsOpen = !isSettingsOpen;
         if (isSettingsOpen) {
@@ -55,314 +346,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // --- Open Analytics Hub in new tab ---
-    const openExporterBtn = document.getElementById('open-exporter-btn');
-    openExporterBtn.addEventListener('click', () => {
+    document.getElementById('open-exporter-btn').addEventListener('click', () => {
         const analyticsUrl = chrome.runtime.getURL('src/pages/analytics/index.html');
         chrome.tabs.create({ url: analyticsUrl });
     });
 
-    // --- Notes Logic ---
-    async function loadNotes() {
-        const data = await storage.getAll();
-        const notesMap = {};
-        const remindersMap = {};
-        const metaMap = {};
-
-        Object.entries(data).forEach(([key, value]) => {
-            if (key.startsWith('notes_jira:')) {
-                const ticketKey = key.replace('notes_jira:', '');
-                notesMap[ticketKey] = value;
-            } else if (key.startsWith('reminder_jira:')) {
-                const ticketKey = key.replace('reminder_jira:', '');
-                remindersMap[ticketKey] = value;
-            } else if (key.startsWith('meta_jira:')) {
-                const ticketKey = key.replace('meta_jira:', '');
-                metaMap[ticketKey] = value;
-            }
-        });
-
-        const allKeys = new Set([...Object.keys(notesMap), ...Object.keys(remindersMap)]);
-
-        // Fetch missing meta or missing status in meta
-        const missingMetaKeys = [];
-        for (const key of allKeys) {
-            if (!metaMap[key] || !metaMap[key].status) {
-                missingMetaKeys.push(key);
-            }
-        }
-
-        if (missingMetaKeys.length > 0) {
-            viewTitle.textContent = '⏳ Loading info...';
-            // Fetch one by one or concurrently, Jira API might complain if we blast it
-            for (const key of missingMetaKeys) {
-                const details = await jiraApi.fetchIssueDetails(key);
-                if (details) {
-                    metaMap[key] = {
-                        summary: details.summary,
-                        assignee: details.assignee,
-                        status: details.status
-                    };
-                    await storage.set({ [`meta_jira:${key}`]: metaMap[key] });
-                }
-            }
-            viewTitle.textContent = '📝 My Notes';
-        }
-
-        allNotes = Array.from(allKeys).map(key => ({
-            key,
-            text: notesMap[key] || '',
-            reminder: remindersMap[key] || null,
-            meta: metaMap[key] || null
-        })).sort((a, b) => b.key.localeCompare(a.key));
-
-        renderNotes(allNotes);
-    }
-
-    // --- Sync Logic ---
     syncNotesBtn.addEventListener('click', async () => {
-        if (syncNotesBtn.classList.contains('syncing-spin')) return; // Prevent double clicks
+        if (syncNotesBtn.classList.contains('syncing-spin')) return;
 
         syncNotesBtn.classList.add('syncing-spin');
-        viewTitle.textContent = '⏳ Syncing statuses...';
+        setPrimaryTitle('⏳ Syncing statuses...');
 
         const data = await storage.getAll();
-        const allKeys = new Set();
+        const parsed = parseTrackingStorage(data);
 
-        // Find all keys we know about
-        Object.keys(data).forEach(key => {
-            if (key.startsWith('notes_jira:')) {
-                allKeys.add(key.replace('notes_jira:', ''));
-            } else if (key.startsWith('reminder_jira:')) {
-                allKeys.add(key.replace('reminder_jira:', ''));
-            } else if (key.startsWith('meta_jira:')) {
-                allKeys.add(key.replace('meta_jira:', ''));
-            }
-        });
-
-        // Force fetch fresh data for every key
-        for (const key of allKeys) {
+        for (const key of parsed.allKeys) {
             try {
                 const details = await jiraApi.fetchIssueDetails(key);
-                if (details) {
-                    const freshMeta = {
+                if (!details) continue;
+                await storage.set({
+                    [`meta_jira:${key}`]: {
                         summary: details.summary,
                         assignee: details.assignee,
-                        status: details.status
-                    };
-                    await storage.set({ [`meta_jira:${key}`]: freshMeta });
-                }
+                        status: details.status,
+                    },
+                });
             } catch (err) {
                 console.warn(`Failed to sync details for ${key}`, err);
             }
         }
 
-        viewTitle.textContent = '📝 My Notes';
         syncNotesBtn.classList.remove('syncing-spin');
-
-        // Re-render
+        setPrimaryTitle('📝 My Notes');
         await loadNotes();
     });
 
-    function renderNotes(notes) {
-        notesList.innerHTML = '';
-        notesCount.textContent = notes.length;
+    searchInput.addEventListener('input', applyFiltersAndRender);
 
-        if (notes.length === 0) {
-            notesList.innerHTML = `
-                <div class="empty-state">
-                    <div class="emoji">📝</div>
-                    <p>No notes found.</p>
-                </div>
-            `;
-            return;
-        }
-
-        notes.forEach(item => {
-            const el = document.createElement('div');
-            el.className = 'note-item';
-
-            function renderStandardView() {
-                const isOverdue = item.reminder && item.reminder < Date.now();
-                const reminderHtml = item.reminder ? `
-                    <div class="note-reminder-badge ${isOverdue ? 'overdue' : 'future'}">
-                        <span>🔔</span> ${new Date(item.reminder).toLocaleString()}
-                    </div>
-                ` : '';
-
-                const summaryText = item.meta ? item.meta.summary : 'No summary loaded';
-                const assigneeText = item.meta ? item.meta.assignee : 'Unknown assignee';
-                const status = item.meta ? item.meta.status : null;
-                let statusClass = '';
-                if (status) {
-                    const n = status.name.toLowerCase();
-                    if (n.includes('blocked') || n.includes('hold')) statusClass = 'status-blocked';
-                    else if (n.includes('review') || n.includes('reviewing')) statusClass = 'status-inreview';
-                    else if (n.includes('qa') || n.includes('test')) statusClass = 'status-qa';
-                    else if (n.includes('in progress') || n.includes('progress')) statusClass = 'status-inprogress-specific';
-                }
-
-                const statusHtml = status ? `
-                    <div class="note-status-badge status-${status.category} ${statusClass}">${status.name}</div>
-                ` : '';
-
-                const summaryHtml = `
-                    <div class="note-meta">
-                        <div class="note-meta-top">
-                            ${statusHtml}
-                            <div class="note-summary" title="${summaryText}">${summaryText}</div>
-                        </div>
-                        <div class="note-meta-bottom">
-                            👤 ${assigneeText}
-                        </div>
-                    </div>
-                `;
-
-                const host = currentJiraHost;
-
-                el.innerHTML = `
-                    <div class="note-header">
-                        <a href="https://${host}/browse/${item.key}" target="_blank" class="note-key">${item.key}</a>
-                        <div class="note-actions">
-                            <button class="icon-only edit-btn" title="Edit note">✏️</button>
-                            <button class="icon-only copy-btn" title="Copy Link for Slack">🔗</button>
-                            <button class="icon-only delete-btn" title="Delete note">🗑️</button>
-                        </div>
-                    </div>
-                    ${summaryHtml}
-                    ${item.text ? `<div class="note-text">${item.text}</div>` : ''}
-                    ${reminderHtml}
-                `;
-
-                el.querySelector('.edit-btn').onclick = renderEditView;
-
-                el.querySelector('.copy-btn').onclick = (e) => {
-                    const btn = e.currentTarget;
-                    if (btn.dataset.isCopying) return;
-                    btn.dataset.isCopying = 'true';
-
-                    const url = `https://${host}/browse/${item.key}`;
-                    const plainTextCopy = `${item.key} - ${summaryText}`;
-                    const htmlLink = `<a href="${url}">${plainTextCopy}</a>`;
-                    const markdownLink = `[${plainTextCopy}](${url})`;
-
-                    const data = [new ClipboardItem({
-                        'text/plain': new Blob([markdownLink], { type: 'text/plain' }),
-                        'text/html': new Blob([htmlLink], { type: 'text/html' })
-                    })];
-
-                    const original = btn.textContent;
-
-                    navigator.clipboard.write(data).then(() => {
-                        btn.textContent = '✅';
-                        setTimeout(() => {
-                            btn.textContent = original;
-                            delete btn.dataset.isCopying;
-                        }, 1500);
-                    }).catch(err => {
-                        // Fallback
-                        navigator.clipboard.writeText(markdownLink).then(() => {
-                            btn.textContent = '✅';
-                            setTimeout(() => {
-                                btn.textContent = original;
-                                delete btn.dataset.isCopying;
-                            }, 1500);
-                        }).catch(e => {
-                            delete btn.dataset.isCopying;
-                        });
-                    });
-                };
-
-                el.querySelector('.delete-btn').onclick = async () => {
-                    if (confirm(`Delete note for ${item.key}?`)) {
-                        await storage.remove(`notes_jira:${item.key}`);
-                        await storage.remove(`reminder_jira:${item.key}`);
-                        loadNotes();
-                    }
-                };
-            }
-
-            function renderEditView() {
-                const formatDateTimeLocal = (timestamp) => {
-                    if (!timestamp) return '';
-                    const d = new Date(timestamp);
-                    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-                    return d.toISOString().slice(0, 16);
-                };
-
-                el.innerHTML = `
-                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                        <div class="note-header" style="margin-bottom: 0;">
-                            <span class="note-key">${item.key}</span>
-                        </div>
-                        <textarea class="edit-note-text" style="width:100%; min-height:80px; padding: 10px; border-radius: 6px; border: 1.5px solid var(--border-light); font-family: inherit; font-size: 13px; resize: vertical;">${item.text || ''}</textarea>
-                        
-                        <div style="display: flex; flex-direction: column; gap: 4px;">
-                            <label style="font-size: 11px; font-weight: 700; color: var(--text-subtle);">Reminder:</label>
-                            <input type="datetime-local" class="edit-reminder-input" style="padding: 8px; border-radius: 6px; border: 1.5px solid var(--border-light); font-family: inherit; font-size: 13px;" value="${formatDateTimeLocal(item.reminder)}">
-                        </div>
-                        
-                        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
-                            <button class="cancel-edit-btn" style="padding: 6px 12px; background: var(--bg-alt); color: var(--text-main); font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: background 0.2s;">Cancel</button>
-                            <button class="save-edit-btn" style="padding: 6px 12px; background: var(--primary-blue); color: white; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: background 0.2s;">Save</button>
-                        </div>
-                    </div>
-                `;
-
-                el.querySelector('.cancel-edit-btn').onclick = renderStandardView;
-
-                el.querySelector('.save-edit-btn').onclick = async () => {
-                    const newText = el.querySelector('.edit-note-text').value.trim();
-                    const newReminder = el.querySelector('.edit-reminder-input').value;
-
-                    if (newText) {
-                        await storage.set({ [`notes_jira:${item.key}`]: newText });
-                        item.text = newText;
-                    } else {
-                        await storage.remove(`notes_jira:${item.key}`);
-                        item.text = '';
-                    }
-
-                    if (newReminder) {
-                        const reminderTimestamp = new Date(newReminder).getTime();
-                        await storage.set({ [`reminder_jira:${item.key}`]: reminderTimestamp });
-                        item.reminder = reminderTimestamp;
-                    } else {
-                        await storage.remove(`reminder_jira:${item.key}`);
-                        item.reminder = null;
-                    }
-
-                    renderStandardView();
-                    loadNotes();
-                };
-            }
-
-            renderStandardView();
-            notesList.appendChild(el);
-        });
-    }
-
-    searchInput.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
-        const filtered = allNotes.filter(n =>
-            n.key.toLowerCase().includes(term) ||
-            n.text.toLowerCase().includes(term)
-        );
-        renderNotes(filtered);
-    });
-
-    // --- Settings Logic ---
     async function loadSettings() {
         const settings = await syncStorage.get(DEFAULT_SETTINGS);
         document.querySelectorAll('input[data-setting]').forEach(input => {
             const key = input.getAttribute('data-setting');
-            if (settings.hasOwnProperty(key)) {
+            if (Object.prototype.hasOwnProperty.call(settings, key)) {
                 input.checked = settings[key];
             }
         });
 
-        // GitHub PAT: show section if already enabled, and pre-fill the stored token
-        const isGhEnabled = settings['github_pr_link'] === true;
+        const isGhEnabled = settings.github_pr_link === true;
         syncGitHubPatSection(isGhEnabled);
         if (isGhEnabled) {
             const ghData = await syncStorage.get({ github_pat: '' });
@@ -374,19 +404,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         input.addEventListener('change', async () => {
             const key = input.getAttribute('data-setting');
             await syncStorage.set({ [key]: input.checked });
-            // Notify content scripts if needed, but they usually reload on next run
         });
     });
 
-    // --- Diagnostics ---
     testNotifBtn.addEventListener('click', () => {
         chrome.runtime.sendMessage({ type: 'TEST_NOTIFICATION' });
         notifStatus.textContent = 'Test signal sent to background...';
         notifStatus.style.display = 'block';
-        setTimeout(() => notifStatus.style.display = 'none', 3000);
+        setTimeout(() => {
+            notifStatus.style.display = 'none';
+        }, 3000);
     });
 
-    // --- GitHub PAT Logic ---
     function syncGitHubPatSection(isEnabled) {
         githubPatSection.style.display = isEnabled ? 'block' : 'none';
     }
@@ -403,22 +432,44 @@ document.addEventListener('DOMContentLoaded', async () => {
             githubPatStatus.style.display = 'block';
             return;
         }
+
         await syncStorage.set({ github_pat: token });
         githubPatStatus.textContent = '✅ Token saved!';
         githubPatStatus.style.color = '#36b37e';
         githubPatStatus.style.display = 'block';
-        setTimeout(() => githubPatStatus.style.display = 'none', 2500);
+        setTimeout(() => {
+            githubPatStatus.style.display = 'none';
+        }, 2500);
     });
 
-    // --- Initialization ---
-    // Make sure we have Inter font if requested by CSS (optional but good)
-    (async () => {
-        try {
-            currentJiraHost = await jiraApi.getHost();
-        } catch (e) {
-            console.error(e);
-        }
-        loadNotes();
-        loadSettings();
-    })();
+    tagFilterEditor = createTagEditor(tagFilterHost, {
+        value: [],
+        tagDefs: {},
+        allowCreate: false,
+        compact: true,
+        placeholder: 'Filter tags...',
+        onChange: tags => {
+            selectedFilterTags = tags.slice();
+            applyFiltersAndRender();
+        },
+    });
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        if (!hasTrackingStorageChange(changes, { includeMeta: true })) return;
+
+        clearTimeout(storageReloadTimer);
+        storageReloadTimer = setTimeout(() => {
+            loadNotes();
+        }, 120);
+    });
+
+    try {
+        currentJiraHost = await jiraApi.getHost();
+    } catch (e) {
+        console.error(e);
+    }
+
+    await loadNotes();
+    await loadSettings();
 });

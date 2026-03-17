@@ -6,6 +6,8 @@
   <script type="module" crossorigin src="/index.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
+  <link rel="modulepreload" crossorigin href="/assets/tagEditor.js">
+  <link rel="stylesheet" crossorigin href="/assets/tagEditor.css">
   <link rel="stylesheet" crossorigin href="/assets/index.css">
 </head>
 
@@ -29,6 +31,10 @@
     <div id="notes-view">
         <div class="search-bar">
             <input type="text" id="search" placeholder="Search by ticket or content...">
+            <div class="popup-tag-filter-wrap">
+                <div class="popup-tag-filter-label">Filter by tags</div>
+                <div id="tag-filter-host"></div>
+            </div>
         </div>
         <div class="notes-list" id="notes-list"></div>
     </div>
@@ -177,7 +183,7 @@
         </div>
     </div>
     <div class="about-footer">
-        <strong>PMsToolKit v0.6.5</strong> — Created by EricConcha
+        <strong>PMsToolKit v0.7.0</strong> — Created by EricConcha
     </div>
 </body>
 

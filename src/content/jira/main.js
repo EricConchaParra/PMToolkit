@@ -6,6 +6,7 @@ import { ReminderModal } from './ui/ReminderModal';
 import { NoteDrawer } from './ui/NoteDrawer';
 import { initTooltips } from './ui/tooltips';
 import '../../assets/jira-styles.css';
+import '../../assets/tag-editor.css';
 
 // Early exit if not on a Jira page (secondary safeguard for Confluence)
 if (window.location.pathname.startsWith('/wiki')) {
