@@ -261,7 +261,7 @@ export async function loadDashboardForSprint(sprint) {
         }
 
         // Render sprint overview panel
-        const devCount = Object.keys(devMap).length;
+        const devCount = Object.values(devMap).filter(d => d.assignee !== null).length;
         const totalCommittedSP = issues.reduce((a, i) => a + (i._sp || 0), 0);
         const teamVelAvg = Object.keys(devMap).reduce((sum, key) => {
             const accountId = devMap[key].assignee?.accountId || key;
