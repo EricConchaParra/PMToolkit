@@ -50,7 +50,7 @@ export async function enrichChips(container, token) {
     if (!container || !token) return;
 
     const chips = /** @type {NodeListOf<Element>} */ (
-        container.querySelectorAll('.in-progress-chip[data-gh-key]')
+        container.querySelectorAll('.in-progress-chip[data-gh-key], .in-review-chip[data-gh-key], .blocked-chip[data-gh-key]')
     );
     if (chips.length === 0) return;
 

@@ -22,6 +22,7 @@ function sectionOf(issue, statusMap = {}) {
     if (statusMap[name]) return statusMap[name];
     const n = name.toLowerCase();
     const cat = issue.fields?.status?.statusCategory?.key || '';
+    if (n.includes('blocked') || n.includes('hold')) return 'blocked';
     if (n.includes('in review') || n === 'review') return 'inReview';
     if (n.includes('in progress') || cat === 'indeterminate') return 'inProgress';
     if (n.includes('qa') || n.includes('test')) return 'qa';
@@ -51,8 +52,14 @@ function issueChip(i, jiraHost, opts = {}) {
         : initials;
     const assigneeName = escapeHtml(i.fields?.assignee?.displayName || 'Unassigned');
 
+    const section = sectionOf(i);
+    const isDone = section === 'done';
+    const isBlocked = section === 'blocked';
+    const isInReview = section === 'inReview';
+    const isInProgress = section === 'inProgress';
+
     return `
-        <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''} in-progress-chip" data-gh-key="${i.key}">
+        <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''}${isDone ? ' done-chip' : ''}${isBlocked ? ' blocked-chip' : ''}${isInReview ? ' in-review-chip' : ''}${isInProgress ? ' in-progress-chip' : ''}" data-gh-key="${i.key}" data-status="${escapeHtml(i.fields?.status?.name || '?')}">
             <div class="issue-chip-main">
                 <div class="issue-chip-top">
                     <a class="issue-chip-key" href="https://${jiraHost}/browse/${i.key}" target="_blank">${i.key}</a>
@@ -426,6 +433,7 @@ function renderSection1(tickets, allIssues, host, notesMap, alertsMap) {
     el.innerHTML = tickets.map(i => {
         const noteText = notesMap[i.key];
         const reminderTs = alertsMap[i.key];
+        const sec = sectionOf(i);
         const tags = [];
         if (noteText) tags.push(`<span class="fu-tag fu-tag-note">📝 Note</span>`);
         if (reminderTs) tags.push(`<span class="fu-tag fu-tag-alert">🔔 Alert ${new Date(reminderTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`);
@@ -437,7 +445,7 @@ function renderSection1(tickets, allIssues, host, notesMap, alertsMap) {
         const assigneeName = escapeHtml(i.fields?.assignee?.displayName || 'Unassigned');
 
         return `
-            <div class="issue-chip in-progress-chip" data-gh-key="${i.key}">
+            <div class="issue-chip ${sec === 'done' ? 'done-chip' : ''} ${sec === 'blocked' ? 'blocked-chip' : ''} ${sec === 'inReview' ? 'in-review-chip' : ''} ${sec === 'inProgress' ? 'in-progress-chip' : ''}" data-gh-key="${i.key}" data-status="${escapeHtml(i.fields?.status?.name || '?')}">
                 <div class="issue-chip-main">
                     <div class="issue-chip-top">
                         <a class="issue-chip-key" href="https://${host}/browse/${i.key}" target="_blank">${i.key}</a>

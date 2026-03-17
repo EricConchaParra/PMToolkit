@@ -28,7 +28,9 @@ function sectionOf(issue, settings) {
     if (settings.statusMap && settings.statusMap[name]) return settings.statusMap[name];
     const n = name.toLowerCase();
     const cat = issue.fields?.status?.statusCategory?.key || '';
-    if (n.includes('in progress') || n.includes('in review')) return 'inProgress';
+    if (n.includes('blocked') || n.includes('hold')) return 'blocked';
+    if (n.includes('in review') || n.includes('reviewing')) return 'inReview';
+    if (n.includes('in progress') || n.includes('progress')) return 'inProgress';
     if (n.includes('qa') || n.includes('test')) return 'qa';
     if (cat === 'done' || n === 'done') return 'done';
     return 'todo';
@@ -47,7 +49,12 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     const sprintHoursLeft = sprintEnd ? workingHoursBetween(now, sprintEnd, hoursPerDay) : null;
 
     // ---- Categorize issues ----
-    const inProgressIssues = issues.filter(i => sectionOf(i, settings) === 'inProgress');
+    const inReviewIssues = issues.filter(i => sectionOf(i, settings) === 'inReview');
+    const blockedIssues = issues.filter(i => sectionOf(i, settings) === 'blocked');
+    const inProgressIssues = issues.filter(i => {
+        const sec = sectionOf(i, settings);
+        return sec === 'inProgress' || sec === 'inReview' || sec === 'blocked';
+    });
     const qaIssues = issues.filter(i => sectionOf(i, settings) === 'qa');
     const doneIssues = issues.filter(i => sectionOf(i, settings) === 'done');
     const todoIssues = issues.filter(i => sectionOf(i, settings) === 'todo');
@@ -107,11 +114,15 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     // ---- Issue chip helper ----
     function issueChip(i, opts = {}) {
         const isOverdue = opts.isOverdue;
-        const isInProgress = opts.isInProgress;
-        const isDone = opts.isDone;
+        const section = sectionOf(i, settings);
+        
+        const isDone = section === 'done';
+        const isBlocked = section === 'blocked';
+        const isInReview = section === 'inReview';
+        const isInProgress = section === 'inProgress';
 
         return `
-            <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''}${isInProgress ? ' in-progress-chip' : ''}${isDone ? ' done-chip' : ''}" data-gh-key="${i.key}" data-status="${escapeHtml(i.fields?.status?.name || '?')}">
+            <div class="issue-chip${isOverdue ? ' issue-chip-overdue' : ''}${isInProgress ? ' in-progress-chip' : ''}${isDone ? ' done-chip' : ''}${isBlocked ? ' blocked-chip' : ''}${isInReview ? ' in-review-chip' : ''}" data-gh-key="${i.key}" data-status="${escapeHtml(i.fields?.status?.name || '?')}">
                 <div class="issue-chip-main">
                     <div class="issue-chip-top">
                         <a class="issue-chip-key" href="https://${jiraHost}/browse/${i.key}" target="_blank">${i.key}</a>
@@ -133,7 +144,11 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
 
     const inProgressHtml = inProgressIssues.length === 0
         ? `<div class="no-issues">No tickets in progress</div>`
-        : inProgressIssues.map(i => issueChip(i, { isOverdue: overdueSet.has(i.key), isInProgress: true })).join('');
+        : inProgressIssues.map(i => {
+            return issueChip(i, { 
+                isOverdue: overdueSet.has(i.key)
+            });
+        }).join('');
 
     const qaHtml = qaIssues.length === 0
         ? `<div class="no-issues">No tickets in QA</div>`

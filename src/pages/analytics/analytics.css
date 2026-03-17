@@ -1577,6 +1577,21 @@ body {
     opacity: 0.85;
 }
 
+.issue-chip.blocked-chip {
+    background: #fff8f6;
+    border-color: #ffbdad;
+}
+
+.issue-chip.in-review-chip {
+    background: #f0fdff;
+    border-color: #b3f5ff;
+}
+
+.issue-chip.in-progress-chip {
+    background: #f4f7ff;
+    border-color: #d2deff;
+}
+
 .issue-chip.done-chip .issue-chip-key {
     color: #1b7a4a;
 }
@@ -1660,35 +1675,38 @@ body {
 }
 
 /* Status-specific chip colors */
-.issue-chip[data-status*="Progress"] .issue-chip-status,
+.issue-chip[data-status*="Progress" i] .issue-chip-status,
 .in-progress-chip .issue-chip-status {
     background: rgba(75, 114, 212, 0.1);
     color: #4b72d4;
     border-color: rgba(75, 114, 212, 0.3);
 }
 
-.issue-chip[data-status*="Review"] .issue-chip-status {
+.issue-chip[data-status*="Review" i] .issue-chip-status,
+.in-review-chip .issue-chip-status {
     background: rgba(0, 199, 228, 0.1);
     color: #008da6;
     border-color: rgba(0, 199, 228, 0.3);
 }
 
-.issue-chip[data-status*="Blocked"] .issue-chip-status,
-.issue-chip[data-status*="Hold"] .issue-chip-status {
+.issue-chip[data-status*="Blocked" i] .issue-chip-status,
+.issue-chip[data-status*="Hold" i] .issue-chip-status,
+.blocked-chip .issue-chip-status {
     background: #fff0eb;
     color: #bf2600;
     border-color: #ffbdad;
 }
 
-.issue-chip[data-status*="QA"] .issue-chip-status,
-.issue-chip[data-status*="Test"] .issue-chip-status {
+.issue-chip[data-status*="QA" i] .issue-chip-status,
+.issue-chip[data-status*="Test" i] .issue-chip-status,
+.qa-chip .issue-chip-status {
     background: rgba(168, 85, 247, 0.1);
     color: #7e22ce;
     border-color: rgba(168, 85, 247, 0.3);
 }
 
-.issue-chip[data-status*="To Do"] .issue-chip-status,
-.issue-chip[data-status*="Todo"] .issue-chip-status {
+.issue-chip[data-status*="To Do" i] .issue-chip-status,
+.issue-chip[data-status*="Todo" i] .issue-chip-status {
     background: #f4f5f7;
     color: #42526e;
     border-color: #dfe1e6;

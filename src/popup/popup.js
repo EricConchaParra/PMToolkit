@@ -193,9 +193,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const summaryText = item.meta ? item.meta.summary : 'No summary loaded';
                 const assigneeText = item.meta ? item.meta.assignee : 'Unknown assignee';
                 const status = item.meta ? item.meta.status : null;
+                let statusClass = '';
+                if (status) {
+                    const n = status.name.toLowerCase();
+                    if (n.includes('blocked') || n.includes('hold')) statusClass = 'status-blocked';
+                    else if (n.includes('review') || n.includes('reviewing')) statusClass = 'status-inreview';
+                    else if (n.includes('qa') || n.includes('test')) statusClass = 'status-qa';
+                    else if (n.includes('in progress') || n.includes('progress')) statusClass = 'status-inprogress-specific';
+                }
 
                 const statusHtml = status ? `
-                    <div class="note-status-badge status-${status.category}">${status.name}</div>
+                    <div class="note-status-badge status-${status.category} ${statusClass}">${status.name}</div>
                 ` : '';
 
                 const summaryHtml = `
