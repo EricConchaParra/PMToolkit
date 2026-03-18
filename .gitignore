@@ -14,4 +14,7 @@
 # AI Agent
 .agent
 
+# Dependencies
+node_modules/
+
 ```
