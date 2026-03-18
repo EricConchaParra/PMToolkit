@@ -167,18 +167,48 @@ export async function fetchClosedSprints(host, boardId, count = 3) {
     return all.slice(-count); // take last N
 }
 
+export async function fetchBoardSprints(host, boardId, states = ['active', 'closed']) {
+    const stateParam = Array.isArray(states) ? states.filter(Boolean).join(',') : String(states || '');
+    let all = [];
+    let startAt = 0;
+
+    while (true) {
+        const suffix = stateParam ? `?state=${encodeURIComponent(stateParam)}&startAt=${startAt}&maxResults=50` : `?startAt=${startAt}&maxResults=50`;
+        const data = await jiraFetch(host, `/rest/agile/1.0/board/${boardId}/sprint${suffix}`);
+        const values = data.values || [];
+        all = all.concat(values);
+        if (data.isLast || values.length === 0) break;
+        startAt += values.length;
+    }
+
+    return all;
+}
+
 export async function fetchSprintDoneIssues(host, sprintId, spFieldId) {
-    const body = {
-        jql: `sprint = ${sprintId} AND statusCategory = Done AND issuetype not in (Epic, subtask)`,
-        fields: [spFieldId, 'assignee'],
-        maxResults: 200,
-    };
-    const data = await jiraFetch(host, '/rest/api/3/search/jql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
-        body: JSON.stringify(body),
-    });
-    return data.issues || [];
+    const fields = [spFieldId, 'assignee'].filter(Boolean);
+    let all = [];
+    let nextPageToken;
+
+    while (true) {
+        const body = {
+            jql: `sprint = ${sprintId} AND statusCategory = Done AND issuetype not in (Epic, subtask)`,
+            fields,
+            maxResults: 100,
+        };
+        if (nextPageToken) body.nextPageToken = nextPageToken;
+
+        const data = await jiraFetch(host, '/rest/api/3/search/jql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+            body: JSON.stringify(body),
+        });
+
+        all = all.concat(data.issues || []);
+        if (!data.nextPageToken || (data.issues || []).length === 0) break;
+        nextPageToken = data.nextPageToken;
+    }
+
+    return all;
 }
 
 export async function fetchSpFieldId(host) {

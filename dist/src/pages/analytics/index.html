@@ -302,9 +302,12 @@
                             <div class="combo-dropdown hidden" id="perf-project-dropdown"></div>
                         </div>
                     </div>
+                    <button id="perf-export-btn" class="icon-action-btn" title="Export detailed capacity CSV">⬇️ Export CSV</button>
                     <button id="perf-refresh-btn" class="icon-action-btn" title="Refresh">🔄 Refresh</button>
                 </div>
             </div>
+
+            <div id="perf-export-status" class="perf-export-status hidden"></div>
 
             <!-- States -->
             <div id="perf-placeholder" class="state-box">
@@ -322,7 +325,6 @@
 
             <!-- Metrics Content -->
             <div id="perf-content" class="perf-content hidden">
-
                 <!-- KPI Row -->
                 <div class="perf-kpis" id="perf-kpis"></div>
 

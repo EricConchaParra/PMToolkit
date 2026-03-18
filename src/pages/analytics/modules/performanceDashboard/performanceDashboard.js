@@ -3,18 +3,239 @@
  * Performance Dashboard — team metrics across last 5 closed sprints
  */
 
-import { fetchBoardId, fetchSprintDoneIssues, fetchSpFieldId, jiraFetch } from '../jiraApi.js';
+import {
+    fetchBoardId, fetchBoardSprints, fetchSprintDoneIssues,
+    fetchSprintIssues, fetchSpFieldId, jiraFetch,
+} from '../jiraApi.js';
 import { escapeHtml } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
 import { getActiveView } from '../nav.js';
 import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from '../analyticsPerf.js';
+import { downloadFile, escapeCSV } from '../csvExporter/csvExporter.js';
 
 const perfState = {
     selectedProjectKey: '',
     lastLoadedProjectKey: '',
     host: '',
     loadRequestId: 0,
+    boardId: null,
+    spFieldId: null,
 };
+
+function getPerfExportEls() {
+    return {
+        status: document.getElementById('perf-export-status'),
+        button: document.getElementById('perf-export-btn'),
+    };
+}
+
+function setPerfExportStatus(kind, message) {
+    const { status } = getPerfExportEls();
+    if (!status) return;
+    if (!message) {
+        status.className = 'perf-export-status hidden';
+        status.textContent = '';
+        return;
+    }
+    status.textContent = message;
+    status.className = `perf-export-status perf-export-status-${kind}`;
+}
+
+function getSprintSortValue(sprint) {
+    return new Date(sprint?.startDate || sprint?.endDate || 0).getTime() || 0;
+}
+
+function buildCapacityReportRows({ projectKey, host, sprints, spFieldId }) {
+    return [...sprints]
+        .sort((a, b) => getSprintSortValue(a) - getSprintSortValue(b) || String(a.name || '').localeCompare(String(b.name || '')))
+        .flatMap(sprint => {
+            const sprintIssues = [...(sprint.issues || [])]
+                .sort((a, b) => String(a.fields?.assignee?.displayName || 'Unassigned').localeCompare(String(b.fields?.assignee?.displayName || 'Unassigned'))
+                    || String(a.key || '').localeCompare(String(b.key || '')));
+
+            return sprintIssues.map(issue => {
+                const assignee = issue.fields?.assignee || null;
+                return {
+                    projectKey,
+                    sprintId: sprint.id || '',
+                    sprintName: sprint.name || '',
+                    sprintState: sprint.state || '',
+                    sprintStartDate: sprint.startDate || '',
+                    sprintEndDate: sprint.completeDate || sprint.endDate || '',
+                    developerName: assignee?.displayName || 'Unassigned',
+                    developerAccountId: assignee?.accountId || '',
+                    developerEmail: assignee?.emailAddress || '',
+                    ticketKey: issue.key || '',
+                    ticketSummary: issue.fields?.summary || '',
+                    ticketStatus: issue.fields?.status?.name || '',
+                    ticketStatusCategory: issue.fields?.status?.statusCategory?.key || '',
+                    storyPoints: Number(issue.fields?.[spFieldId]) || 0,
+                    ticketUrl: issue.key ? `https://${host}/browse/${issue.key}` : '',
+                };
+            });
+        });
+}
+
+export function buildCapacityReportCSV({ projectKey, host, sprints, spFieldId }) {
+    const rows = buildCapacityReportRows({ projectKey, host, sprints, spFieldId });
+    const teamProjectTickets = rows.length;
+    const teamProjectStoryPoints = rows.reduce((sum, row) => sum + row.storyPoints, 0);
+    const teamBySprint = new Map();
+    const developerByProject = new Map();
+    const developerBySprint = new Map();
+
+    for (const row of rows) {
+        const sprintKey = String(row.sprintId);
+        const devKey = row.developerAccountId || `unassigned:${row.developerName}`;
+        const sprintDevKey = `${sprintKey}::${devKey}`;
+
+        if (!teamBySprint.has(sprintKey)) teamBySprint.set(sprintKey, { tickets: 0, storyPoints: 0 });
+        if (!developerByProject.has(devKey)) developerByProject.set(devKey, { tickets: 0, storyPoints: 0 });
+        if (!developerBySprint.has(sprintDevKey)) developerBySprint.set(sprintDevKey, { tickets: 0, storyPoints: 0 });
+
+        teamBySprint.get(sprintKey).tickets += 1;
+        teamBySprint.get(sprintKey).storyPoints += row.storyPoints;
+        developerByProject.get(devKey).tickets += 1;
+        developerByProject.get(devKey).storyPoints += row.storyPoints;
+        developerBySprint.get(sprintDevKey).tickets += 1;
+        developerBySprint.get(sprintDevKey).storyPoints += row.storyPoints;
+    }
+
+    const headers = [
+        'Project Key',
+        'Sprint ID',
+        'Sprint Name',
+        'Sprint State',
+        'Sprint Start Date',
+        'Sprint End Date',
+        'Developer',
+        'Developer Account ID',
+        'Developer Email',
+        'Ticket Key',
+        'Ticket Summary',
+        'Ticket Status',
+        'Ticket Status Category',
+        'Story Points',
+        'Ticket URL',
+        'Developer Sprint Tickets',
+        'Developer Sprint Story Points',
+        'Developer Project Tickets',
+        'Developer Project Story Points',
+        'Team Sprint Tickets',
+        'Team Sprint Story Points',
+        'Team Project Tickets',
+        'Team Project Story Points',
+    ];
+
+    const csvRows = [headers.map(escapeCSV).join(',')];
+    for (const row of rows) {
+        const sprintKey = String(row.sprintId);
+        const devKey = row.developerAccountId || `unassigned:${row.developerName}`;
+        const sprintDevKey = `${sprintKey}::${devKey}`;
+        const sprintTotals = teamBySprint.get(sprintKey) || { tickets: 0, storyPoints: 0 };
+        const devProjectTotals = developerByProject.get(devKey) || { tickets: 0, storyPoints: 0 };
+        const devSprintTotals = developerBySprint.get(sprintDevKey) || { tickets: 0, storyPoints: 0 };
+
+        csvRows.push([
+            row.projectKey,
+            row.sprintId,
+            row.sprintName,
+            row.sprintState,
+            row.sprintStartDate,
+            row.sprintEndDate,
+            row.developerName,
+            row.developerAccountId,
+            row.developerEmail,
+            row.ticketKey,
+            row.ticketSummary,
+            row.ticketStatus,
+            row.ticketStatusCategory,
+            row.storyPoints,
+            row.ticketUrl,
+            devSprintTotals.tickets,
+            devSprintTotals.storyPoints,
+            devProjectTotals.tickets,
+            devProjectTotals.storyPoints,
+            sprintTotals.tickets,
+            sprintTotals.storyPoints,
+            teamProjectTickets,
+            teamProjectStoryPoints,
+        ].map(escapeCSV).join(','));
+    }
+
+    return csvRows.join('\n');
+}
+
+async function loadCapacityExportData(projectKey, host, onProgress = () => {}) {
+    if (!projectKey || !host) throw new Error('Select a project first.');
+
+    const boardId = perfState.boardId || await fetchBoardId(host, projectKey);
+    if (!boardId) throw new Error(`No Scrum board found for "${projectKey}".`);
+    perfState.boardId = boardId;
+
+    const spFieldId = perfState.spFieldId || await fetchSpFieldId(host);
+    perfState.spFieldId = spFieldId;
+
+    onProgress('Fetching active and closed sprints...', 10);
+    const allSprints = await fetchBoardSprints(host, boardId, ['active', 'closed']);
+    const scopedSprints = allSprints
+        .filter(sprint => sprint.state !== 'future')
+        .sort((a, b) => getSprintSortValue(a) - getSprintSortValue(b) || String(a.name || '').localeCompare(String(b.name || '')));
+
+    if (scopedSprints.length === 0) throw new Error('No active or closed sprints found for this project.');
+
+    const sprintData = [];
+    const concurrency = 4;
+    for (let i = 0; i < scopedSprints.length; i += concurrency) {
+        const batch = scopedSprints.slice(i, i + concurrency);
+        const results = await Promise.all(batch.map(async sprint => ({
+            ...sprint,
+            issues: await fetchSprintIssues(host, sprint.id, spFieldId).catch(() => []),
+        })));
+        sprintData.push(...results);
+        const completed = Math.min(i + concurrency, scopedSprints.length);
+        onProgress(`Fetching sprint tickets: ${completed} / ${scopedSprints.length}...`, 10 + ((completed / scopedSprints.length) * 80));
+    }
+
+    return { spFieldId, sprints: sprintData };
+}
+
+async function exportCapacityCsv() {
+    const { button } = getPerfExportEls();
+    if (!button) return;
+
+    if (!perfState.selectedProjectKey || !perfState.host) {
+        setPerfExportStatus('error', 'Select a project before exporting.');
+        return;
+    }
+
+    button.disabled = true;
+    setPerfExportStatus('info', 'Preparing detailed capacity export...');
+
+    try {
+        const { sprints, spFieldId } = await loadCapacityExportData(
+            perfState.selectedProjectKey,
+            perfState.host,
+            message => setPerfExportStatus('info', message),
+        );
+        setPerfExportStatus('info', 'Building CSV...');
+
+        const csv = buildCapacityReportCSV({
+            projectKey: perfState.selectedProjectKey,
+            host: perfState.host,
+            sprints,
+            spFieldId,
+        });
+        const dateStr = new Date().toISOString().slice(0, 10);
+        downloadFile(csv, `${perfState.selectedProjectKey.toLowerCase()}_capacity_report_${dateStr}.csv`, 'text/csv;charset=utf-8;');
+        setPerfExportStatus('success', `Exported ${csv.split('\n').length - 1} detailed ticket rows across ${sprints.length} sprints.`);
+    } catch (err) {
+        console.error('PMsToolKit PerfDashboard export:', err);
+        setPerfExportStatus('error', err.message || 'Unexpected error exporting CSV.');
+    } finally {
+        button.disabled = false;
+    }
+}
 
 // ============================================================
 // LOAD PERFORMANCE DASHBOARD
@@ -25,6 +246,9 @@ export async function loadPerfDashboard(projectKey, host) {
     const requestId = ++perfState.loadRequestId;
     perfState.selectedProjectKey = projectKey;
     perfState.host = host;
+    perfState.boardId = null;
+    perfState.spFieldId = null;
+    setPerfExportStatus('', '');
 
     const showState = (state, msg = '') => {
         document.getElementById('perf-placeholder').classList.add('hidden');
@@ -47,6 +271,7 @@ export async function loadPerfDashboard(projectKey, host) {
         markAnalyticsPerf(`perf:${projectKey}:start`);
         const boardId = await fetchBoardId(host, projectKey);
         if (requestId !== perfState.loadRequestId) return;
+        perfState.boardId = boardId;
         if (!boardId) { showState('error', `No Scrum board found for "${projectKey}".`); return; }
 
         showState('loading', 'Fetching last 5 sprints...');
@@ -58,6 +283,7 @@ export async function loadPerfDashboard(projectKey, host) {
         showState('loading', 'Resolving Story Points field...');
         const spFId = await fetchSpFieldId(host);
         if (requestId !== perfState.loadRequestId) return;
+        perfState.spFieldId = spFId;
 
         showState('loading', 'Loading sprint data...');
         const sprintData = await Promise.all(closedSprints.map(async cs => {
@@ -284,6 +510,10 @@ export function initPerfCombo(allProjects, currentHost, initialProjectKey = '') 
             perfState.lastLoadedProjectKey = '';
             ensurePerfLoaded({ forceRefresh: true });
         }
+    });
+
+    document.getElementById('perf-export-btn')?.addEventListener('click', () => {
+        exportCapacityCsv();
     });
 
     document.addEventListener('analytics:viewchange', event => {
