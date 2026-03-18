@@ -10,7 +10,8 @@ import { loadSettings, saveSettings, getLastProject, setLastProject } from './mo
 import { getJiraHost, fetchProjects, fetchProjectStatuses } from './modules/jiraApi.js';
 import { escapeHtml } from './modules/utils.js';
 import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, SP_KEYS } from './modules/constants.js';
-import { populateSettingsUI, populateStatusMapUI, readStatusMapFromUI } from './modules/sprintDashboard/settingsUI.js';
+import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from './modules/analyticsPerf.js';
+import { populateSettingsUI, populateStatusMapUI, readGithubReposFromUI, readStatusMapFromUI } from './modules/sprintDashboard/settingsUI.js';
 import {
     setHost, setSettings, setSpFieldId,
     loadDashboard, loadDashboardForSprint, resetSprintGithubState,
@@ -25,6 +26,7 @@ import { initFollowupCombo } from './modules/followupDashboard/followupDashboard
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
+    markAnalyticsPerf('bootstrap:start');
     // ---- Nav ----
     initNav();
 
@@ -55,7 +57,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!isNaN(val)) spHours[k] = val;
         });
         const statusMap = readStatusMapFromUI();
-        currentSettings = { hoursPerDay, spHours, statusMap };
+        const githubRepos = readGithubReposFromUI();
+        currentSettings = { hoursPerDay, spHours, statusMap, githubRepos };
         setSettings(currentSettings);
         await saveSettings(selectedProjectKey, currentSettings);
         const msg = document.getElementById('settings-saved-msg');
@@ -65,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Reset settings ----
     document.getElementById('reset-settings-btn').addEventListener('click', async () => {
-        currentSettings = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, statusMap: {} };
+        currentSettings = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, statusMap: {}, githubRepos: [] };
         setSettings(currentSettings);
         await saveSettings(selectedProjectKey, currentSettings);
         populateSettingsUI(currentSettings);
@@ -100,7 +103,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (currentHost) {
         try {
+            markAnalyticsPerf('projects:start');
             allProjects = await fetchProjects(currentHost);
+            markAnalyticsPerf('projects:end');
+            measureAnalyticsPerf('projects', 'projects:start', 'projects:end', { count: allProjects.length });
             projectSearch.placeholder = 'Search project...';
             renderComboOptions();
         } catch {
@@ -118,6 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentSettings = await loadSettings(projectKey);
         setSettings(currentSettings);
         populateSettingsUI(currentSettings);
+        logAnalyticsPerf('project:selected', { projectKey });
 
         setSpFieldId(null);
         loadDashboard(projectKey);
@@ -247,4 +254,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Follow-up Work Dashboard ----
     initFollowupCombo(allProjects, currentHost, lastProject, () => currentSettings);
+    markAnalyticsPerf('bootstrap:end');
+    measureAnalyticsPerf('bootstrap', 'bootstrap:start', 'bootstrap:end', {
+        projectCount: allProjects.length,
+        restoredProject: lastProject || null,
+    });
 });

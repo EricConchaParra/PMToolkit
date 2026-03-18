@@ -1,6 +1,6 @@
 import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS } from '../constants.js';
 import { jiraFetch } from '../jiraApi.js';
-import { getPrSnapshots } from '../githubPrSnapshotStore.js';
+import { resolveGithubPrBatch } from '../githubPrSnapshotStore.js';
 import { formatDate, formatHours, spToHours, timeSince, truncate, workingHoursElapsed } from '../utils.js';
 
 const FOLLOWUP_META_PREFIX = 'followup_meta_';
@@ -115,14 +115,25 @@ export async function fetchIssueTimeline(host, issueKey) {
     return request;
 }
 
-export async function resolvePrSnapshots(ticketKeys, token) {
-    return getPrSnapshots(ticketKeys, token);
+export async function resolvePrSnapshots(ticketKeys, token, options = {}) {
+    return resolveGithubPrBatch({
+        ticketKeys,
+        token,
+        repos: options.repos || [],
+        forceRefresh: options.forceRefresh === true,
+        visibleTicketKeys: options.priorityTicketKeys || [],
+        allowGlobalFallback: options.allowGlobalFallback === true,
+        repoConcurrency: options.repoConcurrency,
+        closedWindowDays: options.closedWindowDays,
+        searchLimit: options.searchLimit,
+    });
 }
 
 export function buildFollowupItems({
     issues = [],
     timelinesByKey = {},
     prSnapshotsByKey = {},
+    pendingPrKeys = [],
     notesMap = {},
     remindersMap = {},
     tagsMap = {},
@@ -137,6 +148,7 @@ export function buildFollowupItems({
     const statusMap = settings.statusMap || {};
     const nowDate = new Date(now);
     const engineerMap = buildEngineerMap(issues, statusMap, spHours, sprintHoursLeft);
+    const pendingPrKeySet = new Set(pendingPrKeys);
 
     const items = issues.map(issue => {
         const issueKey = issue.key;
@@ -147,6 +159,7 @@ export function buildFollowupItems({
         const reminderTs = remindersMap[issueKey] || null;
         const tags = tagsMap[issueKey] || [];
         const pr = prSnapshotsByKey[issueKey] || null;
+        const prPending = pendingPrKeySet.has(issueKey);
         const engineer = engineerMap[getAssigneeId(issue)];
         const statusAgeHours = timeline.currentStatusSince
             ? workingHoursElapsed(timeline.currentStatusSince, hoursPerDay, nowDate)
@@ -162,7 +175,7 @@ export function buildFollowupItems({
 
         if (trackingMeta.state === 'blocked' || section === 'blocked') signals.push('blocked');
         if (reminderTs && reminderTs <= now + (4 * 60 * 60 * 1000)) signals.push('reminder-due');
-        if (prSignalsEnabled && (section === 'inProgress' || section === 'inReview') && !pr && statusAgeHours >= 4) signals.push('needs-pr');
+        if (prSignalsEnabled && (section === 'inProgress' || section === 'inReview') && !pr && !prPending && statusAgeHours >= 4) signals.push('needs-pr');
         if (prSignalsEnabled && section === 'inReview' && pr && (pr.state === 'open' || pr.draft) && prIdleHours >= 12) signals.push('review-waiting');
         if (
             ['inProgress', 'inReview', 'qa', 'blocked'].includes(section)
@@ -188,6 +201,7 @@ export function buildFollowupItems({
         const reasonLines = signals.map(signal => describeSignal(signal, {
             issue,
             pr,
+            prPending,
             reminderTs,
             trackingMeta,
             timeline,
@@ -220,6 +234,7 @@ export function buildFollowupItems({
                 freezeThreshold,
             },
             pr,
+            prPending,
             tracking: {
                 noteText,
                 notePreview: truncate(noteText, 180),
@@ -229,6 +244,7 @@ export function buildFollowupItems({
                 pinned: trackingMeta.pinned,
                 updatedAt: trackingMeta.updatedAt,
             },
+            prPending,
             engineer,
             signals,
             primarySignal,

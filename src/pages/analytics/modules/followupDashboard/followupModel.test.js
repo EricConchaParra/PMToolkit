@@ -57,6 +57,7 @@ function buildItems(overrides = {}) {
         issues: overrides.issues || [],
         timelinesByKey: overrides.timelinesByKey || {},
         prSnapshotsByKey: overrides.prSnapshotsByKey || {},
+        pendingPrKeys: overrides.pendingPrKeys || [],
         notesMap: overrides.notesMap || {},
         remindersMap: overrides.remindersMap || {},
         tagsMap: overrides.tagsMap || {},
@@ -99,6 +100,20 @@ describe('buildFollowupItems', () => {
 
         expect(items[0].signals).toContain('needs-pr');
         expect(items[0].primarySignal).toBe('needs-pr');
+    });
+
+    it('does not flag needs-pr while PR lookup is still pending', () => {
+        const issues = [
+            makeIssue({ key: 'PM-2B', statusName: 'In Review', updatedHoursAgo: 6 }),
+        ];
+
+        const items = buildItems({
+            issues,
+            pendingPrKeys: ['PM-2B'],
+        });
+
+        expect(items[0].signals).not.toContain('needs-pr');
+        expect(items[0].prPending).toBe(true);
     });
 
     it('flags stale review flow as review-waiting', () => {

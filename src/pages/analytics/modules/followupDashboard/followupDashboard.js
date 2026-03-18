@@ -32,13 +32,17 @@ import {
     FOLLOWUP_SIGNAL_META,
     FOLLOWUP_STATE_META,
     buildFollowupItems,
+    resolveIssueSection,
     fetchIssueTimeline,
     getFollowupMetaStorageKey,
     normalizeFollowupMeta,
     parseFollowupMetaStorage,
     resolvePrSnapshots,
+    clearFollowupSessionCaches,
 } from './followupModel.js';
 import { clearPrSnapshotCache, getGithubAvailabilityState } from '../githubPrSnapshotStore.js';
+import { subscribeGithubAvailability } from '../githubPrSnapshotStore.js';
+import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from '../analyticsPerf.js';
 
 const FOLLOWUP_META_PREFIX = 'followup_meta_jira:';
 
@@ -51,6 +55,7 @@ const followupState = {
     issues: [],
     timelinesByKey: {},
     prSnapshotsByKey: {},
+    pendingPrKeys: [],
     notesMap: {},
     alertsMap: {},
     tagsMap: {},
@@ -63,6 +68,7 @@ const followupState = {
         enabled: false,
         token: '',
         error: '',
+        loading: false,
     },
     filters: {
         assignee: 'all',
@@ -74,6 +80,7 @@ const followupState = {
         showDone: false,
     },
     storageListenerBound: false,
+    githubListenerBound: false,
     storageReloadTimer: null,
     loadRequestId: 0,
     lastLoadedProjectKey: '',
@@ -126,6 +133,7 @@ function rebuildFollowupItems() {
         issues: followupState.issues,
         timelinesByKey: followupState.timelinesByKey,
         prSnapshotsByKey: followupState.prSnapshotsByKey,
+        pendingPrKeys: followupState.pendingPrKeys,
         notesMap: followupState.notesMap,
         remindersMap: followupState.alertsMap,
         tagsMap: followupState.tagsMap,
@@ -138,7 +146,7 @@ function rebuildFollowupItems() {
 
 function syncGithubAvailability() {
     const availability = getGithubAvailabilityState();
-    followupState.github.error = availability.blocked ? availability.reason : '';
+    followupState.github.error = availability.blocked ? formatGithubAvailabilityReason(availability) : '';
 }
 
 async function refreshTrackingState() {
@@ -158,9 +166,13 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
     followupState.host = host;
     followupState.settings = settings || {};
 
-    if (forceRefresh) clearPrSnapshotCache();
+    if (forceRefresh) {
+        clearPrSnapshotCache();
+        clearFollowupSessionCaches();
+    }
 
     showFollowupState('loading', 'Connecting to Jira...');
+    markAnalyticsPerf(`followup:${projectKey}:start`);
 
     try {
         showFollowupState('loading', 'Resolving Story Points field...');
@@ -204,6 +216,7 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
             followupState.alertsMap = {};
             followupState.tagsMap = {};
             followupState.followupMetaMap = {};
+            followupState.pendingPrKeys = [];
             followupState.items = [];
             followupState.lastLoadedProjectKey = projectKey;
             renderFollowupDashboard();
@@ -218,18 +231,18 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
 
         showFollowupState('loading', 'Building Jira timelines...');
         const timelinesByKey = {};
+        const timelineIssues = issues.filter(issue => resolveIssueSection(issue, followupState.settings?.statusMap || {}) !== 'done');
         const CONCURRENCY = 4;
-        for (let index = 0; index < issues.length; index += CONCURRENCY) {
+        for (let index = 0; index < timelineIssues.length; index += CONCURRENCY) {
             if (requestId !== followupState.loadRequestId) return;
 
-            const batch = issues.slice(index, index + CONCURRENCY);
+            const batch = timelineIssues.slice(index, index + CONCURRENCY);
             const timelines = await Promise.all(batch.map(issue => fetchIssueTimeline(host, issue.key)));
             timelines.forEach(timeline => {
                 timelinesByKey[timeline.issueKey] = timeline;
             });
         }
 
-        showFollowupState('loading', 'Loading GitHub PR context...');
         const ghSettings = await syncStorage.get({ github_pr_link: false, github_pat: '' });
         if (requestId !== followupState.loadRequestId) return;
 
@@ -237,17 +250,12 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
             enabled: ghSettings.github_pr_link === true && !!ghSettings.github_pat,
             token: ghSettings.github_pat || '',
             error: '',
+            loading: ghSettings.github_pr_link === true && !!ghSettings.github_pat,
         };
 
-        let prSnapshotsByKey = {};
-        if (followupState.github.enabled) {
-            prSnapshotsByKey = await resolvePrSnapshots(issues.map(issue => issue.key), followupState.github.token);
-            if (requestId !== followupState.loadRequestId) return;
-        }
-        syncGithubAvailability();
-
         followupState.timelinesByKey = timelinesByKey;
-        followupState.prSnapshotsByKey = prSnapshotsByKey;
+        followupState.prSnapshotsByKey = {};
+        followupState.pendingPrKeys = [];
         followupState.lastLoadedProjectKey = projectKey;
 
         showFollowupState('loading', 'Loading notes, reminders, tags, and follow-up state...');
@@ -255,6 +263,19 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
         if (requestId !== followupState.loadRequestId) return;
 
         showFollowupState('content');
+        markAnalyticsPerf(`followup:${projectKey}:base`);
+        measureAnalyticsPerf(`followup:${projectKey}:base`, `followup:${projectKey}:start`, `followup:${projectKey}:base`, {
+            issueCount: issues.length,
+            timelineCount: Object.keys(timelinesByKey).length,
+        });
+
+        if (followupState.github.enabled) {
+            loadFollowupGithubSignals(requestId, issues, { forceRefresh });
+        } else {
+            followupState.github.loading = false;
+            syncGithubAvailability();
+            renderFollowupDataSections();
+        }
     } catch (err) {
         console.error('PMsToolKit Follow-up Dashboard:', err);
         showFollowupState('error', err.message || 'Unexpected error loading follow-up dashboard.');
@@ -265,10 +286,14 @@ function renderFollowupDashboard() {
     showFollowupState('content');
     renderHeaderSummary();
     renderFilterControls();
+    renderFollowupDataSections();
+    NoteDrawer.initIndicators();
+}
+
+function renderFollowupDataSections() {
     renderQueue();
     renderHotspots();
     renderSignalMix();
-    NoteDrawer.initIndicators();
 }
 
 function renderHeaderSummary() {
@@ -295,10 +320,12 @@ function renderHeaderSummary() {
         const hasGithubError = Boolean(followupState.github.error);
         ghStatus.textContent = hasGithubError
             ? followupState.github.error
+            : followupState.github.loading
+                ? 'GitHub PR signals loading...'
             : followupState.github.enabled
                 ? 'GitHub PR signals ON'
                 : 'GitHub PR signals OFF';
-        ghStatus.className = `fu-data-pill ${hasGithubError ? 'is-warning' : followupState.github.enabled ? 'is-success' : 'is-muted'}`;
+        ghStatus.className = `fu-data-pill ${hasGithubError ? 'is-warning' : followupState.github.loading ? 'is-muted' : followupState.github.enabled ? 'is-success' : 'is-muted'}`;
         ghStatus.title = hasGithubError ? followupState.github.error : '';
     }
 
@@ -319,6 +346,24 @@ function renderHeaderSummary() {
             })));
         }
     }
+}
+
+function formatGithubAvailabilityReason(availability) {
+    if (!availability?.blocked) return '';
+    if (availability.retryAt) {
+        return `${availability.reason} · retrying ${formatRetryTime(availability.retryAt)}`;
+    }
+    return availability.reason || '';
+}
+
+function formatRetryTime(retryAt) {
+    const remainingMs = Math.max(0, retryAt - Date.now());
+    const minutes = Math.ceil(remainingMs / (60 * 1000));
+    if (minutes <= 1) return 'in <1m';
+    if (minutes < 60) return `in ${minutes}m`;
+
+    const date = new Date(retryAt);
+    return `at ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function renderFilterControls() {
@@ -535,7 +580,7 @@ function renderQueueItem(item) {
                 <a class="fu-action-btn" href="${item.jira.url}" target="_blank" rel="noopener noreferrer">Jira</a>
                 ${item.pr?.url
         ? `<a class="fu-action-btn" href="${item.pr.url}" target="_blank" rel="noopener noreferrer">PR</a>`
-        : `<button class="fu-action-btn is-disabled" type="button" disabled>${followupState.github.enabled ? 'No PR' : 'PR Off'}</button>`}
+        : `<button class="fu-action-btn is-disabled" type="button" disabled>${item.prPending ? 'PR pending' : followupState.github.enabled ? 'No PR' : 'PR Off'}</button>`}
                 <select class="fu-state-select" data-issue-key="${item.key}" title="Follow-up">
                     ${Object.entries(FOLLOWUP_STATE_META).map(([value, meta]) => `
                         <option value="${value}" ${value === item.tracking.state ? 'selected' : ''}>${escapeHtml(meta.label)}</option>
@@ -556,6 +601,14 @@ function renderPrSummary(item) {
 
     if (followupState.github.error) {
         return `<div class="fu-pr-row"><span class="fu-inline-meta is-warning">${escapeHtml(followupState.github.error)}</span></div>`;
+    }
+
+    if (item.prPending) {
+        return '<div class="fu-pr-row"><span class="fu-inline-meta is-muted">PR lookup pending...</span></div>';
+    }
+
+    if (followupState.github.loading && !item.pr) {
+        return '<div class="fu-pr-row"><span class="fu-inline-meta is-muted">Loading GitHub PR context...</span></div>';
     }
 
     if (!item.pr) {
@@ -888,6 +941,80 @@ function bindFollowupStorageListener() {
     followupState.storageListenerBound = true;
 }
 
+function bindFollowupGithubListener() {
+    if (followupState.githubListenerBound) return;
+    let wasBlocked = false;
+
+    subscribeGithubAvailability(availability => {
+        syncGithubAvailability();
+        renderHeaderSummary();
+        renderFollowupDataSections();
+
+        if (
+            wasBlocked
+            && availability.blocked === false
+            && followupState.github.enabled
+            && !followupState.github.loading
+            && followupState.issues.length > 0
+        ) {
+            followupState.github.loading = true;
+            renderHeaderSummary();
+            renderFollowupDataSections();
+            loadFollowupGithubSignals(followupState.loadRequestId, followupState.issues, { forceRefresh: false });
+        }
+
+        wasBlocked = availability.blocked === true;
+    });
+
+    followupState.githubListenerBound = true;
+}
+
+async function loadFollowupGithubSignals(requestId, issues, opts = {}) {
+    const projectKey = followupState.projectKey;
+    markAnalyticsPerf(`followup:${projectKey}:github:start`);
+
+    try {
+        const ticketKeys = issues.map(issue => issue.key);
+        const priorityTicketKeys = getVisibleItems()
+            .map(item => item.key)
+            .concat(followupState.items.map(item => item.key));
+        const prResult = await resolvePrSnapshots(ticketKeys, followupState.github.token, {
+            repos: followupState.settings.githubRepos || [],
+            priorityTicketKeys,
+            allowGlobalFallback: (followupState.settings.githubRepos?.length || 0) === 0 || opts.forceRefresh === true,
+            forceRefresh: opts.forceRefresh === true,
+            repoConcurrency: 1,
+            searchLimit: 5,
+        });
+
+        if (requestId !== followupState.loadRequestId) return;
+
+        followupState.prSnapshotsByKey = prResult.snapshotsByKey;
+        followupState.pendingPrKeys = prResult.pendingKeys;
+        followupState.github.loading = false;
+        syncGithubAvailability();
+        rebuildFollowupItems();
+        renderHeaderSummary();
+        renderFollowupDataSections();
+
+        markAnalyticsPerf(`followup:${projectKey}:github:end`);
+        measureAnalyticsPerf(`followup:${projectKey}:github`, `followup:${projectKey}:github:start`, `followup:${projectKey}:github:end`, {
+            issueCount: issues.length,
+            prLookups: ticketKeys.length,
+        });
+    } catch (error) {
+        if (requestId !== followupState.loadRequestId) return;
+
+        console.error('PMsToolKit Follow-up GitHub enrichment:', error);
+        followupState.github.loading = false;
+        syncGithubAvailability();
+        rebuildFollowupItems();
+        renderHeaderSummary();
+        renderFollowupDataSections();
+        logAnalyticsPerf('followup:github:error', { projectKey, message: error?.message || 'unknown' });
+    }
+}
+
 export function initFollowupCombo(allProjects, currentHost, initialProjectKey = '', getSettings) {
     let selectedProjectKey = '';
 
@@ -900,6 +1027,7 @@ export function initFollowupCombo(allProjects, currentHost, initialProjectKey = 
 
     ensureFollowupTagFilter();
     bindFollowupStorageListener();
+    bindFollowupGithubListener();
     attachFollowupEvents(content);
 
     function loadSelectedProject(opts = {}) {

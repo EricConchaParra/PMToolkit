@@ -3,6 +3,13 @@
  * All Jira and GitHub API fetch helpers
  */
 
+import {
+    getCachedBoardId,
+    getCachedProjectStatuses,
+    getCachedProjects,
+    getCachedSpFieldId,
+} from './analyticsDataCache.js';
+
 // ============================================================
 // JIRA HOST
 // ============================================================
@@ -53,6 +60,12 @@ export async function githubFetch(path, token) {
         const error = new Error(`GitHub API ${resp.status}`);
         error.status = resp.status;
         error.responseText = bodyText;
+        error.headers = {
+            reset: resp.headers.get('x-ratelimit-reset'),
+            remaining: resp.headers.get('x-ratelimit-remaining'),
+            limit: resp.headers.get('x-ratelimit-limit'),
+            retryAfter: resp.headers.get('retry-after'),
+        };
         throw error;
     }
     return resp.json();
@@ -83,20 +96,24 @@ export async function findPrForTicket(ticketId, token) {
 }
 
 export async function fetchProjects(host) {
-    let all = [];
-    let startAt = 0;
-    while (true) {
-        const data = await jiraFetch(host, `/rest/api/3/project/search?startAt=${startAt}&maxResults=50&orderBy=name`);
-        all = all.concat(data.values || []);
-        if (data.isLast || (data.values || []).length === 0) break;
-        startAt += data.values.length;
-    }
-    return all;
+    return getCachedProjects(host, async () => {
+        let all = [];
+        let startAt = 0;
+        while (true) {
+            const data = await jiraFetch(host, `/rest/api/3/project/search?startAt=${startAt}&maxResults=50&orderBy=name`);
+            all = all.concat(data.values || []);
+            if (data.isLast || (data.values || []).length === 0) break;
+            startAt += data.values.length;
+        }
+        return all;
+    });
 }
 
 export async function fetchBoardId(host, projectKey) {
-    const data = await jiraFetch(host, `/rest/agile/1.0/board?projectKeyOrId=${projectKey}&type=scrum&maxResults=1`);
-    return data.values?.[0]?.id || null;
+    return getCachedBoardId(host, projectKey, async () => {
+        const data = await jiraFetch(host, `/rest/agile/1.0/board?projectKeyOrId=${projectKey}&type=scrum&maxResults=1`);
+        return data.values?.[0]?.id || null;
+    });
 }
 
 export async function fetchActiveSprint(host, boardId) {
@@ -165,23 +182,27 @@ export async function fetchSprintDoneIssues(host, sprintId, spFieldId) {
 }
 
 export async function fetchSpFieldId(host) {
-    const fields = await jiraFetch(host, '/rest/api/3/field');
-    const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
-    return spField?.id || null;
+    return getCachedSpFieldId(host, async () => {
+        const fields = await jiraFetch(host, '/rest/api/3/field');
+        const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
+        return spField?.id || null;
+    });
 }
 
 // Returns a deduplicated list of { name, categoryKey } for a project
 export async function fetchProjectStatuses(host, projectKey) {
-    const data = await jiraFetch(host, `/rest/api/3/project/${projectKey}/statuses`);
-    const seen = new Set();
-    const result = [];
-    for (const issueType of (data || [])) {
-        for (const s of (issueType.statuses || [])) {
-            if (!seen.has(s.name)) {
-                seen.add(s.name);
-                result.push({ name: s.name, categoryKey: s.statusCategory?.key || '' });
+    return getCachedProjectStatuses(host, projectKey, async () => {
+        const data = await jiraFetch(host, `/rest/api/3/project/${projectKey}/statuses`);
+        const seen = new Set();
+        const result = [];
+        for (const issueType of (data || [])) {
+            for (const s of (issueType.statuses || [])) {
+                if (!seen.has(s.name)) {
+                    seen.add(s.name);
+                    result.push({ name: s.name, categoryKey: s.statusCategory?.key || '' });
+                }
             }
         }
-    }
-    return result;
+        return result;
+    });
 }

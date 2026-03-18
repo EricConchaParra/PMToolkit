@@ -124,6 +124,15 @@
                             <h4>Status Mapping</h4>
                             <p class="status-map-hint">Select a project to configure status mapping.</p>
                         </div>
+                        <div class="settings-col">
+                            <h4>GitHub Repositories</h4>
+                            <div class="setting-row">
+                                <label for="github-repos">Repos linked to this Jira project</label>
+                                <textarea id="github-repos" class="settings-textarea" rows="5"
+                                    placeholder="acme/web&#10;acme/api"></textarea>
+                                <p class="status-map-hint">One <code>owner/repo</code> per line. These repos will be used for bulk PR lookup before any global fallback.</p>
+                            </div>
+                        </div>
 
                     </div>
                     <div class="settings-actions">

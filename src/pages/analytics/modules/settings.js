@@ -15,7 +15,12 @@ export function settingsStorageKey(projectKey) {
 
 export function loadSettings(projectKey) {
     return new Promise(resolve => {
-        const defaults = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, statusMap: {} };
+        const defaults = {
+            hoursPerDay: DEFAULT_HOURS_PER_DAY,
+            spHours: { ...DEFAULT_SP_HOURS },
+            statusMap: {},
+            githubRepos: [],
+        };
         if (!projectKey || !(typeof chrome !== 'undefined' && chrome.storage)) {
             resolve(defaults);
             return;
@@ -26,6 +31,9 @@ export function loadSettings(projectKey) {
                 hoursPerDay: saved.hoursPerDay || DEFAULT_HOURS_PER_DAY,
                 spHours: { ...DEFAULT_SP_HOURS, ...(saved.spHours || {}) },
                 statusMap: saved.statusMap || {},
+                githubRepos: Array.isArray(saved.githubRepos)
+                    ? saved.githubRepos.filter(Boolean).map(repo => String(repo).trim()).filter(Boolean)
+                    : [],
             });
         });
     });

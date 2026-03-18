@@ -489,6 +489,10 @@ body {
     gap: 12px;
 }
 
+.setting-row:has(.settings-textarea) {
+    align-items: flex-start;
+}
+
 .setting-row label {
     font-size: 13px;
     font-weight: 500;
@@ -503,6 +507,19 @@ body {
     font-family: inherit;
     background: var(--bg);
     cursor: pointer;
+}
+
+.settings-textarea {
+    min-width: 240px;
+    min-height: 110px;
+    padding: 8px 10px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
+    resize: vertical;
 }
 
 .sp-scale-grid {
@@ -2521,7 +2538,7 @@ body {
 .fu-filter-card {
     overflow: visible;
     position: relative;
-    z-index: 20;
+    z-index: 1;
 }
 
 .fu-section-header {
