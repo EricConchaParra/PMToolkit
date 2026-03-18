@@ -13,6 +13,8 @@ import { workingHoursBetween, formatDate, formatHours } from '../utils.js';
 import { renderDevCard } from './devCard.js';
 import { renderSprintOverview } from './sprintOverview.js';
 import { enrichChips, clearPrCache } from '../githubPrCache.js';
+import { getActiveView } from '../nav.js';
+import { getGithubAvailabilityState } from '../githubPrSnapshotStore.js';
 
 // ============================================================
 // MODULE STATE
@@ -25,6 +27,8 @@ let _selectedSprintId = null;
 let _host = null;
 let _spFieldId = null;
 let _settings = null;
+let _github = { enabled: false, token: '' };
+let _viewListenerBound = false;
 
 export function getCurrentSprints() { return _currentSprints; }
 export function getSelectedSprintId() { return _selectedSprintId; }
@@ -33,6 +37,67 @@ export function setHost(h) { _host = h; }
 export function setSpFieldId(id) { _spFieldId = id; }
 export function setSettings(s) { _settings = s; }
 export function getSpFieldId() { return _spFieldId; }
+
+async function loadGithubSettings() {
+    if (!(typeof chrome !== 'undefined' && chrome.storage)) {
+        _github = { enabled: false, token: '' };
+        return _github;
+    }
+
+    const stored = await new Promise(resolve =>
+        chrome.storage.sync.get({ github_pr_link: false, github_pat: '' }, resolve)
+    );
+    _github = {
+        enabled: stored.github_pr_link === true && !!stored.github_pat,
+        token: stored.github_pat || '',
+    };
+    return _github;
+}
+
+function renderGithubStatus() {
+    const badge = document.getElementById('dash-gh-status');
+    if (!badge) return;
+
+    const availability = getGithubAvailabilityState();
+    if (!_github.enabled) {
+        badge.textContent = 'GitHub PR signals OFF';
+        badge.className = 'fu-data-pill is-muted';
+        badge.title = '';
+        return;
+    }
+
+    if (availability.blocked) {
+        badge.textContent = availability.reason;
+        badge.className = 'fu-data-pill is-warning';
+        badge.title = availability.reason;
+        return;
+    }
+
+    badge.textContent = 'GitHub PR signals ON';
+    badge.className = 'fu-data-pill is-success';
+    badge.title = '';
+}
+
+async function enrichCurrentSprintView() {
+    const grid = document.getElementById('dev-cards-grid');
+    if (!grid || getActiveView() !== 'sprint-dashboard') return;
+
+    await loadGithubSettings();
+    renderGithubStatus();
+    if (!_github.enabled || !_github.token) return;
+
+    enrichChips(grid, _github.token, { onStateChange: renderGithubStatus });
+}
+
+function bindSprintViewListener() {
+    if (_viewListenerBound) return;
+    document.addEventListener('analytics:viewchange', event => {
+        if (event.detail?.view === 'sprint-dashboard') {
+            enrichCurrentSprintView();
+        }
+    });
+    _viewListenerBound = true;
+}
 
 // ============================================================
 // DASH STATE
@@ -68,6 +133,7 @@ export function showDashState(state, msg = '') {
 
 export async function loadDashboard(projectKey) {
     if (!projectKey) { showDashState('placeholder'); return; }
+    bindSprintViewListener();
     showDashState('loading', 'Connecting to Jira...');
 
     try {
@@ -270,16 +336,9 @@ export async function loadDashboardForSprint(sprint) {
         document.querySelectorAll('.prediction-velocity-hint').forEach(el => el.remove());
         renderSprintOverview(issues, sprint, settings, devCount, Math.round(teamVelAvg * 10) / 10, totalCommittedSP);
 
-        // GitHub PR enrichment (unified cache — clears first so Refresh fetches fresh data)
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            const stored = await new Promise(resolve =>
-                chrome.storage.sync.get({ github_pr_link: false, github_pat: '' }, resolve)
-            );
-            if (stored.github_pr_link && stored.github_pat) {
-                const grid = document.getElementById('dev-cards-grid');
-                clearPrCache();
-                enrichChips(grid, stored.github_pat);
-            }
+        renderGithubStatus();
+        if (getActiveView() === 'sprint-dashboard') {
+            await enrichCurrentSprintView();
         }
 
         // Event delegation — copy-for-Slack + Notes
@@ -364,4 +423,9 @@ export function highlightEngineer(accountId) {
         card.classList.add('highlight-pulse');
         setTimeout(() => card.classList.remove('highlight-pulse'), 3000);
     }
+}
+
+export function resetSprintGithubState() {
+    clearPrCache();
+    renderGithubStatus();
 }

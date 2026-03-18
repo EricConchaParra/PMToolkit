@@ -48,7 +48,13 @@ export async function githubFetch(path, token) {
             'X-GitHub-Api-Version': '2022-11-28',
         },
     });
-    if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
+    if (!resp.ok) {
+        const bodyText = await resp.text().catch(() => '');
+        const error = new Error(`GitHub API ${resp.status}`);
+        error.status = resp.status;
+        error.responseText = bodyText;
+        throw error;
+    }
     return resp.json();
 }
 

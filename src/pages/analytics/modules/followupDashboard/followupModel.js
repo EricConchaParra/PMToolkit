@@ -1,12 +1,11 @@
 import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS } from '../constants.js';
-import { githubFetch, jiraFetch } from '../jiraApi.js';
+import { jiraFetch } from '../jiraApi.js';
+import { getPrSnapshots } from '../githubPrSnapshotStore.js';
 import { formatDate, formatHours, spToHours, timeSince, truncate, workingHoursElapsed } from '../utils.js';
 
 const FOLLOWUP_META_PREFIX = 'followup_meta_';
 const timelineCache = new Map();
 const timelinePending = new Map();
-const prCache = new Map();
-const prPending = new Map();
 
 export const FOLLOWUP_SIGNAL_META = {
     blocked: { label: 'Blocked', tone: 'danger', priority: 0 },
@@ -77,8 +76,6 @@ export function parseFollowupMetaStorage(items = {}) {
 export function clearFollowupSessionCaches() {
     timelineCache.clear();
     timelinePending.clear();
-    prCache.clear();
-    prPending.clear();
 }
 
 export async function fetchIssueTimeline(host, issueKey) {
@@ -119,90 +116,7 @@ export async function fetchIssueTimeline(host, issueKey) {
 }
 
 export async function resolvePrSnapshots(ticketKeys, token) {
-    const snapshots = {};
-    if (!token) return snapshots;
-
-    for (const ticketKey of ticketKeys) {
-        snapshots[ticketKey] = await getPrSnapshot(ticketKey, token);
-    }
-
-    return snapshots;
-}
-
-async function getPrSnapshot(ticketKey, token) {
-    if (prCache.has(ticketKey)) return prCache.get(ticketKey);
-    if (prPending.has(ticketKey)) return prPending.get(ticketKey);
-
-    const request = fetchPrSnapshot(ticketKey, token).then(snapshot => {
-        prCache.set(ticketKey, snapshot);
-        prPending.delete(ticketKey);
-        return snapshot;
-    }).catch(() => {
-        prCache.set(ticketKey, null);
-        prPending.delete(ticketKey);
-        return null;
-    });
-
-    prPending.set(ticketKey, request);
-    return request;
-}
-
-async function fetchPrSnapshot(ticketKey, token) {
-    const data = await githubFetch(
-        `/search/issues?q=${encodeURIComponent(`${ticketKey} type:pr`)}&per_page=10&sort=updated&order=desc`,
-        token,
-    );
-
-    const items = data.items || [];
-    for (const item of items.slice(0, 4)) {
-        if (!item.pull_request?.url) continue;
-
-        const detail = await githubFetch(item.pull_request.url, token).catch(() => null);
-        if (!detail) continue;
-
-        if (!prMatchesTicket(detail, item, ticketKey)) continue;
-
-        const reviews = await githubFetch(`${detail.url}/reviews?per_page=20`, token).catch(() => []);
-        const lastReview = pickLastReview(Array.isArray(reviews) ? reviews : []);
-
-        return {
-            ticketKey,
-            url: detail.html_url || item.html_url,
-            apiUrl: detail.url,
-            state: detail.merged_at ? 'merged' : (detail.state || 'open'),
-            draft: detail.draft === true,
-            mergedAt: detail.merged_at || null,
-            updatedAt: detail.updated_at || item.updated_at || null,
-            requestedReviewers: (detail.requested_reviewers || []).map(reviewer => reviewer.login).filter(Boolean),
-            lastReviewState: lastReview?.state || null,
-            lastReviewAt: lastReview?.submitted_at || null,
-            labels: (detail.labels || item.labels || []).map(label => label.name).filter(Boolean),
-            repo: detail.base?.repo?.full_name || null,
-            branch: detail.head?.ref || null,
-        };
-    }
-
-    return null;
-}
-
-function prMatchesTicket(detail, searchItem, ticketKey) {
-    const search = ticketKey.toLowerCase();
-    return [
-        detail?.title,
-        detail?.body,
-        detail?.head?.ref,
-        searchItem?.title,
-        searchItem?.body,
-    ].some(value => String(value || '').toLowerCase().includes(search));
-}
-
-function pickLastReview(reviews = []) {
-    const normalized = reviews
-        .filter(review => review?.state && review.state !== 'PENDING')
-        .sort((a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0));
-
-    const decisive = normalized.filter(review => review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED');
-    return decisive[decisive.length - 1] || normalized[normalized.length - 1] || null;
+    return getPrSnapshots(ticketKeys, token);
 }
 
 export function buildFollowupItems({
