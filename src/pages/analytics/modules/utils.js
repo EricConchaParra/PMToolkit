@@ -73,6 +73,48 @@ export function workingHoursBetween(fromDate, toDate, hoursPerDay) {
     return Math.round(hours * 10) / 10;
 }
 
+// Count working hours inside an arbitrary date range (Mon-Fri only).
+// Assumes the working day ends at 20:00 and starts `hoursPerDay` hours earlier.
+export function workingHoursInRange(startDate, endDate, hoursPerDay = DEFAULT_HOURS_PER_DAY) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return 0;
+
+    const workdayEndHour = 20;
+    const workdayStartHour = workdayEndHour - hoursPerDay;
+    let totalMs = 0;
+
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+
+    while (cursor < end) {
+        const day = cursor.getDay();
+        if (day !== 0 && day !== 6) {
+            const dayStart = new Date(cursor);
+            dayStart.setHours(workdayStartHour, 0, 0, 0);
+
+            const dayEnd = new Date(cursor);
+            dayEnd.setHours(workdayEndHour, 0, 0, 0);
+
+            const overlapStart = Math.max(start.getTime(), dayStart.getTime());
+            const overlapEnd = Math.min(end.getTime(), dayEnd.getTime());
+            if (overlapEnd > overlapStart) {
+                totalMs += overlapEnd - overlapStart;
+            }
+        }
+
+        cursor.setDate(cursor.getDate() + 1);
+        cursor.setHours(0, 0, 0, 0);
+    }
+
+    return Math.round((totalMs / (1000 * 60 * 60)) * 10) / 10;
+}
+
+export function workingHoursElapsed(startDate, hoursPerDay = DEFAULT_HOURS_PER_DAY, endDate = new Date()) {
+    return workingHoursInRange(startDate, endDate, hoursPerDay);
+}
+
 // Given remaining hours and start date, compute ETA (skip weekends)
 export function calculateETA(remainingHours, hoursPerDay) {
     if (remainingHours <= 0) return new Date();

@@ -99,7 +99,7 @@ export async function fetchActiveSprint(host, boardId) {
 }
 
 export async function fetchSprintIssues(host, sprintId, spFieldId) {
-    const fields = ['summary', 'status', 'assignee', spFieldId].filter(Boolean);
+    const fields = ['summary', 'status', 'assignee', 'updated', spFieldId].filter(Boolean);
     let all = [];
     let nextPageToken;
     while (true) {

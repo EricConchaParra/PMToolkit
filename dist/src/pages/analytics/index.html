@@ -385,52 +385,123 @@
 
             <!-- Content -->
             <div id="fu-content" class="fu-content hidden">
-
-                <!-- Section 1: Notes & Alerts -->
-                <div class="fu-section-card">
-                    <div class="fu-section-header">
-                        <span class="fu-section-icon">🗒️</span>
-                        <div class="fu-section-title-wrap">
-                            <span class="fu-section-title">Notes &amp; Reminders</span>
-                            <span class="fu-section-sub">Tickets with personal notes, active alerts, or tracking tags</span>
+                <div class="fu-hero-card">
+                    <div class="fu-hero-copy">
+                        <div class="fu-hero-kicker">Sprint Control Tower</div>
+                        <h2>Action queue for <span id="fu-sprint-name">the active sprint</span></h2>
+                        <p>One queue, one source of truth: Jira flow, notes, reminders, PR context and manual follow-up state.</p>
+                    </div>
+                    <div class="fu-hero-side">
+                        <div class="fu-data-pill-row">
+                            <span id="fu-gh-status" class="fu-data-pill is-muted">GitHub PR signals OFF</span>
+                            <span id="fu-sprint-hours" class="fu-data-pill is-muted">Sprint capacity unavailable</span>
                         </div>
-                        <div class="fu-tag-filter-wrap">
-                            <div class="fu-tag-filter-label">Filter tags</div>
+                        <button class="fu-copy-all-btn hidden" id="fu-queue-copy-all" title="Copy current queue for Slack">📋 Copy Queue</button>
+                    </div>
+                </div>
+
+                <div class="fu-kpi-grid">
+                    <div class="fu-kpi-card">
+                        <span class="fu-kpi-label">Queue</span>
+                        <span class="fu-kpi-value" id="fu-kpi-total">0</span>
+                    </div>
+                    <div class="fu-kpi-card is-danger">
+                        <span class="fu-kpi-label">Blocked</span>
+                        <span class="fu-kpi-value" id="fu-kpi-blocked">0</span>
+                    </div>
+                    <div class="fu-kpi-card is-info">
+                        <span class="fu-kpi-label">Needs PR</span>
+                        <span class="fu-kpi-value" id="fu-kpi-needs-pr">0</span>
+                    </div>
+                    <div class="fu-kpi-card is-warning">
+                        <span class="fu-kpi-label">Frozen</span>
+                        <span class="fu-kpi-value" id="fu-kpi-frozen">0</span>
+                    </div>
+                </div>
+
+                <div class="fu-section-card fu-filter-card">
+                    <div class="fu-section-header">
+                        <span class="fu-section-icon">🎛️</span>
+                        <div class="fu-section-title-wrap">
+                            <span class="fu-section-title">Queue Filters</span>
+                            <span class="fu-section-sub">Slice the queue by owner, reason, Jira status, PR status, tracking and your manual follow-up</span>
+                        </div>
+                    </div>
+                    <div class="fu-filter-grid">
+                        <label class="fu-filter-field">
+                            <span>Assignee</span>
+                            <select id="fu-assignee-filter" data-fu-filter="assignee"></select>
+                        </label>
+                        <label class="fu-filter-field">
+                            <span>Reason in queue</span>
+                            <select id="fu-signal-filter" data-fu-filter="signal"></select>
+                        </label>
+                        <label class="fu-filter-field">
+                            <span>Jira Status</span>
+                            <select id="fu-jira-status-filter" data-fu-filter="jiraStatus"></select>
+                        </label>
+                        <label class="fu-filter-field">
+                            <span>PR State</span>
+                            <select id="fu-pr-filter" data-fu-filter="pr"></select>
+                        </label>
+                        <label class="fu-filter-field">
+                            <span>Follow-up</span>
+                            <select id="fu-state-filter" data-fu-filter="state"></select>
+                        </label>
+                        <label class="fu-filter-field">
+                            <span>Tracking</span>
+                            <select id="fu-tracking-filter" data-fu-filter="tracking"></select>
+                        </label>
+                        <div class="fu-filter-field fu-tag-filter-wrap">
+                            <span>Tags</span>
                             <div id="fu-tag-filter-host"></div>
                         </div>
-                        <button class="fu-copy-all-btn hidden" id="fu-notes-copy-all" title="Copy all as Slack action items">📋 Copy All for Slack</button>
-                        <span class="fu-count-badge" id="fu-notes-count">0</span>
                     </div>
-                    <div class="fu-issue-list" id="fu-notes-list"></div>
+                    <div class="fu-filter-footer">
+                        <label class="fu-checkbox">
+                            <input type="checkbox" id="fu-show-done-toggle" data-fu-filter="showDone">
+                            <span>Show done tickets</span>
+                        </label>
+                        <span class="fu-filter-result"><strong id="fu-queue-count">0</strong> visible</span>
+                    </div>
                 </div>
 
-                <!-- Section 2: In Review -->
-                <div class="fu-section-card">
-                    <div class="fu-section-header">
-                        <span class="fu-section-icon">🔎</span>
-                        <div class="fu-section-title-wrap">
-                            <span class="fu-section-title">In Review</span>
-                            <span class="fu-section-sub">All tickets currently waiting for review</span>
+                <div class="fu-main-grid">
+                    <div class="fu-section-card fu-queue-card">
+                        <div class="fu-section-header">
+                            <span class="fu-section-icon">🚦</span>
+                            <div class="fu-section-title-wrap">
+                                <span class="fu-section-title">Prioritized Queue</span>
+                                <span class="fu-section-sub" id="fu-queue-meta">0 shown</span>
+                            </div>
                         </div>
-                        <span class="fu-count-badge" id="fu-review-count">0</span>
+                        <div class="fu-issue-list fu-queue-list" id="fu-queue-list"></div>
                     </div>
-                    <div class="fu-issue-list" id="fu-review-list"></div>
-                </div>
 
-
-                <!-- Section 4: Capacity -->
-                <div class="fu-section-card">
-                    <div class="fu-section-header">
-                        <span class="fu-section-icon">🔴</span>
-                        <div class="fu-section-title-wrap">
-                            <span class="fu-section-title">High Capacity Engineers</span>
-                            <span class="fu-section-sub">At 75% or more of sprint capacity · busiest first</span>
+                    <div class="fu-side-stack">
+                        <div class="fu-section-card">
+                            <div class="fu-section-header">
+                                <span class="fu-section-icon">🔥</span>
+                                <div class="fu-section-title-wrap">
+                                    <span class="fu-section-title">Engineer Hotspots</span>
+                                    <span class="fu-section-sub">Who is overloaded or accumulating blocked/frozen work</span>
+                                </div>
+                            </div>
+                            <div class="fu-issue-list" id="fu-hotspot-list"></div>
                         </div>
-                        <span class="fu-count-badge fu-count-warning" id="fu-capacity-count">0</span>
-                    </div>
-                    <div class="fu-issue-list" id="fu-capacity-list"></div>
-                </div>
 
+                        <div class="fu-section-card">
+                            <div class="fu-section-header">
+                                <span class="fu-section-icon">📊</span>
+                                <div class="fu-section-title-wrap">
+                                    <span class="fu-section-title">Signal Mix</span>
+                                    <span class="fu-section-sub">Current distribution of the queue</span>
+                                </div>
+                            </div>
+                            <div class="fu-issue-list" id="fu-signal-summary"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

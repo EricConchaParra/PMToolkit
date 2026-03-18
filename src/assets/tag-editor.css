@@ -95,7 +95,7 @@
     top: calc(100% + 6px);
     left: 0;
     right: 0;
-    z-index: 50;
+    z-index: 120;
     border: 1px solid #dfe1e6;
     border-radius: 10px;
     background: #ffffff;

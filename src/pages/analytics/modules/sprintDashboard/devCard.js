@@ -79,7 +79,7 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost) {
     let capacityPct = 0;
     if (sprintHoursLeft !== null) {
         if (sprintHoursLeft > 0) {
-            capacityPct = Math.min(Math.round((totalCommittedHours / sprintHoursLeft) * 100), 150);
+            capacityPct = Math.round((totalCommittedHours / sprintHoursLeft) * 100);
         } else if (totalCommittedHours > 0) {
             capacityPct = 150;
         }
