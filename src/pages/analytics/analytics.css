@@ -2130,6 +2130,33 @@ body {
     animation: fadeIn 0.3s ease;
 }
 
+.perf-export-status {
+    border-radius: var(--r-sm);
+    padding: 12px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    margin: 0 36px 16px;
+}
+
+.perf-export-status-info {
+    background: rgba(0, 82, 204, 0.08);
+    border-color: rgba(0, 82, 204, 0.16);
+    color: var(--primary);
+}
+
+.perf-export-status-success {
+    background: rgba(54, 179, 126, 0.10);
+    border-color: rgba(54, 179, 126, 0.2);
+    color: var(--success);
+}
+
+.perf-export-status-error {
+    background: rgba(222, 53, 11, 0.08);
+    border-color: rgba(222, 53, 11, 0.16);
+    color: var(--danger);
+}
+
 .perf-kpis {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
