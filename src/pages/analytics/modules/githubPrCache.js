@@ -3,7 +3,7 @@
  * Sprint chip enrichment using the shared GitHub PR snapshot store.
  */
 
-import { clearPrSnapshotCache, getPrSnapshot } from './githubPrSnapshotStore.js';
+import { clearPrSnapshotCache, getGithubAvailabilityState, resolveGithubPrBatch } from './githubPrSnapshotStore.js';
 
 // ============================================================
 // PUBLIC API
@@ -33,28 +33,59 @@ export async function enrichChips(container, token, options = {}) {
     );
     if (chips.length === 0) return;
 
+    const pending = [];
     chips.forEach(chip => {
         const ticketId = chip.dataset.ghKey;
         const actions  = chip.querySelector('.issue-chip-actions');
         if (!actions || !ticketId) return;
-
-        // Skip if already enriched for this ticket in this chip
-        if (chip.dataset.ghEnriched === 'true') return;
-        chip.dataset.ghEnriched = 'true';
-
-        // Immediately show loading spinner
+        if (chip.dataset.ghEnriched === 'true' || chip.dataset.ghLoading === 'true') return;
+        chip.dataset.ghLoading = 'true';
         const loadingBtn = _makeLoadingBtn();
         actions.appendChild(loadingBtn);
-
-        getPrSnapshot(ticketId, token).then(result => {
-            loadingBtn.remove();
-            if (result) _injectPrButton(actions, result);
-            options.onStateChange?.();
-        }).catch(() => {
-            loadingBtn.remove();
-            options.onStateChange?.();
-        });
+        pending.push({ chip, ticketId, actions, loadingBtn });
     });
+    if (pending.length === 0) return;
+
+    try {
+        const result = await resolveGithubPrBatch({
+            ticketKeys: pending.map(item => item.ticketId),
+            token,
+            repos: options.repos || [],
+            visibleTicketKeys: pending.map(item => item.ticketId),
+            allowGlobalFallback: options.allowGlobalFallback === true || (options.repos || []).length === 0,
+            forceRefresh: options.forceRefresh === true,
+            repoConcurrency: options.repoConcurrency || 1,
+            searchLimit: Math.min(5, pending.length),
+        });
+
+        pending.forEach(({ chip, ticketId, actions, loadingBtn }) => {
+            loadingBtn.remove();
+            delete chip.dataset.ghLoading;
+
+            const snapshot = result.snapshotsByKey[ticketId];
+            const isPending = result.pendingKeys.includes(ticketId);
+            if (snapshot) {
+                _injectPrButton(actions, snapshot);
+                chip.dataset.ghEnriched = 'true';
+                return;
+            }
+
+            if (isPending || getGithubAvailabilityState().blocked) {
+                delete chip.dataset.ghEnriched;
+                return;
+            }
+
+            chip.dataset.ghEnriched = 'true';
+        });
+    } catch {
+        pending.forEach(({ chip, loadingBtn }) => {
+            loadingBtn.remove();
+            delete chip.dataset.ghLoading;
+            delete chip.dataset.ghEnriched;
+        });
+    }
+
+    options.onStateChange?.();
 }
 
 function _injectPrButton(actions, result) {

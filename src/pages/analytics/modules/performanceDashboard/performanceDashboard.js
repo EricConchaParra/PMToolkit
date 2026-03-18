@@ -6,6 +6,15 @@
 import { fetchBoardId, fetchSprintDoneIssues, fetchSpFieldId, jiraFetch } from '../jiraApi.js';
 import { escapeHtml } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
+import { getActiveView } from '../nav.js';
+import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from '../analyticsPerf.js';
+
+const perfState = {
+    selectedProjectKey: '',
+    lastLoadedProjectKey: '',
+    host: '',
+    loadRequestId: 0,
+};
 
 // ============================================================
 // LOAD PERFORMANCE DASHBOARD
@@ -13,6 +22,9 @@ import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
 
 export async function loadPerfDashboard(projectKey, host) {
     if (!projectKey || !host) return;
+    const requestId = ++perfState.loadRequestId;
+    perfState.selectedProjectKey = projectKey;
+    perfState.host = host;
 
     const showState = (state, msg = '') => {
         document.getElementById('perf-placeholder').classList.add('hidden');
@@ -32,16 +44,20 @@ export async function loadPerfDashboard(projectKey, host) {
 
     showState('loading', 'Finding board...');
     try {
+        markAnalyticsPerf(`perf:${projectKey}:start`);
         const boardId = await fetchBoardId(host, projectKey);
+        if (requestId !== perfState.loadRequestId) return;
         if (!boardId) { showState('error', `No Scrum board found for "${projectKey}".`); return; }
 
         showState('loading', 'Fetching last 5 sprints...');
         const spData = await jiraFetch(host, `/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=50`);
+        if (requestId !== perfState.loadRequestId) return;
         const closedSprints = (spData.values || []).slice(-5);
         if (closedSprints.length === 0) { showState('error', 'No closed sprints found. Complete at least one sprint first.'); return; }
 
         showState('loading', 'Resolving Story Points field...');
         const spFId = await fetchSpFieldId(host);
+        if (requestId !== perfState.loadRequestId) return;
 
         showState('loading', 'Loading sprint data...');
         const sprintData = await Promise.all(closedSprints.map(async cs => {
@@ -54,6 +70,7 @@ export async function loadPerfDashboard(projectKey, host) {
                 issues,
             };
         }));
+        if (requestId !== perfState.loadRequestId) return;
 
         // ---- KPI calculations ----
         const sprintCount = sprintData.length;
@@ -176,6 +193,12 @@ export async function loadPerfDashboard(projectKey, host) {
         }
 
         showState('content');
+        perfState.lastLoadedProjectKey = projectKey;
+        markAnalyticsPerf(`perf:${projectKey}:end`);
+        measureAnalyticsPerf(`perf:${projectKey}`, `perf:${projectKey}:start`, `perf:${projectKey}:end`, {
+            sprintCount,
+            totalIssues,
+        });
     } catch (err) {
         console.error('PMsToolKit PerfDashboard:', err);
         showState('error', err.message || 'Unexpected error.');
@@ -187,7 +210,8 @@ export async function loadPerfDashboard(projectKey, host) {
 // ============================================================
 
 export function initPerfCombo(allProjects, currentHost, initialProjectKey = '') {
-    let perfSelectedProjectKey = initialProjectKey;
+    perfState.selectedProjectKey = initialProjectKey || '';
+    perfState.host = currentHost || '';
 
     const perfSearch = document.getElementById('perf-project-search');
     const perfDropdown = document.getElementById('perf-project-dropdown');
@@ -201,10 +225,23 @@ export function initPerfCombo(allProjects, currentHost, initialProjectKey = '') 
             return;
         }
         perfDropdown.innerHTML = filtered.map(p => `
-            <div class="combo-option ${p.key === perfSelectedProjectKey ? 'selected' : ''}" data-key="${p.key}" data-name="${escapeHtml(p.name)}">
+            <div class="combo-option ${p.key === perfState.selectedProjectKey ? 'selected' : ''}" data-key="${p.key}" data-name="${escapeHtml(p.name)}">
                 <span class="combo-option-key">${p.key}</span>${escapeHtml(p.name)}
             </div>
         `).join('');
+    }
+
+    function ensurePerfLoaded(opts = {}) {
+        if (!perfState.selectedProjectKey || !currentHost) return;
+        if (opts.forceRefresh === true) {
+            loadPerfDashboard(perfState.selectedProjectKey, currentHost);
+            return;
+        }
+        if (perfState.lastLoadedProjectKey === perfState.selectedProjectKey) {
+            logAnalyticsPerf('perf:reuse', { projectKey: perfState.selectedProjectKey });
+            return;
+        }
+        loadPerfDashboard(perfState.selectedProjectKey, currentHost);
     }
 
     perfSearch.addEventListener('focus', () => {
@@ -221,17 +258,20 @@ export function initPerfCombo(allProjects, currentHost, initialProjectKey = '') 
     perfDropdown.addEventListener('click', e => {
         const option = e.target.closest('.combo-option');
         if (!option) return;
-        perfSelectedProjectKey = option.dataset.key;
+        perfState.selectedProjectKey = option.dataset.key;
+        perfState.lastLoadedProjectKey = perfState.lastLoadedProjectKey === perfState.selectedProjectKey
+            ? perfState.lastLoadedProjectKey
+            : '';
         perfSearch.value = `${option.dataset.name} (${option.dataset.key})`;
         perfDropdown.classList.add('hidden');
-        loadPerfDashboard(perfSelectedProjectKey, currentHost);
+        if (getActiveView() === 'performance-dashboard') ensurePerfLoaded();
     });
 
     document.addEventListener('click', e => {
         if (!perfComboWrapper.contains(e.target)) {
             perfDropdown.classList.add('hidden');
-            if (perfSelectedProjectKey) {
-                const p = allProjects.find(pr => pr.key === perfSelectedProjectKey);
+            if (perfState.selectedProjectKey) {
+                const p = allProjects.find(pr => pr.key === perfState.selectedProjectKey);
                 if (p) perfSearch.value = `${p.name} (${p.key})`;
             } else {
                 perfSearch.value = '';
@@ -240,7 +280,15 @@ export function initPerfCombo(allProjects, currentHost, initialProjectKey = '') 
     });
 
     document.getElementById('perf-refresh-btn').addEventListener('click', () => {
-        if (perfSelectedProjectKey) loadPerfDashboard(perfSelectedProjectKey, currentHost);
+        if (perfState.selectedProjectKey) {
+            perfState.lastLoadedProjectKey = '';
+            ensurePerfLoaded({ forceRefresh: true });
+        }
+    });
+
+    document.addEventListener('analytics:viewchange', event => {
+        if (event.detail?.view !== 'performance-dashboard') return;
+        ensurePerfLoaded();
     });
 
     if (allProjects.length > 0) {
@@ -252,7 +300,6 @@ export function initPerfCombo(allProjects, currentHost, initialProjectKey = '') 
         const p = allProjects.find(pr => pr.key === initialProjectKey);
         if (p) {
             perfSearch.value = `${p.name} (${p.key})`;
-            loadPerfDashboard(initialProjectKey, currentHost);
         }
     }
 }

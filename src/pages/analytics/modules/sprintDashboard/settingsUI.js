@@ -30,6 +30,10 @@ export function populateSettingsUI(settings) {
         const el = document.getElementById(`sp-${k}`);
         if (el) el.value = settings.spHours[k] ?? DEFAULT_SP_HOURS[k] ?? '';
     });
+    const githubRepos = document.getElementById('github-repos');
+    if (githubRepos) {
+        githubRepos.value = Array.isArray(settings.githubRepos) ? settings.githubRepos.join('\n') : '';
+    }
 }
 
 export function populateStatusMapUI(statuses, statusMap) {
@@ -69,4 +73,14 @@ export function readStatusMapFromUI() {
         map[sel.dataset.status] = sel.value;
     });
     return map;
+}
+
+export function readGithubReposFromUI() {
+    const input = document.getElementById('github-repos');
+    if (!input) return [];
+
+    return String(input.value || '')
+        .split(/[\n,]+/)
+        .map(repo => repo.trim())
+        .filter(Boolean);
 }

@@ -14,7 +14,8 @@ import { renderDevCard } from './devCard.js';
 import { renderSprintOverview } from './sprintOverview.js';
 import { enrichChips, clearPrCache } from '../githubPrCache.js';
 import { getActiveView } from '../nav.js';
-import { getGithubAvailabilityState } from '../githubPrSnapshotStore.js';
+import { getGithubAvailabilityState, subscribeGithubAvailability } from '../githubPrSnapshotStore.js';
+import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from '../analyticsPerf.js';
 
 // ============================================================
 // MODULE STATE
@@ -29,6 +30,10 @@ let _spFieldId = null;
 let _settings = null;
 let _github = { enabled: false, token: '' };
 let _viewListenerBound = false;
+let _githubListenerBound = false;
+let _loadRequestId = 0;
+let _currentProjectKey = '';
+let _githubForceRefresh = false;
 
 export function getCurrentSprints() { return _currentSprints; }
 export function getSelectedSprintId() { return _selectedSprintId; }
@@ -67,9 +72,9 @@ function renderGithubStatus() {
     }
 
     if (availability.blocked) {
-        badge.textContent = availability.reason;
+        badge.textContent = formatGithubAvailabilityReason(availability);
         badge.className = 'fu-data-pill is-warning';
-        badge.title = availability.reason;
+        badge.title = formatGithubAvailabilityReason(availability);
         return;
     }
 
@@ -86,7 +91,25 @@ async function enrichCurrentSprintView() {
     renderGithubStatus();
     if (!_github.enabled || !_github.token) return;
 
-    enrichChips(grid, _github.token, { onStateChange: renderGithubStatus });
+    enrichChips(grid, _github.token, {
+        onStateChange: renderGithubStatus,
+        repos: _settings?.githubRepos || [],
+        allowGlobalFallback: (_settings?.githubRepos || []).length === 0 || _githubForceRefresh === true,
+        forceRefresh: _githubForceRefresh === true,
+        repoConcurrency: 1,
+    });
+    _githubForceRefresh = false;
+}
+
+function formatGithubAvailabilityReason(availability) {
+    if (!availability?.blocked) return '';
+    if (availability.retryAt) {
+        const remainingMs = Math.max(0, availability.retryAt - Date.now());
+        const minutes = Math.ceil(remainingMs / (60 * 1000));
+        const suffix = minutes <= 1 ? 'retrying in <1m' : minutes < 60 ? `retrying in ${minutes}m` : `retrying at ${new Date(availability.retryAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+        return `${availability.reason} · ${suffix}`;
+    }
+    return availability.reason || '';
 }
 
 function bindSprintViewListener() {
@@ -97,6 +120,27 @@ function bindSprintViewListener() {
         }
     });
     _viewListenerBound = true;
+}
+
+function bindGithubAvailabilityListener() {
+    if (_githubListenerBound) return;
+    let wasBlocked = false;
+
+    subscribeGithubAvailability(availability => {
+        renderGithubStatus();
+        if (
+            wasBlocked
+            && availability.blocked === false
+            && getActiveView() === 'sprint-dashboard'
+            && _github.enabled
+            && _github.token
+        ) {
+            void enrichCurrentSprintView();
+        }
+        wasBlocked = availability.blocked === true;
+    });
+
+    _githubListenerBound = true;
 }
 
 // ============================================================
@@ -133,8 +177,12 @@ export function showDashState(state, msg = '') {
 
 export async function loadDashboard(projectKey) {
     if (!projectKey) { showDashState('placeholder'); return; }
+    const requestId = ++_loadRequestId;
+    _currentProjectKey = projectKey;
     bindSprintViewListener();
+    bindGithubAvailabilityListener();
     showDashState('loading', 'Connecting to Jira...');
+    markAnalyticsPerf(`sprint:${projectKey}:start`);
 
     try {
         const host = _host;
@@ -143,10 +191,12 @@ export async function loadDashboard(projectKey) {
         if (!_spFieldId) {
             showDashState('loading', 'Detecting Story Points field...');
             _spFieldId = await fetchSpFieldId(host);
+            if (requestId !== _loadRequestId) return;
         }
 
         showDashState('loading', 'Finding Scrum board...');
         const boardId = await fetchBoardId(host, projectKey);
+        if (requestId !== _loadRequestId) return;
         _currentBoardId = boardId;
         if (!boardId) {
             showDashState('error', `No Scrum board found for project "${projectKey}". Make sure it has a Scrum board.`);
@@ -159,6 +209,7 @@ export async function loadDashboard(projectKey) {
         let startAt = 0;
         while (true) {
             const data = await jiraFetch(host, `/rest/agile/1.0/board/${boardId}/sprint?state=active,future,closed&startAt=${startAt}&maxResults=50`);
+            if (requestId !== _loadRequestId) return;
             allSprints = allSprints.concat(data.values || []);
             if (data.isLast || (data.values || []).length === 0) break;
             startAt += data.values.length;
@@ -182,7 +233,7 @@ export async function loadDashboard(projectKey) {
         const sprintSearch = document.getElementById('sprint-search');
         sprintSearch.value = `${activeSprint.state === 'active' ? '🟢 ' : ''}${activeSprint.name}`;
 
-        loadDashboardForSprint(activeSprint);
+        loadDashboardForSprint(activeSprint, { requestId, projectKey });
 
     } catch (err) {
         console.error('PMsToolKit Dashboard:', err);
@@ -195,7 +246,9 @@ export async function loadDashboard(projectKey) {
 // LOAD DASHBOARD FOR SPRINT (sprint selection → render)
 // ============================================================
 
-export async function loadDashboardForSprint(sprint) {
+export async function loadDashboardForSprint(sprint, opts = {}) {
+    const requestId = opts.requestId || ++_loadRequestId;
+    const projectKey = opts.projectKey || _currentProjectKey || 'unknown';
     showDashState('loading', 'Loading sprint details...');
     try {
         const host = _host;
@@ -211,6 +264,7 @@ export async function loadDashboardForSprint(sprint) {
         if (!_spFieldId) {
             showDashState('loading', 'Detecting Story Points field...');
             _spFieldId = await fetchSpFieldId(host);
+            if (requestId !== _loadRequestId) return;
         }
 
         // Sprint banner label
@@ -236,6 +290,7 @@ export async function loadDashboardForSprint(sprint) {
 
         showDashState('loading', 'Fetching sprint issues...');
         const issues = await fetchSprintIssues(host, sprint.id, _spFieldId);
+        if (requestId !== _loadRequestId) return;
 
         if (issues.length === 0) {
             showDashState('empty');
@@ -269,6 +324,7 @@ export async function loadDashboardForSprint(sprint) {
             await Promise.all(batch.map(async issue => {
                 issue._inProgressSince = await fetchIssueInProgressSince(host, issue.key).catch(() => null);
             }));
+            if (requestId !== _loadRequestId) return;
         }
 
         // Fetch velocity: last 3 closed sprints
@@ -278,6 +334,7 @@ export async function loadDashboardForSprint(sprint) {
         const velocityByDev = {};
         for (const cs of closedSprints) {
             const doneIssues = await fetchSprintDoneIssues(host, cs.id, _spFieldId).catch(() => []);
+            if (requestId !== _loadRequestId) return;
             doneIssues.forEach(i => {
                 const key = i.fields?.assignee?.accountId || 'unassigned';
                 const sp = Number(i.fields?.[_spFieldId] || 0);
@@ -338,8 +395,14 @@ export async function loadDashboardForSprint(sprint) {
 
         renderGithubStatus();
         if (getActiveView() === 'sprint-dashboard') {
-            await enrichCurrentSprintView();
+            void enrichCurrentSprintView();
         }
+        markAnalyticsPerf(`sprint:${projectKey}:base`);
+        measureAnalyticsPerf(`sprint:${projectKey}:base`, `sprint:${projectKey}:start`, `sprint:${projectKey}:base`, {
+            sprintId: sprint.id,
+            issueCount: issues.length,
+            inProgressCount: inProgressAll.length,
+        });
 
         // Event delegation — copy-for-Slack + Notes
         if (!grid.dataset.delegated) {
@@ -413,6 +476,7 @@ export async function loadDashboardForSprint(sprint) {
     } catch (err) {
         console.error('PMsToolKit Dashboard:', err);
         showDashState('error', err.message || 'Unexpected error loading sprint.');
+        logAnalyticsPerf('sprint:error', { projectKey, message: err?.message || 'unknown' });
     }
 }
 
@@ -427,5 +491,6 @@ export function highlightEngineer(accountId) {
 
 export function resetSprintGithubState() {
     clearPrCache();
+    _githubForceRefresh = true;
     renderGithubStatus();
 }
