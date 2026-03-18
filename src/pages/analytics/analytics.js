@@ -13,7 +13,7 @@ import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, SP_KEYS } from './modules/cons
 import { populateSettingsUI, populateStatusMapUI, readStatusMapFromUI } from './modules/sprintDashboard/settingsUI.js';
 import {
     setHost, setSettings, setSpFieldId,
-    loadDashboard, loadDashboardForSprint,
+    loadDashboard, loadDashboardForSprint, resetSprintGithubState,
     getCurrentSprints, getSelectedSprintId, setSelectedSprintId,
 } from './modules/sprintDashboard/sprintDashboard.js';
 import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
@@ -230,6 +230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('refresh-btn').addEventListener('click', () => {
         if (!selectedProjectKey) return;
         setSpFieldId(null);
+        resetSprintGithubState();
         if (getSelectedSprintId()) {
             const sprint = getCurrentSprints().find(s => s.id === getSelectedSprintId());
             sprint ? loadDashboardForSprint(sprint) : loadDashboard(selectedProjectKey);

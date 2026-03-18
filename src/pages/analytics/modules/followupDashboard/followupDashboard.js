@@ -26,19 +26,19 @@ import {
 } from '../jiraApi.js';
 import { formatDate, formatHours, timeSince, workingHoursBetween } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
-import { switchToView } from '../nav.js';
+import { getActiveView, switchToView } from '../nav.js';
 import { highlightEngineer } from '../sprintDashboard/sprintDashboard.js';
 import {
     FOLLOWUP_SIGNAL_META,
     FOLLOWUP_STATE_META,
     buildFollowupItems,
-    clearFollowupSessionCaches,
     fetchIssueTimeline,
     getFollowupMetaStorageKey,
     normalizeFollowupMeta,
     parseFollowupMetaStorage,
     resolvePrSnapshots,
 } from './followupModel.js';
+import { clearPrSnapshotCache, getGithubAvailabilityState } from '../githubPrSnapshotStore.js';
 
 const FOLLOWUP_META_PREFIX = 'followup_meta_jira:';
 
@@ -62,6 +62,7 @@ const followupState = {
     github: {
         enabled: false,
         token: '',
+        error: '',
     },
     filters: {
         assignee: 'all',
@@ -75,6 +76,7 @@ const followupState = {
     storageListenerBound: false,
     storageReloadTimer: null,
     loadRequestId: 0,
+    lastLoadedProjectKey: '',
 };
 
 function showFollowupState(state, msg = '') {
@@ -130,8 +132,13 @@ function rebuildFollowupItems() {
         followupMetaMap: followupState.followupMetaMap,
         settings: followupState.settings,
         sprintHoursLeft: followupState.sprintHoursLeft,
-        prSignalsEnabled: followupState.github.enabled,
+        prSignalsEnabled: followupState.github.enabled && !followupState.github.error,
     });
+}
+
+function syncGithubAvailability() {
+    const availability = getGithubAvailabilityState();
+    followupState.github.error = availability.blocked ? availability.reason : '';
 }
 
 async function refreshTrackingState() {
@@ -151,7 +158,7 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
     followupState.host = host;
     followupState.settings = settings || {};
 
-    if (forceRefresh) clearFollowupSessionCaches();
+    if (forceRefresh) clearPrSnapshotCache();
 
     showFollowupState('loading', 'Connecting to Jira...');
 
@@ -198,6 +205,7 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
             followupState.tagsMap = {};
             followupState.followupMetaMap = {};
             followupState.items = [];
+            followupState.lastLoadedProjectKey = projectKey;
             renderFollowupDashboard();
             showFollowupState('content');
             return;
@@ -228,6 +236,7 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
         followupState.github = {
             enabled: ghSettings.github_pr_link === true && !!ghSettings.github_pat,
             token: ghSettings.github_pat || '',
+            error: '',
         };
 
         let prSnapshotsByKey = {};
@@ -235,9 +244,11 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
             prSnapshotsByKey = await resolvePrSnapshots(issues.map(issue => issue.key), followupState.github.token);
             if (requestId !== followupState.loadRequestId) return;
         }
+        syncGithubAvailability();
 
         followupState.timelinesByKey = timelinesByKey;
         followupState.prSnapshotsByKey = prSnapshotsByKey;
+        followupState.lastLoadedProjectKey = projectKey;
 
         showFollowupState('loading', 'Loading notes, reminders, tags, and follow-up state...');
         await refreshTrackingState();
@@ -281,8 +292,14 @@ function renderHeaderSummary() {
 
     const ghStatus = document.getElementById('fu-gh-status');
     if (ghStatus) {
-        ghStatus.textContent = followupState.github.enabled ? 'GitHub PR signals ON' : 'GitHub PR signals OFF';
-        ghStatus.className = `fu-data-pill ${followupState.github.enabled ? 'is-success' : 'is-muted'}`;
+        const hasGithubError = Boolean(followupState.github.error);
+        ghStatus.textContent = hasGithubError
+            ? followupState.github.error
+            : followupState.github.enabled
+                ? 'GitHub PR signals ON'
+                : 'GitHub PR signals OFF';
+        ghStatus.className = `fu-data-pill ${hasGithubError ? 'is-warning' : followupState.github.enabled ? 'is-success' : 'is-muted'}`;
+        ghStatus.title = hasGithubError ? followupState.github.error : '';
     }
 
     const copyBtn = document.getElementById('fu-queue-copy-all');
@@ -537,12 +554,23 @@ function renderPrSummary(item) {
         return '<div class="fu-pr-row"><span class="fu-inline-meta is-muted">GitHub PR signals disabled in Settings</span></div>';
     }
 
+    if (followupState.github.error) {
+        return `<div class="fu-pr-row"><span class="fu-inline-meta is-warning">${escapeHtml(followupState.github.error)}</span></div>`;
+    }
+
     if (!item.pr) {
         return '<div class="fu-pr-row"><span class="fu-inline-meta is-warning">No PR linked yet</span></div>';
     }
 
     const prStateClass = item.pr.draft ? 'draft' : item.pr.state === 'open' ? 'open' : item.pr.state === 'merged' ? 'closed' : 'closed';
     const prStateLabel = item.pr.draft ? 'Draft PR' : item.pr.state === 'merged' ? 'Merged PR' : item.pr.state === 'open' ? 'Open PR' : 'Closed PR';
+    const labels = Array.isArray(item.pr.labels)
+        ? item.pr.labels
+            .filter(Boolean)
+            .slice(0, 3)
+            .map(label => `<span class="gh-pr-label">${escapeHtml(label)}</span>`)
+            .join('')
+        : '';
     const reviewers = item.pr.requestedReviewers.length
         ? `<span class="gh-pr-label">Reviewers: ${escapeHtml(item.pr.requestedReviewers.slice(0, 2).join(', '))}${item.pr.requestedReviewers.length > 2 ? ' +' : ''}</span>`
         : '';
@@ -553,6 +581,7 @@ function renderPrSummary(item) {
     return `
         <div class="fu-pr-row">
             <a class="gh-pr-state gh-pr-state--${prStateClass}" href="${item.pr.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(prStateLabel)}</a>
+            ${labels}
             ${item.pr.repo ? `<span class="gh-pr-label">${escapeHtml(item.pr.repo)}</span>` : ''}
             ${item.pr.updatedAt ? `<span class="gh-pr-label">Updated ${escapeHtml(timeSince(item.pr.updatedAt))} ago</span>` : ''}
             ${reviewers}
@@ -873,6 +902,25 @@ export function initFollowupCombo(allProjects, currentHost, initialProjectKey = 
     bindFollowupStorageListener();
     attachFollowupEvents(content);
 
+    function loadSelectedProject(opts = {}) {
+        if (!selectedProjectKey || !currentHost) return;
+        loadFollowupDashboard(selectedProjectKey, currentHost, getSettings(), opts);
+    }
+
+    function ensureFollowupLoaded(opts = {}) {
+        if (!selectedProjectKey) return;
+        if (opts.forceRefresh === true) {
+            loadSelectedProject({ forceRefresh: true });
+            return;
+        }
+        if (followupState.lastLoadedProjectKey === selectedProjectKey) {
+            syncGithubAvailability();
+            renderFollowupDashboard();
+            return;
+        }
+        loadSelectedProject();
+    }
+
     function renderOptions(filterText = '') {
         const term = filterText.toLowerCase();
         const filtered = allProjects.filter(project =>
@@ -911,7 +959,8 @@ export function initFollowupCombo(allProjects, currentHost, initialProjectKey = 
         selectedProjectKey = option.dataset.key;
         search.value = `${option.dataset.name} (${option.dataset.key})`;
         dropdown.classList.add('hidden');
-        loadFollowupDashboard(selectedProjectKey, currentHost, getSettings());
+        if (getActiveView() === 'followup-dashboard') ensureFollowupLoaded();
+        else showFollowupState('placeholder');
     });
 
     document.addEventListener('click', event => {
@@ -928,7 +977,12 @@ export function initFollowupCombo(allProjects, currentHost, initialProjectKey = 
 
     document.getElementById('fu-refresh-btn')?.addEventListener('click', () => {
         if (!selectedProjectKey) return;
-        loadFollowupDashboard(selectedProjectKey, currentHost, getSettings(), { forceRefresh: true });
+        ensureFollowupLoaded({ forceRefresh: true });
+    });
+
+    document.addEventListener('analytics:viewchange', event => {
+        if (event.detail?.view !== 'followup-dashboard') return;
+        ensureFollowupLoaded();
     });
 
     if (allProjects.length > 0) search.placeholder = 'Search project...';
@@ -938,7 +992,7 @@ export function initFollowupCombo(allProjects, currentHost, initialProjectKey = 
         if (project) {
             selectedProjectKey = initialProjectKey;
             search.value = `${project.name} (${project.key})`;
-            loadFollowupDashboard(initialProjectKey, currentHost, getSettings());
+            if (getActiveView() === 'followup-dashboard') ensureFollowupLoaded();
         }
     }
 }
