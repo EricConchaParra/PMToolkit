@@ -4,13 +4,23 @@
  */
 
 import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
+import { storage } from '../../../../common/storage.js';
 import {
-    fetchBoardId, fetchSprintIssues, fetchIssueInProgressSince,
+    TAG_DEFS_STORAGE_KEY,
+    getTagsStorageKey,
+    parseTrackingStorage,
+} from '../../../../common/tagging.js';
+import {
+    fetchBoardConfiguration,
+    fetchBoardId,
     fetchClosedSprints, fetchSprintDoneIssues, fetchSpFieldId,
+    fetchSprintIssues,
     jiraFetch,
 } from '../jiraApi.js';
-import { workingHoursBetween, formatDate, formatHours } from '../utils.js';
-import { renderDevCard } from './devCard.js';
+import { createBoardFlow, resolveCurrentBoardColumnSince, resolveIssueBoardColumn } from '../boardFlow.js';
+import { fetchIssueTimeline } from '../issueTimeline.js';
+import { workingHoursBetween, formatDate } from '../utils.js';
+import { renderDevCard, renderReadOnlyTags } from './devCard.js';
 import { renderSprintOverview } from './sprintOverview.js';
 import { enrichChips, clearPrCache } from '../githubPrCache.js';
 import { getActiveView } from '../nav.js';
@@ -28,12 +38,22 @@ let _selectedSprintId = null;
 let _host = null;
 let _spFieldId = null;
 let _settings = null;
+let _boardFlow = null;
 let _github = { enabled: false, token: '' };
 let _viewListenerBound = false;
 let _githubListenerBound = false;
+let _trackingListenerBound = false;
 let _loadRequestId = 0;
 let _currentProjectKey = '';
 let _githubForceRefresh = false;
+let _currentSprint = null;
+let _trackingReloadTimer = null;
+let _currentIssues = [];
+let _trackingState = {
+    notesMap: {},
+    tagsMap: {},
+    tagDefs: {},
+};
 
 export function getCurrentSprints() { return _currentSprints; }
 export function getSelectedSprintId() { return _selectedSprintId; }
@@ -94,7 +114,7 @@ async function enrichCurrentSprintView() {
     enrichChips(grid, _github.token, {
         onStateChange: renderGithubStatus,
         repos: _settings?.githubRepos || [],
-        allowGlobalFallback: (_settings?.githubRepos || []).length === 0 || _githubForceRefresh === true,
+        allowGlobalFallback: true,
         forceRefresh: _githubForceRefresh === true,
         repoConcurrency: 1,
     });
@@ -143,6 +163,108 @@ function bindGithubAvailabilityListener() {
     _githubListenerBound = true;
 }
 
+async function loadSprintTrackingState(issues = []) {
+    if (!issues.length) {
+        _trackingState = { notesMap: {}, tagsMap: {}, tagDefs: {} };
+        return _trackingState;
+    }
+
+    const storageKeys = [TAG_DEFS_STORAGE_KEY];
+    issues.forEach(issue => {
+        storageKeys.push(`notes_jira:${issue.key}`);
+        storageKeys.push(getTagsStorageKey(issue.key));
+    });
+
+    const stored = await storage.get(storageKeys);
+    const parsed = parseTrackingStorage(stored, { activeRemindersOnly: false });
+    _trackingState = {
+        notesMap: parsed.notesMap,
+        tagsMap: parsed.tagsMap,
+        tagDefs: parsed.tagDefs,
+    };
+    return _trackingState;
+}
+
+function bindTrackingStorageListener() {
+    if (_trackingListenerBound || typeof chrome === 'undefined' || !chrome.storage) return;
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        if (!hasSprintTrackingStorageChange(changes)) return;
+        if (!_currentIssues.length) return;
+
+        clearTimeout(_trackingReloadTimer);
+        _trackingReloadTimer = setTimeout(() => {
+            void refreshSprintTrackingChips();
+        }, 120);
+    });
+
+    _trackingListenerBound = true;
+}
+
+function hasSprintTrackingStorageChange(changes = {}) {
+    return Object.keys(changes).some(key => key === TAG_DEFS_STORAGE_KEY || key.startsWith('tags_jira:') || key.startsWith('notes_jira:'));
+}
+
+async function refreshSprintTrackingChips() {
+    if (!_currentIssues.length) return;
+
+    await loadSprintTrackingState(_currentIssues);
+
+    document.querySelectorAll('.issue-chip[data-gh-key]').forEach(chip => {
+        const issueKey = chip.getAttribute('data-gh-key');
+        if (!issueKey) return;
+
+        const chipMain = chip.querySelector('.issue-chip-main');
+        const existingNote = chipMain?.querySelector('.sprint-note-preview');
+        const existingRow = chipMain?.querySelector('.sprint-tag-row');
+        const noteText = String(_trackingState.notesMap[issueKey] || '').trim();
+        const notePreview = noteText ? truncate(noteText.replace(/\s+/g, ' '), 120) : '';
+        const tagHtml = renderReadOnlyTags(_trackingState.tagsMap[issueKey] || [], _trackingState.tagDefs);
+
+        if (!chipMain) return;
+
+        if (!notePreview) {
+            existingNote?.remove();
+        } else if (existingNote) {
+            existingNote.textContent = notePreview;
+            existingNote.title = noteText;
+        } else {
+            const noteEl = document.createElement('div');
+            noteEl.className = 'sprint-note-preview';
+            noteEl.textContent = notePreview;
+            noteEl.title = noteText;
+            const summary = chipMain.querySelector('.issue-chip-summary');
+            if (summary?.nextSibling) {
+                chipMain.insertBefore(noteEl, summary.nextSibling);
+            } else {
+                chipMain.appendChild(noteEl);
+            }
+        }
+
+        if (!tagHtml) {
+            existingRow?.remove();
+            return;
+        }
+
+        let row = existingRow;
+        if (!row) {
+            row = document.createElement('div');
+            row.className = 'sprint-tag-row';
+            row.innerHTML = '<div class="et-tag-read-list sprint-tag-list"></div>';
+            const anchor = chipMain.querySelector('.sprint-note-preview') || chipMain.querySelector('.issue-chip-summary');
+            if (anchor?.nextSibling) {
+                chipMain.insertBefore(row, anchor.nextSibling);
+            } else {
+                chipMain.appendChild(row);
+            }
+        }
+
+        const list = row.querySelector('.sprint-tag-list');
+        if (list) list.innerHTML = tagHtml;
+    });
+}
+
 // ============================================================
 // DASH STATE
 // ============================================================
@@ -179,8 +301,10 @@ export async function loadDashboard(projectKey) {
     if (!projectKey) { showDashState('placeholder'); return; }
     const requestId = ++_loadRequestId;
     _currentProjectKey = projectKey;
+    _boardFlow = null;
     bindSprintViewListener();
     bindGithubAvailabilityListener();
+    bindTrackingStorageListener();
     showDashState('loading', 'Connecting to Jira...');
     markAnalyticsPerf(`sprint:${projectKey}:start`);
 
@@ -200,6 +324,16 @@ export async function loadDashboard(projectKey) {
         _currentBoardId = boardId;
         if (!boardId) {
             showDashState('error', `No Scrum board found for project "${projectKey}". Make sure it has a Scrum board.`);
+            document.getElementById('sprint-select-container').classList.add('hidden');
+            return;
+        }
+
+        showDashState('loading', 'Loading Scrum board columns...');
+        const boardConfig = await fetchBoardConfiguration(host, boardId);
+        if (requestId !== _loadRequestId) return;
+        _boardFlow = createBoardFlow(boardConfig);
+        if (!_boardFlow.columns.length) {
+            showDashState('error', 'Could not resolve Scrum board columns for this project.');
             document.getElementById('sprint-select-container').classList.add('hidden');
             return;
         }
@@ -251,12 +385,19 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
     const projectKey = opts.projectKey || _currentProjectKey || 'unknown';
     showDashState('loading', 'Loading sprint details...');
     try {
+        _currentSprint = sprint || null;
         const host = _host;
         const settings = _settings;
         const boardId = _currentBoardId;
+        const boardFlow = _boardFlow;
 
         if (!sprint) {
             showDashState('empty');
+            return;
+        }
+
+        if (!boardFlow) {
+            showDashState('error', 'Scrum board configuration is unavailable for this project.');
             return;
         }
 
@@ -291,8 +432,10 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
         showDashState('loading', 'Fetching sprint issues...');
         const issues = await fetchSprintIssues(host, sprint.id, _spFieldId);
         if (requestId !== _loadRequestId) return;
+        _currentIssues = issues;
 
         if (issues.length === 0) {
+            _trackingState = { tagsMap: {}, tagDefs: {} };
             showDashState('empty');
             return;
         }
@@ -302,6 +445,9 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
             i._sp = _spFieldId ? (Number(i.fields?.[_spFieldId]) || 0) : 0;
         });
 
+        await loadSprintTrackingState(issues);
+        if (requestId !== _loadRequestId) return;
+
         // Group by assignee
         const devMap = {};
         issues.forEach(i => {
@@ -310,19 +456,18 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
             devMap[key].issues.push(i);
         });
 
-        // Fetch "In Progress since" for In Progress issues
-        showDashState('loading', 'Checking In Progress durations...');
-        const inProgressAll = issues.filter(i => {
-            const cat = i.fields?.status?.statusCategory?.key || '';
-            const name = (i.fields?.status?.name || '').toLowerCase();
-            return cat === 'indeterminate' || name.includes('progress');
-        });
+        showDashState('loading', 'Checking board column durations...');
+        const activeIssues = issues.filter(issue => resolveIssueBoardColumn(issue, boardFlow)?.isDone !== true);
 
         const CONCURRENCY = 4;
-        for (let i = 0; i < inProgressAll.length; i += CONCURRENCY) {
-            const batch = inProgressAll.slice(i, i + CONCURRENCY);
+        for (let i = 0; i < activeIssues.length; i += CONCURRENCY) {
+            const batch = activeIssues.slice(i, i + CONCURRENCY);
             await Promise.all(batch.map(async issue => {
-                issue._inProgressSince = await fetchIssueInProgressSince(host, issue.key).catch(() => null);
+                const timeline = await fetchIssueTimeline(host, issue.key).catch(() => null);
+                issue._timeline = timeline;
+                issue._currentBoardColumnSince = timeline?.statusChanges?.length
+                    ? resolveCurrentBoardColumnSince(issue, timeline.statusChanges, boardFlow)
+                    : issue.fields?.updated || null;
             }));
             if (requestId !== _loadRequestId) return;
         }
@@ -378,7 +523,9 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
                 { assignee: dev.assignee, issues: dev.issues, velocity },
                 sprint.endDate,
                 settings,
-                host
+                host,
+                _trackingState,
+                boardFlow
             );
             grid.appendChild(card);
         }
@@ -391,7 +538,7 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
             return sum + (getVelocity(accountId)?.avg || 0);
         }, 0);
         document.querySelectorAll('.prediction-velocity-hint').forEach(el => el.remove());
-        renderSprintOverview(issues, sprint, settings, devCount, Math.round(teamVelAvg * 10) / 10, totalCommittedSP);
+        renderSprintOverview(issues, sprint, settings, devCount, Math.round(teamVelAvg * 10) / 10, totalCommittedSP, boardFlow);
 
         renderGithubStatus();
         if (getActiveView() === 'sprint-dashboard') {
@@ -401,7 +548,7 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
         measureAnalyticsPerf(`sprint:${projectKey}:base`, `sprint:${projectKey}:start`, `sprint:${projectKey}:base`, {
             sprintId: sprint.id,
             issueCount: issues.length,
-            inProgressCount: inProgressAll.length,
+            inProgressCount: activeIssues.length,
         });
 
         // Event delegation — copy-for-Slack + Notes

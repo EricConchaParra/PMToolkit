@@ -20,10 +20,12 @@ import {
 import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
 import {
     fetchActiveSprint,
+    fetchBoardConfiguration,
     fetchBoardId,
     fetchSprintIssues,
     fetchSpFieldId,
 } from '../jiraApi.js';
+import { createBoardFlow, resolveIssueBoardColumn } from '../boardFlow.js';
 import { formatDate, formatHours, timeSince, workingHoursBetween } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
 import { getActiveView, switchToView } from '../nav.js';
@@ -32,7 +34,6 @@ import {
     FOLLOWUP_SIGNAL_META,
     FOLLOWUP_STATE_META,
     buildFollowupItems,
-    resolveIssueSection,
     fetchIssueTimeline,
     getFollowupMetaStorageKey,
     normalizeFollowupMeta,
@@ -50,6 +51,7 @@ const followupState = {
     projectKey: '',
     host: '',
     settings: {},
+    boardFlow: null,
     sprintName: '',
     sprintHoursLeft: null,
     issues: [],
@@ -139,6 +141,7 @@ function rebuildFollowupItems() {
         tagsMap: followupState.tagsMap,
         followupMetaMap: followupState.followupMetaMap,
         settings: followupState.settings,
+        boardFlow: followupState.boardFlow,
         sprintHoursLeft: followupState.sprintHoursLeft,
         prSignalsEnabled: followupState.github.enabled && !followupState.github.error,
     });
@@ -165,6 +168,7 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
     followupState.projectKey = projectKey;
     followupState.host = host;
     followupState.settings = settings || {};
+    followupState.boardFlow = null;
 
     if (forceRefresh) {
         clearPrSnapshotCache();
@@ -185,6 +189,15 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
 
         if (!boardId) {
             showFollowupState('error', `No Scrum board found for "${projectKey}".`);
+            return;
+        }
+
+        showFollowupState('loading', 'Loading Scrum board columns...');
+        const boardConfig = await fetchBoardConfiguration(host, boardId);
+        if (requestId !== followupState.loadRequestId) return;
+        followupState.boardFlow = createBoardFlow(boardConfig);
+        if (!followupState.boardFlow.columns.length) {
+            showFollowupState('error', 'Could not resolve Scrum board columns for this project.');
             return;
         }
 
@@ -231,7 +244,7 @@ export async function loadFollowupDashboard(projectKey, host, settings, opts = {
 
         showFollowupState('loading', 'Building Jira timelines...');
         const timelinesByKey = {};
-        const timelineIssues = issues.filter(issue => resolveIssueSection(issue, followupState.settings?.statusMap || {}) !== 'done');
+        const timelineIssues = issues.filter(issue => resolveIssueBoardColumn(issue, followupState.boardFlow)?.isDone !== true);
         const CONCURRENCY = 4;
         for (let index = 0; index < timelineIssues.length; index += CONCURRENCY) {
             if (requestId !== followupState.loadRequestId) return;
@@ -531,7 +544,7 @@ function renderQueueItem(item) {
         : initials;
 
     const assigneeName = escapeHtml(item.jira.assignee?.displayName || 'Unassigned');
-    const sectionClass = getSectionClass(item.jira.section);
+    const sectionClass = getColumnClass(item.jira.boardColumn);
     const primaryMeta = item.primarySignal ? FOLLOWUP_SIGNAL_META[item.primarySignal] : FOLLOWUP_SIGNAL_META['tracked-only'];
     const stateMeta = FOLLOWUP_STATE_META[item.tracking.state] || FOLLOWUP_STATE_META.default;
     const reminderHtml = item.tracking.reminderTs
@@ -553,7 +566,7 @@ function renderQueueItem(item) {
                         ${item.tracking.state !== 'default' ? `<span class="fu-signal-chip fu-tone-${stateMeta.tone}">${escapeHtml(stateMeta.label)}</span>` : ''}
                     </div>
                     <div class="fu-ticket-age">
-                        ${item.timeline.currentStatusSince ? `In status ${escapeHtml(formatHours(item.timeline.statusAgeHours || 0))}` : ''}
+                        ${item.timeline.currentBoardColumnSince ? `In column ${escapeHtml(formatHours(item.timeline.boardColumnAgeHours || 0))}` : ''}
                     </div>
                 </div>
                 <div class="issue-chip-assignee">
@@ -588,7 +601,7 @@ function renderQueueItem(item) {
                 </select>
                 <button class="fu-action-btn fu-pin-toggle" type="button" data-issue-key="${item.key}">${item.tracking.pinned ? 'Unpin' : 'Pin'}</button>
                 <button class="fu-action-btn fu-snooze-btn" type="button" data-issue-key="${item.key}" data-mode="4h">+4h</button>
-                <button class="fu-action-btn fu-snooze-btn" type="button" data-issue-key="${item.key}" data-mode="tomorrow">9am</button>
+                <button class="fu-action-btn fu-copy-link-btn" type="button" data-url="${item.jira.url}" title="Copy Jira link">Copy link</button>
             </div>
         </div>
     `;
@@ -725,15 +738,11 @@ function matchesTrackingFilter(item, filter) {
 }
 
 function isDoneItem(item) {
-    return item.jira.section === 'done' || item.tracking.state === 'done';
+    return item.jira.boardColumn?.isDone === true || item.tracking.state === 'done';
 }
 
-function getSectionClass(section) {
-    if (section === 'done') return 'done-chip';
-    if (section === 'blocked') return 'blocked-chip';
-    if (section === 'inReview') return 'in-review-chip';
-    if (section === 'inProgress') return 'in-progress-chip';
-    return '';
+function getColumnClass(boardColumn) {
+    return boardColumn ? `board-tone-${boardColumn.tone}` : 'board-tone-todo';
 }
 
 function formatReminder(timestamp) {
@@ -845,6 +854,26 @@ function attachFollowupEvents(container) {
             const issueKey = snoozeBtn.dataset.issueKey;
             const mode = snoozeBtn.dataset.mode;
             if (issueKey && mode) await applyReminderSnooze(issueKey, mode);
+            return;
+        }
+
+        const copyLinkBtn = event.target.closest('.fu-copy-link-btn');
+        if (copyLinkBtn) {
+            const url = copyLinkBtn.dataset.url;
+            if (!url || copyLinkBtn.dataset.isCopying) return;
+
+            copyLinkBtn.dataset.isCopying = 'true';
+            const original = copyLinkBtn.textContent;
+
+            navigator.clipboard.writeText(url).then(() => {
+                copyLinkBtn.textContent = 'Copied';
+                setTimeout(() => {
+                    copyLinkBtn.textContent = original;
+                    delete copyLinkBtn.dataset.isCopying;
+                }, 1500);
+            }).catch(() => {
+                delete copyLinkBtn.dataset.isCopying;
+            });
             return;
         }
 
@@ -981,7 +1010,7 @@ async function loadFollowupGithubSignals(requestId, issues, opts = {}) {
         const prResult = await resolvePrSnapshots(ticketKeys, followupState.github.token, {
             repos: followupState.settings.githubRepos || [],
             priorityTicketKeys,
-            allowGlobalFallback: (followupState.settings.githubRepos?.length || 0) === 0 || opts.forceRefresh === true,
+            allowGlobalFallback: true,
             forceRefresh: opts.forceRefresh === true,
             repoConcurrency: 1,
             searchLimit: 5,

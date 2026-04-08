@@ -1,14 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
+import { createBoardFlow } from '../boardFlow.js';
 import { buildFollowupItems } from './followupModel.js';
 
 const NOW = new Date(2026, 2, 17, 18, 0, 0).getTime();
+const BOARD_FLOW = createBoardFlow({
+    columnConfig: {
+        columns: [
+            { name: 'To Do', statuses: [{ id: '1', name: 'To Do' }] },
+            { name: 'In Progress', statuses: [{ id: '2', name: 'In Progress' }] },
+            { name: 'Blocked', statuses: [{ id: '3', name: 'Blocked' }] },
+            { name: 'Review', statuses: [{ id: '4', name: 'In Review' }, { id: '5', name: 'QA' }] },
+            { name: 'Done', statuses: [{ id: '6', name: 'Done' }] },
+        ],
+    },
+});
 
 function makeIssue({
     key,
     summary = 'Control tower ticket',
+    statusId = '2',
     statusName = 'In Progress',
-    statusCategory = 'indeterminate',
     assigneeName = 'Alice',
     assigneeId = 'alice',
     updatedHoursAgo = 1,
@@ -21,8 +33,9 @@ function makeIssue({
         fields: {
             summary,
             status: {
+                id: statusId,
                 name: statusName,
-                statusCategory: { key: statusCategory },
+                statusCategory: { key: statusName === 'Done' ? 'done' : 'indeterminate' },
             },
             assignee: {
                 displayName: assigneeName,
@@ -65,9 +78,9 @@ function buildItems(overrides = {}) {
         settings: {
             hoursPerDay: 9,
             spHours: { 0: 9, 1: 2.25, 2: 4.5, 3: 9, 5: 18, 8: 27, 13: 45 },
-            statusMap: {},
             ...(overrides.settings || {}),
         },
+        boardFlow: overrides.boardFlow || BOARD_FLOW,
         sprintHoursLeft: overrides.sprintHoursLeft ?? 40,
         now: NOW,
         prSignalsEnabled: overrides.prSignalsEnabled ?? true,
@@ -76,9 +89,7 @@ function buildItems(overrides = {}) {
 
 describe('buildFollowupItems', () => {
     it('does not duplicate a ticket when notes and PR data coexist', () => {
-        const issues = [
-            makeIssue({ key: 'PM-1', updatedHoursAgo: 2, statusName: 'In Progress' }),
-        ];
+        const issues = [makeIssue({ key: 'PM-1', updatedHoursAgo: 2, statusId: '2', statusName: 'In Progress' })];
 
         const items = buildItems({
             issues,
@@ -89,12 +100,11 @@ describe('buildFollowupItems', () => {
         expect(items).toHaveLength(1);
         expect(new Set(items.map(item => item.key)).size).toBe(1);
         expect(items[0].primarySignal).toBe('tracked-only');
+        expect(items[0].jira.boardColumn?.name).toBe('In Progress');
     });
 
-    it('flags in-review work without a PR as needs-pr', () => {
-        const issues = [
-            makeIssue({ key: 'PM-2', statusName: 'In Review', updatedHoursAgo: 6 }),
-        ];
+    it('flags review-column work without a PR as needs-pr', () => {
+        const issues = [makeIssue({ key: 'PM-2', statusId: '4', statusName: 'In Review', updatedHoursAgo: 6 })];
 
         const items = buildItems({ issues });
 
@@ -103,9 +113,7 @@ describe('buildFollowupItems', () => {
     });
 
     it('does not flag needs-pr while PR lookup is still pending', () => {
-        const issues = [
-            makeIssue({ key: 'PM-2B', statusName: 'In Review', updatedHoursAgo: 6 }),
-        ];
+        const issues = [makeIssue({ key: 'PM-2B', statusId: '4', statusName: 'In Review', updatedHoursAgo: 6 })];
 
         const items = buildItems({
             issues,
@@ -117,9 +125,7 @@ describe('buildFollowupItems', () => {
     });
 
     it('flags stale review flow as review-waiting', () => {
-        const issues = [
-            makeIssue({ key: 'PM-3', statusName: 'In Review', updatedHoursAgo: 30 }),
-        ];
+        const issues = [makeIssue({ key: 'PM-3', statusId: '4', statusName: 'In Review', updatedHoursAgo: 30 })];
 
         const items = buildItems({
             issues,
@@ -133,9 +139,7 @@ describe('buildFollowupItems', () => {
     });
 
     it('flags stagnant implementation flow as frozen', () => {
-        const issues = [
-            makeIssue({ key: 'PM-4', statusName: 'In Progress', updatedHoursAgo: 30, sp: 1 }),
-        ];
+        const issues = [makeIssue({ key: 'PM-4', statusId: '2', statusName: 'In Progress', updatedHoursAgo: 30, sp: 1 })];
 
         const items = buildItems({
             issues,
@@ -146,10 +150,8 @@ describe('buildFollowupItems', () => {
         expect(items[0].primarySignal).toBe('frozen');
     });
 
-    it('makes manual blocked state dominate other signals', () => {
-        const issues = [
-            makeIssue({ key: 'PM-5', statusName: 'In Review', updatedHoursAgo: 30 }),
-        ];
+    it('makes blocked state dominate other signals', () => {
+        const issues = [makeIssue({ key: 'PM-5', statusId: '4', statusName: 'In Review', updatedHoursAgo: 30 })];
 
         const items = buildItems({
             issues,
@@ -164,8 +166,8 @@ describe('buildFollowupItems', () => {
 
     it('adds capacity-risk to each affected ticket without duplicating rows', () => {
         const issues = [
-            makeIssue({ key: 'PM-6', statusName: 'To Do', statusCategory: 'new', updatedHoursAgo: 1, sp: 3 }),
-            makeIssue({ key: 'PM-7', statusName: 'To Do', statusCategory: 'new', updatedHoursAgo: 1, sp: 3 }),
+            makeIssue({ key: 'PM-6', statusId: '1', statusName: 'To Do', updatedHoursAgo: 1, sp: 3 }),
+            makeIssue({ key: 'PM-7', statusId: '1', statusName: 'To Do', updatedHoursAgo: 1, sp: 3 }),
         ];
 
         const items = buildItems({
@@ -179,10 +181,22 @@ describe('buildFollowupItems', () => {
         expect(items.every(item => item.primarySignal === 'capacity-risk')).toBe(true);
     });
 
-    it('keeps review-waiting as a secondary signal when a stronger one exists', () => {
+    it('does not trigger age-based signals while a ticket is still in To Do', () => {
         const issues = [
-            makeIssue({ key: 'PM-8', statusName: 'In Review', updatedHoursAgo: 30 }),
+            makeIssue({ key: 'PM-7B', statusId: '1', statusName: 'To Do', updatedHoursAgo: 30, sp: 3 }),
         ];
+
+        const items = buildItems({
+            issues,
+            sprintHoursLeft: 40,
+        });
+
+        expect(items[0].signals).not.toContain('needs-pr');
+        expect(items[0].signals).not.toContain('frozen');
+    });
+
+    it('keeps review-waiting as a secondary signal when a stronger one exists', () => {
+        const issues = [makeIssue({ key: 'PM-8', statusId: '4', statusName: 'In Review', updatedHoursAgo: 30 })];
 
         const items = buildItems({
             issues,

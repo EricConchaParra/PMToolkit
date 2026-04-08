@@ -9,6 +9,7 @@
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
   <link rel="modulepreload" crossorigin href="/assets/tagEditor.js">
+  <link rel="modulepreload" crossorigin href="/assets/githubPrStorage.js">
   <link rel="modulepreload" crossorigin href="/assets/jira-styles.js">
   <link rel="stylesheet" crossorigin href="/assets/tagEditor.css">
   <link rel="stylesheet" crossorigin href="/assets/jira-styles.css">
@@ -35,12 +36,14 @@
             <button class="nav-item" data-view="performance-dashboard">
                 <span class="nav-icon">📈</span>
                 <span class="nav-label">Team Performance</span>
-                <span class="nav-badge-new">NEW</span>
             </button>
             <button class="nav-item" data-view="followup-dashboard">
                 <span class="nav-icon">🔔</span>
                 <span class="nav-label">Follow-up Work</span>
-                <span class="nav-badge-new">NEW</span>
+            </button>
+            <button class="nav-item" data-view="sprint-closure-report">
+                <span class="nav-icon">📸</span>
+                <span class="nav-label">Sprint Closure</span>
             </button>
             <button class="nav-item" data-view="csv-exporter">
                 <span class="nav-icon">📤</span>
@@ -49,7 +52,8 @@
         </nav>
 
         <div class="sidebar-footer">
-            <span>v0.7.0 · PMsToolKit</span>
+            <a class="sidebar-feedback-link" href="https://tally.so/r/yPxMax" target="_blank" rel="noreferrer">Share feedback</a>
+            <span>v0.8.0 · PMsToolKit</span>
         </div>
     </aside>
 
@@ -125,10 +129,6 @@
                                         min="0.5" step="0.25"></div>
                             </div>
                         </div>
-                        <div class="settings-col settings-col-map" id="status-map-col">
-                            <h4>Status Mapping</h4>
-                            <p class="status-map-hint">Select a project to configure status mapping.</p>
-                        </div>
                         <div class="settings-col">
                             <h4>GitHub Repositories</h4>
                             <div class="setting-row">
@@ -201,76 +201,14 @@
                     <span class="overview-title">📋 Sprint Overview</span>
                     <span class="overview-subtitle" id="overview-subtitle">Team-level summary</span>
                 </div>
-                <div class="overview-stats" id="overview-stats">
-                    <div class="stat-pill done">
-                        <span class="stat-pill-icon">✅</span>
-                        <div class="stat-pill-body">
-                            <span class="stat-pill-label">Done</span>
-                            <span class="stat-pill-value" id="overview-done-count">—</span>
-                            <span class="stat-pill-sp" id="overview-done-sp">— SP</span>
-                        </div>
-                    </div>
-                    <div class="stat-pill qa">
-                        <span class="stat-pill-icon">🟣</span>
-                        <div class="stat-pill-body">
-                            <span class="stat-pill-label">QA</span>
-                            <span class="stat-pill-value" id="overview-qa-count">—</span>
-                            <span class="stat-pill-sp" id="overview-qa-sp">— SP</span>
-                        </div>
-                    </div>
-                    <div class="stat-pill inreview">
-                        <span class="stat-pill-icon">🔎</span>
-                        <div class="stat-pill-body">
-                            <span class="stat-pill-label">In Review</span>
-                            <span class="stat-pill-value" id="overview-inreview-count">—</span>
-                            <span class="stat-pill-sp" id="overview-inreview-sp">— SP</span>
-                        </div>
-                    </div>
-                    <div class="stat-pill inprogress">
-                        <span class="stat-pill-icon">🔵</span>
-                        <div class="stat-pill-body">
-                            <span class="stat-pill-label">In Progress</span>
-                            <span class="stat-pill-value" id="overview-inprogress-count">—</span>
-                            <span class="stat-pill-sp" id="overview-inprogress-sp">— SP</span>
-                        </div>
-                    </div>
-                    <div class="stat-pill blocked">
-                        <span class="stat-pill-icon">🚫</span>
-                        <div class="stat-pill-body">
-                            <span class="stat-pill-label">Blocked</span>
-                            <span class="stat-pill-value" id="overview-blocked-count">—</span>
-                            <span class="stat-pill-sp" id="overview-blocked-sp">— SP</span>
-                        </div>
-                    </div>
-                    <div class="stat-pill todo">
-                        <span class="stat-pill-icon">⬜</span>
-                        <div class="stat-pill-body">
-                            <span class="stat-pill-label">To Do</span>
-                            <span class="stat-pill-value" id="overview-todo-count">—</span>
-                            <span class="stat-pill-sp" id="overview-todo-sp">— SP</span>
-                        </div>
-                    </div>
-                </div>
+                <div class="overview-stats" id="overview-stats"></div>
                 <div class="overview-progress-section">
                     <div class="overview-progress-labels">
                         <span id="overview-progress-label">Sprint Progress</span>
                         <span id="overview-progress-pct" class="overview-progress-pct">0%</span>
                     </div>
-                    <div class="overview-progress-track">
-                        <div class="overview-progress-done" id="overview-bar-done" style="width:0%"></div>
-                        <div class="overview-progress-qa" id="overview-bar-qa" style="width:0%"></div>
-                        <div class="overview-progress-inreview" id="overview-bar-inreview" style="width:0%"></div>
-                        <div class="overview-progress-inprogress" id="overview-bar-inprogress" style="width:0%"></div>
-                        <div class="overview-progress-blocked" id="overview-bar-blocked" style="width:0%"></div>
-                    </div>
-                    <div class="overview-progress-legend">
-                        <span class="legend-dot done"></span><span>Done</span>
-                        <span class="legend-dot qa"></span><span>QA</span>
-                        <span class="legend-dot inreview"></span><span>In Review</span>
-                        <span class="legend-dot inprogress"></span><span>In Progress</span>
-                        <span class="legend-dot blocked"></span><span>Blocked</span>
-                        <span class="legend-dot todo"></span><span>To Do</span>
-                    </div>
+                    <div class="overview-progress-track" id="overview-progress-track"></div>
+                    <div class="overview-progress-legend" id="overview-progress-legend"></div>
                 </div>
                 <div class="overview-prediction" id="overview-prediction">
                     <div class="prediction-icon" id="prediction-icon">—</div>
@@ -515,6 +453,46 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- ========== SPRINT CLOSURE REPORT VIEW ========== -->
+        <div id="view-sprint-closure-report" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>📸 Sprint Closure Report</h1>
+                    <p>Closed sprint summary with carryovers, scope creep and screenshot-ready capture mode</p>
+                </div>
+                <div class="view-header-right">
+                    <div class="project-select-wrap">
+                        <label for="scr-project-select">📁 Project</label>
+                        <select id="scr-project-select" class="scr-select"></select>
+                    </div>
+                    <div class="project-select-wrap">
+                        <label for="scr-sprint-select">🏁 Closed Sprint</label>
+                        <select id="scr-sprint-select" class="scr-select" disabled></select>
+                    </div>
+                    <button id="scr-mode-btn" class="icon-action-btn" title="Toggle capture mode">📸 Capture</button>
+                    <button id="scr-reset-btn" class="icon-action-btn" title="Reset report">↺ Reset</button>
+                    <button id="scr-refresh-btn" class="icon-action-btn" title="Refresh">🔄 Refresh</button>
+                </div>
+            </div>
+
+            <div id="scr-inline-notice" class="scr-inline-notice hidden"></div>
+
+            <div id="scr-placeholder" class="state-box">
+                <span class="state-icon">👆</span>
+                <p>Select a project to load the latest closed sprint report.</p>
+            </div>
+            <div id="scr-loading" class="state-box hidden">
+                <div class="spinner"></div>
+                <p id="scr-loading-text">Loading sprint closure report...</p>
+            </div>
+            <div id="scr-error" class="state-box error hidden">
+                <span class="state-icon">❌</span>
+                <p id="scr-error-text">An error occurred.</p>
+            </div>
+
+            <div id="scr-content" class="scr-content hidden"></div>
         </div>
 
         <!-- ========== CSV EXPORTER VIEW ========== -->

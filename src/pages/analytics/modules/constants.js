@@ -17,12 +17,4 @@ export const DEFAULT_HOURS_PER_DAY = 9;
 
 export const SP_KEYS = [0, 1, 2, 3, 5, 8, 13];
 
-// Section options ordered: To Do, In Progress, QA, Done
-export const SECTION_OPTIONS = [
-    { value: 'todo', label: 'To Do' },
-    { value: 'inProgress', label: 'In Progress' },
-    { value: 'qa', label: 'QA' },
-    { value: 'done', label: 'Done' },
-];
-
 export const LAST_PROJECT_KEY = 'sdk_last_project';

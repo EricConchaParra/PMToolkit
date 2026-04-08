@@ -7,11 +7,11 @@
 // ---- Modules ----
 import { initNav } from './modules/nav.js';
 import { loadSettings, saveSettings, getLastProject, setLastProject } from './modules/settings.js';
-import { getJiraHost, fetchProjects, fetchProjectStatuses } from './modules/jiraApi.js';
+import { getJiraHost, fetchProjects } from './modules/jiraApi.js';
 import { escapeHtml } from './modules/utils.js';
 import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, SP_KEYS } from './modules/constants.js';
 import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from './modules/analyticsPerf.js';
-import { populateSettingsUI, populateStatusMapUI, readGithubReposFromUI, readStatusMapFromUI } from './modules/sprintDashboard/settingsUI.js';
+import { populateSettingsUI, readGithubReposFromUI } from './modules/sprintDashboard/settingsUI.js';
 import {
     setHost, setSettings, setSpFieldId,
     loadDashboard, loadDashboardForSprint, resetSprintGithubState,
@@ -20,6 +20,7 @@ import {
 import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
 import { initPerfCombo } from './modules/performanceDashboard/performanceDashboard.js';
 import { initFollowupCombo } from './modules/followupDashboard/followupDashboard.js';
+import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
 
 // ============================================================
 // BOOTSTRAP
@@ -34,7 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentSettings = await loadSettings(null);
     setSettings(currentSettings);
     populateSettingsUI(currentSettings);
-    populateStatusMapUI([], {});
 
     // ---- Jira host ----
     const currentHost = await getJiraHost();
@@ -56,9 +56,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const val = parseFloat(document.getElementById(`sp-${k}`)?.value);
             if (!isNaN(val)) spHours[k] = val;
         });
-        const statusMap = readStatusMapFromUI();
         const githubRepos = readGithubReposFromUI();
-        currentSettings = { hoursPerDay, spHours, statusMap, githubRepos };
+        currentSettings = { hoursPerDay, spHours, githubRepos };
         setSettings(currentSettings);
         await saveSettings(selectedProjectKey, currentSettings);
         const msg = document.getElementById('settings-saved-msg');
@@ -68,14 +67,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Reset settings ----
     document.getElementById('reset-settings-btn').addEventListener('click', async () => {
-        currentSettings = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, statusMap: {}, githubRepos: [] };
+        currentSettings = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, githubRepos: [] };
         setSettings(currentSettings);
         await saveSettings(selectedProjectKey, currentSettings);
         populateSettingsUI(currentSettings);
-        if (selectedProjectKey && currentHost) {
-            const statuses = await fetchProjectStatuses(currentHost, selectedProjectKey).catch(() => []);
-            populateStatusMapUI(statuses, {});
-        }
         const msg = document.getElementById('settings-saved-msg');
         msg.classList.remove('hidden');
         setTimeout(() => msg.classList.add('hidden'), 2000);
@@ -128,10 +123,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setSpFieldId(null);
         loadDashboard(projectKey);
-
-        fetchProjectStatuses(currentHost, projectKey)
-            .then(statuses => populateStatusMapUI(statuses, currentSettings.statusMap || {}))
-            .catch(() => { });
     }
 
     // Project combobox events
@@ -254,6 +245,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Follow-up Work Dashboard ----
     initFollowupCombo(allProjects, currentHost, lastProject, () => currentSettings);
+
+    // ---- Sprint Closure Report ----
+    initSprintClosureReport(allProjects, currentHost, lastProject);
     markAnalyticsPerf('bootstrap:end');
     measureAnalyticsPerf('bootstrap', 'bootstrap:start', 'bootstrap:end', {
         projectCount: allProjects.length,

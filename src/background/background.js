@@ -2,6 +2,18 @@
  * Background Service Worker for PMToolkit Extension.
  */
 
+import {
+    clearPrSnapshotCache,
+    hydrateGithubPrPool,
+    getGithubAvailabilityState,
+    resolveGithubPrBatch,
+} from '../common/githubPrPoolService.js';
+import {
+    getPrSnapshotStorageKeys,
+    makePrSnapshotStorageKey,
+    normalizeTicketKey,
+} from '../common/githubPrStorage.js';
+
 async function getTicketSummary(issueKey) {
     const cleanKey = issueKey.includes(':') ? issueKey.split(':')[1] : issueKey;
     const result = await new Promise(resolve => chrome.storage.local.get(['et_jira_host', `ticket_cache_${cleanKey}`], resolve));
@@ -147,6 +159,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ ok: false, status: 500, error: error.message });
             });
         return true; // Required for async sendResponse
+    } else if (message.type === 'GET_PR_SNAPSHOT') {
+        const normalizedTicketKey = normalizeTicketKey(message.ticketKey);
+        const storageKey = makePrSnapshotStorageKey(normalizedTicketKey);
+        chrome.storage.local.get([storageKey], (items) => {
+            sendResponse({
+                ok: true,
+                snapshot: Object.prototype.hasOwnProperty.call(items, storageKey) ? items[storageKey] : null,
+            });
+        });
+        return true;
+    } else if (message.type === 'GET_PR_SNAPSHOTS') {
+        const ticketKeys = Array.isArray(message.ticketKeys) ? message.ticketKeys.map(normalizeTicketKey).filter(Boolean) : [];
+        const storageKeys = getPrSnapshotStorageKeys(ticketKeys);
+        chrome.storage.local.get(storageKeys, (items) => {
+            const snapshotsByKey = {};
+            ticketKeys.forEach(ticketKey => {
+                const storageKey = makePrSnapshotStorageKey(ticketKey);
+                if (Object.prototype.hasOwnProperty.call(items, storageKey)) {
+                    snapshotsByKey[ticketKey] = items[storageKey];
+                }
+            });
+            sendResponse({ ok: true, snapshotsByKey });
+        });
+        return true;
+    } else if (message.type === 'REFRESH_PR_SNAPSHOTS') {
+        resolveGithubPrBatch(message.payload || {})
+            .then(result => sendResponse({ ok: true, ...result, availability: getGithubAvailabilityState() }))
+            .catch(error => sendResponse({ ok: false, error: error.message || 'Unexpected GitHub PR sync error' }));
+        return true;
+    } else if (message.type === 'GET_PR_AVAILABILITY') {
+        hydrateGithubPrPool()
+            .then(() => sendResponse({ ok: true, availability: getGithubAvailabilityState() }))
+            .catch(error => sendResponse({ ok: false, error: error.message || 'Unexpected GitHub availability error' }));
+        return true;
+    } else if (message.type === 'CLEAR_PR_SNAPSHOT_CACHE') {
+        clearPrSnapshotCache(message.payload || {})
+            .then(() => sendResponse({ ok: true, availability: getGithubAvailabilityState() }))
+            .catch(error => sendResponse({ ok: false, error: error.message || 'Unexpected GitHub PR cache clear error' }));
+        return true;
     }
 });
 

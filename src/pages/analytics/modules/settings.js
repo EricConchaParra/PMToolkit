@@ -18,7 +18,6 @@ export function loadSettings(projectKey) {
         const defaults = {
             hoursPerDay: DEFAULT_HOURS_PER_DAY,
             spHours: { ...DEFAULT_SP_HOURS },
-            statusMap: {},
             githubRepos: [],
         };
         if (!projectKey || !(typeof chrome !== 'undefined' && chrome.storage)) {
@@ -30,7 +29,6 @@ export function loadSettings(projectKey) {
             resolve({
                 hoursPerDay: saved.hoursPerDay || DEFAULT_HOURS_PER_DAY,
                 spHours: { ...DEFAULT_SP_HOURS, ...(saved.spHours || {}) },
-                statusMap: saved.statusMap || {},
                 githubRepos: Array.isArray(saved.githubRepos)
                     ? saved.githubRepos.filter(Boolean).map(repo => String(repo).trim()).filter(Boolean)
                     : [],

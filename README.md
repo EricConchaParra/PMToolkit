@@ -550,7 +550,7 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-## Installation (Beta v0.7.0)
+## Installation (Beta v0.8.0)
 
 1. Clone or download this repository.
 2. Run `npm install` followed by `npm run build`.
@@ -561,4 +561,4 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-*PMsToolKit v0.7.0 (Beta) — Created by EricConcha*
+*PMsToolKit v0.8.0 (Beta) — Created by EricConcha*

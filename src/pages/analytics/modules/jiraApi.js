@@ -5,9 +5,11 @@
 
 import {
     getCachedBoardId,
+    getCachedBoardConfig,
     getCachedProjectStatuses,
     getCachedProjects,
     getCachedSpFieldId,
+    getCachedSprintFieldId,
 } from './analyticsDataCache.js';
 
 // ============================================================
@@ -121,8 +123,14 @@ export async function fetchActiveSprint(host, boardId) {
     return data.values?.[0] || null;
 }
 
-export async function fetchSprintIssues(host, sprintId, spFieldId) {
-    const fields = ['summary', 'status', 'assignee', 'updated', spFieldId].filter(Boolean);
+export async function fetchBoardConfiguration(host, boardId) {
+    return getCachedBoardConfig(host, boardId, async () =>
+        jiraFetch(host, `/rest/agile/1.0/board/${boardId}/configuration`)
+    );
+}
+
+export async function fetchSprintIssues(host, sprintId, spFieldId, extraFields = []) {
+    const fields = ['summary', 'status', 'assignee', 'updated', spFieldId, ...extraFields].filter(Boolean);
     let all = [];
     let nextPageToken;
     while (true) {
@@ -159,6 +167,21 @@ export async function fetchIssueInProgressSince(host, issueKey) {
         }
     }
     return null;
+}
+
+export async function fetchIssueChangelog(host, issueKey) {
+    let all = [];
+    let startAt = 0;
+
+    while (true) {
+        const data = await jiraFetch(host, `/rest/api/3/issue/${issueKey}/changelog?startAt=${startAt}&maxResults=100`);
+        const values = data.values || [];
+        all = all.concat(values);
+        if (all.length >= (data.total || 0) || values.length === 0) break;
+        startAt += values.length;
+    }
+
+    return all;
 }
 
 export async function fetchClosedSprints(host, boardId, count = 3) {
@@ -216,6 +239,17 @@ export async function fetchSpFieldId(host) {
         const fields = await jiraFetch(host, '/rest/api/3/field');
         const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
         return spField?.id || null;
+    });
+}
+
+export async function fetchSprintFieldId(host) {
+    return getCachedSprintFieldId(host, async () => {
+        const fields = await jiraFetch(host, '/rest/api/3/field');
+        const sprintField = fields.find(field =>
+            field.name === 'Sprint'
+            || field.schema?.custom === 'com.pyxis.greenhopper.jira:gh-sprint'
+        );
+        return sprintField?.id || null;
     });
 }
 

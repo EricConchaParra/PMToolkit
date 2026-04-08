@@ -1,7 +1,9 @@
 const analyticsCache = {
     projectsByHost: new Map(),
     boardIdByHostProject: new Map(),
+    boardConfigByHostBoard: new Map(),
     spFieldIdByHost: new Map(),
+    sprintFieldIdByHost: new Map(),
     projectStatusesByHostProject: new Map(),
 };
 
@@ -40,10 +42,15 @@ export function clearAnalyticsDataCache(scope = {}) {
     } else if (scope.host) {
         analyticsCache.projectsByHost.delete(scope.host);
         analyticsCache.spFieldIdByHost.delete(scope.host);
+        analyticsCache.sprintFieldIdByHost.delete(scope.host);
 
         Array.from(analyticsCache.boardIdByHostProject.keys())
             .filter(key => key.startsWith(`${scope.host}:`))
             .forEach(key => analyticsCache.boardIdByHostProject.delete(key));
+
+        Array.from(analyticsCache.boardConfigByHostBoard.keys())
+            .filter(key => key.startsWith(`${scope.host}:`))
+            .forEach(key => analyticsCache.boardConfigByHostBoard.delete(key));
 
         Array.from(analyticsCache.projectStatusesByHostProject.keys())
             .filter(key => key.startsWith(`${scope.host}:`))
@@ -51,7 +58,9 @@ export function clearAnalyticsDataCache(scope = {}) {
     } else {
         analyticsCache.projectsByHost.clear();
         analyticsCache.boardIdByHostProject.clear();
+        analyticsCache.boardConfigByHostBoard.clear();
         analyticsCache.spFieldIdByHost.clear();
+        analyticsCache.sprintFieldIdByHost.clear();
         analyticsCache.projectStatusesByHostProject.clear();
     }
 }
@@ -64,8 +73,16 @@ export function getCachedBoardId(host, projectKey, loader) {
     return withCache(analyticsCache.boardIdByHostProject, `${host}:${projectKey}`, loader);
 }
 
+export function getCachedBoardConfig(host, boardId, loader) {
+    return withCache(analyticsCache.boardConfigByHostBoard, `${host}:${boardId}`, loader);
+}
+
 export function getCachedSpFieldId(host, loader) {
     return withCache(analyticsCache.spFieldIdByHost, host, loader);
+}
+
+export function getCachedSprintFieldId(host, loader) {
+    return withCache(analyticsCache.sprintFieldIdByHost, host, loader);
 }
 
 export function getCachedProjectStatuses(host, projectKey, loader) {
