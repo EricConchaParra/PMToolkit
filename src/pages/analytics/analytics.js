@@ -19,7 +19,6 @@ import {
 } from './modules/sprintDashboard/sprintDashboard.js';
 import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
 import { initPerfCombo } from './modules/performanceDashboard/performanceDashboard.js';
-import { initFollowupCombo } from './modules/followupDashboard/followupDashboard.js';
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
 
 // ============================================================
@@ -242,9 +241,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Performance Dashboard ----
     initPerfCombo(allProjects, currentHost, lastProject);
-
-    // ---- Follow-up Work Dashboard ----
-    initFollowupCombo(allProjects, currentHost, lastProject, () => currentSettings);
 
     // ---- Sprint Closure Report ----
     initSprintClosureReport(allProjects, currentHost, lastProject);

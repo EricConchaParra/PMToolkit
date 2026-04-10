@@ -2,6 +2,7 @@ import { storage } from '../../../common/storage.js';
 import { createTagEditor } from '../../../common/tagEditor.js';
 import {
     TAG_DEFS_STORAGE_KEY,
+    TRACKING_UPDATED_EVENT,
     ensureTagDefinition,
     getNotesStorageKey,
     getReminderStorageKey,
@@ -10,11 +11,6 @@ import {
     normalizeTagDefs,
     normalizeTagList,
 } from '../../../common/tagging.js';
-import {
-    FOLLOWUP_STATE_META,
-    getFollowupMetaStorageKey,
-    normalizeFollowupMeta,
-} from '../../../pages/analytics/modules/followupDashboard/followupModel.js';
 
 export const NoteDrawer = {
     el: null,
@@ -24,19 +20,8 @@ export const NoteDrawer = {
     tagEditor: null,
     currentTagDefs: {},
 
-    getFollowupStateOptions() {
-        return Object.entries(FOLLOWUP_STATE_META).map(([value, meta]) => `
-            <option value="${value}">${meta.label}</option>
-        `).join('');
-    },
-
-    hasTrackedItem({ noteText = '', reminderValue = '', tagLabels = [], followupMeta = {} } = {}) {
-        const normalizedFollowupMeta = normalizeFollowupMeta(followupMeta);
-        return Boolean(
-            hasTrackedContent(noteText, reminderValue, tagLabels)
-            || normalizedFollowupMeta.state !== 'default'
-            || normalizedFollowupMeta.pinned,
-        );
+    hasTrackedItem({ noteText = '', reminderValue = '', tagLabels = [] } = {}) {
+        return hasTrackedContent(noteText, reminderValue, tagLabels);
     },
 
     async initIndicators() {
@@ -55,7 +40,7 @@ export const NoteDrawer = {
         const storageKeys = [];
         keys.forEach(k => {
             const cleanKey = k.includes(':') ? k : `jira:${k}`;
-            storageKeys.push(`notes_${cleanKey}`, `reminder_${cleanKey}`, `tags_${cleanKey}`, getFollowupMetaStorageKey(k));
+            storageKeys.push(`notes_${cleanKey}`, `reminder_${cleanKey}`, `tags_${cleanKey}`);
         });
 
         const result = await storage.get(storageKeys);
@@ -65,12 +50,10 @@ export const NoteDrawer = {
             const hasNote = !!result[`notes_${cleanKey}`];
             const hasReminder = !!result[`reminder_${cleanKey}`];
             const tags = Array.isArray(result[`tags_${cleanKey}`]) ? result[`tags_${cleanKey}`] : [];
-            const followupMeta = normalizeFollowupMeta(result[getFollowupMetaStorageKey(k)]);
             const hasActiveItem = this.hasTrackedItem({
                 noteText: hasNote ? result[`notes_${cleanKey}`] : '',
                 reminderValue: hasReminder ? result[`reminder_${cleanKey}`] : '',
                 tagLabels: tags,
-                followupMeta,
             });
 
             if (hasActiveItem) {
@@ -123,16 +106,6 @@ export const NoteDrawer = {
                     </div>
                 </div>
                 <div class="et-drawer-section">
-                    <label class="et-drawer-label" for="et-drawer-followup-state">Follow-up status</label>
-                    <div class="et-drawer-followup-row">
-                        <div class="et-drawer-select-wrap">
-                            <select id="et-drawer-followup-state" class="et-drawer-select">
-                                ${this.getFollowupStateOptions()}
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="et-drawer-section">
                     <label class="et-drawer-label">Tags</label>
                     <div class="et-drawer-tags-host"></div>
                 </div>
@@ -148,15 +121,14 @@ export const NoteDrawer = {
         document.body.appendChild(this.el);
 
         this.el.querySelector('.et-drawer-close').onclick = () => this.close();
-        this.el.querySelector('.et-drawer-save').onclick = () => {
-            this.save();
+        this.el.querySelector('.et-drawer-save').onclick = async () => {
+            await this.save();
             this.close(true); // Skip redundant save on close
         };
         this.el.querySelector('.et-drawer-delete').onclick = () => this.delete();
 
         const textarea = this.el.querySelector('.et-drawer-textarea');
         const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
-        const followupStateSelect = this.el.querySelector('.et-drawer-select');
         const tagsHost = this.el.querySelector('.et-drawer-tags-host');
 
         this.tagEditor = createTagEditor(tagsHost, {
@@ -188,7 +160,6 @@ export const NoteDrawer = {
         };
 
         reminderInput.onchange = () => this.save();
-        followupStateSelect.onchange = () => this.save();
 
         this.el.querySelectorAll('.et-shortcut-btn').forEach(btn => {
             btn.onclick = () => {
@@ -233,26 +204,21 @@ export const NoteDrawer = {
 
         const textarea = this.el.querySelector('.et-drawer-textarea');
         const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
-        const followupStateSelect = this.el.querySelector('.et-drawer-select');
 
         textarea.value = '';
         reminderInput.value = '';
-        followupStateSelect.value = 'default';
         this.currentTagDefs = {};
         this.tagEditor?.setTagDefs({});
         this.tagEditor?.setValue([]);
 
-        const prefixedKey = issueKey.includes(':') ? issueKey : `jira:${issueKey}`;
         const storageKey = getNotesStorageKey(issueKey);
         const reminderKey = getReminderStorageKey(issueKey);
         const tagsKey = getTagsStorageKey(issueKey);
-        const followupMetaKey = getFollowupMetaStorageKey(issueKey);
 
-        const result = await storage.get([storageKey, reminderKey, tagsKey, followupMetaKey, TAG_DEFS_STORAGE_KEY]);
+        const result = await storage.get([storageKey, reminderKey, tagsKey, TAG_DEFS_STORAGE_KEY]);
         if (this.currentKey !== issueKey) return;
 
         this.currentTagDefs = normalizeTagDefs(result[TAG_DEFS_STORAGE_KEY] || {});
-        const followupMeta = normalizeFollowupMeta(result[followupMetaKey]);
         if (result[storageKey]) textarea.value = result[storageKey];
         if (result[reminderKey]) {
             const date = new Date(result[reminderKey]);
@@ -260,7 +226,6 @@ export const NoteDrawer = {
             const localISODate = new Date(date.getTime() - offset).toISOString().slice(0, 16);
             reminderInput.value = localISODate;
         }
-        followupStateSelect.value = followupMeta.state;
         this.tagEditor?.setTagDefs(this.currentTagDefs);
         this.tagEditor?.setValue(normalizeTagList(result[tagsKey], this.currentTagDefs));
 
@@ -277,6 +242,19 @@ export const NoteDrawer = {
         if (!skipSave) this.save();
     },
 
+    emitTrackingUpdated(detail = {}) {
+        if (typeof document === 'undefined') return;
+        const issueKey = String(detail.issueKey || this.currentKey || '').split(':').pop();
+        if (!issueKey) return;
+
+        document.dispatchEvent(new CustomEvent(TRACKING_UPDATED_EVENT, {
+            detail: {
+                ...detail,
+                issueKey,
+            },
+        }));
+    },
+
     async delete() {
         if (!this.currentKey) return;
 
@@ -288,18 +266,24 @@ export const NoteDrawer = {
         const storageKey = getNotesStorageKey(this.currentKey);
         const reminderKey = getReminderStorageKey(this.currentKey);
         const tagsKey = getTagsStorageKey(this.currentKey);
-        const followupMetaKey = getFollowupMetaStorageKey(this.currentKey);
         const ignoredKey = `ignored_${prefixedKey}`;
 
-        await storage.remove([storageKey, reminderKey, tagsKey, followupMetaKey, ignoredKey]);
+        await storage.remove([storageKey, reminderKey, tagsKey, ignoredKey]);
 
         // Reset fields
         this.el.querySelector('.et-drawer-textarea').value = '';
         this.el.querySelector('.et-drawer-reminder-input').value = '';
-        this.el.querySelector('.et-drawer-select').value = 'default';
         this.tagEditor?.setValue([]);
 
         this.updateIndicators(false);
+        this.emitTrackingUpdated({
+            issueKey: this.currentKey,
+            noteText: '',
+            reminderValue: '',
+            reminderTs: null,
+            tagLabels: [],
+            tagDefs: this.currentTagDefs,
+        });
         this.close(true); // Close without saving (it's already deleted)
     },
 
@@ -308,19 +292,16 @@ export const NoteDrawer = {
 
         const textarea = this.el.querySelector('.et-drawer-textarea');
         const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
-        const followupStateSelect = this.el.querySelector('.et-drawer-select');
         const status = this.el.querySelector('.et-drawer-status');
 
         const value = textarea.value.trim();
         const reminderValue = reminderInput.value;
-        const followupStateValue = followupStateSelect.value || 'default';
+        const reminderTs = reminderValue ? new Date(reminderValue).getTime() : null;
         const tagsValue = normalizeTagList(this.tagEditor?.getValue() || [], this.currentTagDefs);
 
         const storageKey = getNotesStorageKey(this.currentKey);
         const reminderKey = getReminderStorageKey(this.currentKey);
-        const followupMetaKey = getFollowupMetaStorageKey(this.currentKey);
         const finalKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
-        const currentFollowupMeta = normalizeFollowupMeta((await storage.get(followupMetaKey))[followupMetaKey]);
 
         if (value) {
             await storage.set({ [storageKey]: value });
@@ -329,8 +310,7 @@ export const NoteDrawer = {
         }
 
         if (reminderValue) {
-            const timestamp = new Date(reminderValue).getTime();
-            await storage.set({ [reminderKey]: timestamp });
+            await storage.set({ [reminderKey]: reminderTs });
             await storage.remove(`ignored_${finalKey}`);
         } else {
             await storage.remove(reminderKey);
@@ -342,18 +322,6 @@ export const NoteDrawer = {
             await storage.set({ [getTagsStorageKey(this.currentKey)]: tagsValue });
         }
 
-        if (followupStateValue === 'default' && !currentFollowupMeta.pinned) {
-            await storage.remove(followupMetaKey);
-        } else {
-            await storage.set({
-                [followupMetaKey]: {
-                    ...currentFollowupMeta,
-                    state: followupStateValue,
-                    updatedAt: Date.now(),
-                },
-            });
-        }
-
         status.classList.add('show');
         setTimeout(() => status.classList.remove('show'), 1500);
 
@@ -361,11 +329,16 @@ export const NoteDrawer = {
             noteText: value,
             reminderValue,
             tagLabels: tagsValue,
-            followupMeta: {
-                ...currentFollowupMeta,
-                state: followupStateValue,
-            },
         }));
+
+        this.emitTrackingUpdated({
+            issueKey: this.currentKey,
+            noteText: value,
+            reminderValue,
+            reminderTs,
+            tagLabels: tagsValue,
+            tagDefs: this.currentTagDefs,
+        });
     },
 
     updateIndicators(hasActiveItem) {

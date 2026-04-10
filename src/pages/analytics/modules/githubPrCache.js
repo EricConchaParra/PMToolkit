@@ -5,6 +5,16 @@
 
 import { clearPrSnapshotCache, getGithubAvailabilityState, resolveGithubPrBatch } from './githubPrSnapshotStore.js';
 
+const GITHUB_ENRICHABLE_CHIP_SELECTOR = [
+    '.issue-chip.in-progress-chip[data-gh-key]',
+    '.issue-chip.in-review-chip[data-gh-key]',
+    '.issue-chip.blocked-chip[data-gh-key]',
+    '.issue-chip.board-tone-progress[data-gh-key]',
+    '.issue-chip.board-tone-review[data-gh-key]',
+    '.issue-chip.board-tone-blocked[data-gh-key]',
+    '.issue-chip.board-tone-default[data-gh-key]',
+].join(', ');
+
 // ============================================================
 // PUBLIC API
 // ============================================================
@@ -18,7 +28,7 @@ export function clearPrCache(keys) {
 }
 
 /**
- * Enriches all `.in-progress-chip[data-gh-key]` chips inside `container`
+ * Enriches active sprint issue chips inside `container`
  * with a GitHub PR button, state badge, and label pills.
  *
  * @param {Element} container
@@ -29,7 +39,7 @@ export async function enrichChips(container, token, options = {}) {
     if (!container || !token) return;
 
     const chips = /** @type {NodeListOf<Element>} */ (
-        container.querySelectorAll('.in-progress-chip[data-gh-key], .in-review-chip[data-gh-key], .blocked-chip[data-gh-key]')
+        container.querySelectorAll(GITHUB_ENRICHABLE_CHIP_SELECTOR)
     );
     if (chips.length === 0) return;
 

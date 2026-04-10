@@ -71,7 +71,6 @@ Jira is powerful, but it can be slow and overwhelming. **PMsToolKit** fills the 
 | 15 | Zoom Copy Transcript | Zoom recording pages | 📋 "Copy Transcript" button |
 | 16 | Jira History Exporter | Dedicated Page (from Popup) | "Export History to CSV" button |
 | 18 | GitHub PR Link | Sprint Dashboard | Direct link in ticket chips (In Review) |
-| 19 | Follow-up Work Dashboard | Dedicated Page (from Popup) | 🔔 "Follow-up Work" tab |
 | 20 | Jira Tagging System | All views / Note Drawer | Use Tag Editor to label tickets |
 
 ---
@@ -414,23 +413,6 @@ When enabled in **Settings**, the toolkit automatically identifies Jira tickets 
 
 ---
 
-### 🔔 Follow-up Work Dashboard
-
-**Entry Point:** Extension Popup → 🔔 Button (opens Analytics Hub in a new tab).
-
-A consolidated view of all actionable items and potential bottlenecks across a selected project. It helps PMs stay on top of miscellaneous tasks that don't always fit into a standard board view.
-
-**Key Sections:**
-- **🗒️ Notes & Reminders:** Surfaces every ticket where you've left a personal note (📝) or scheduled a future reminder (🔔). Displays a subtle yellow note preview inline so you don't even have to open the drawer.
-- **🔎 In Review:** A dedicated list of all tickets currently in the "In Review" status (mapped via your project settings). Ensures no PR or code review gets ghosted.
-- **⏰ Overdue Tickets:** Highlights tasks that have been "In Progress" for longer than their assigned Story Points allow (using the SP-to-Hours scale).
-- **🔴 High Capacity Engineers:** A sorted list of team members who are at 75% or more of their total sprint capacity. Shows the "busiest" engineers first with color-coded progress bars.
-
-**Common Features:**
-- Every ticket chip includes the **📝 Notes**, **🔗 Link**, and **GitHub** action buttons for immediate follow-up.
-
----
-
 ### 📹 Zoom Copy Transcript
 
 **Function:** `zoom/main.js`
@@ -550,7 +532,7 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-## Installation (Beta v0.8.0)
+## Installation (Beta v0.9.0)
 
 1. Clone or download this repository.
 2. Run `npm install` followed by `npm run build`.
@@ -561,4 +543,4 @@ The copy feature uses the modern **Clipboard API** (`navigator.clipboard.write()
 
 ---
 
-*PMsToolKit v0.8.0 (Beta) — Created by EricConcha*
+*PMsToolKit v0.9.0 (Beta) — Created by EricConcha*

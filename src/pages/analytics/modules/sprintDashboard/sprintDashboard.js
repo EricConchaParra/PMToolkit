@@ -7,7 +7,11 @@ import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
 import { storage } from '../../../../common/storage.js';
 import {
     TAG_DEFS_STORAGE_KEY,
+    TRACKING_UPDATED_EVENT,
+    getNotesStorageKey,
+    getReminderStorageKey,
     getTagsStorageKey,
+    hasTrackingStorageChange,
     parseTrackingStorage,
 } from '../../../../common/tagging.js';
 import {
@@ -20,8 +24,9 @@ import {
 import { createBoardFlow, resolveCurrentBoardColumnSince, resolveIssueBoardColumn } from '../boardFlow.js';
 import { fetchIssueTimeline } from '../issueTimeline.js';
 import { workingHoursBetween, formatDate } from '../utils.js';
-import { renderDevCard, renderReadOnlyTags } from './devCard.js';
+import { buildIssueTrackingViewModel, renderDevCard, renderReadOnlyTags } from './devCard.js';
 import { renderSprintOverview } from './sprintOverview.js';
+import { getDashVisibilityState } from './dashVisibility.js';
 import { enrichChips, clearPrCache } from '../githubPrCache.js';
 import { getActiveView } from '../nav.js';
 import { getGithubAvailabilityState, subscribeGithubAvailability } from '../githubPrSnapshotStore.js';
@@ -43,6 +48,7 @@ let _github = { enabled: false, token: '' };
 let _viewListenerBound = false;
 let _githubListenerBound = false;
 let _trackingListenerBound = false;
+let _trackingEventListenerBound = false;
 let _loadRequestId = 0;
 let _currentProjectKey = '';
 let _githubForceRefresh = false;
@@ -51,6 +57,7 @@ let _trackingReloadTimer = null;
 let _currentIssues = [];
 let _trackingState = {
     notesMap: {},
+    remindersMap: {},
     tagsMap: {},
     tagDefs: {},
 };
@@ -165,24 +172,30 @@ function bindGithubAvailabilityListener() {
 
 async function loadSprintTrackingState(issues = []) {
     if (!issues.length) {
-        _trackingState = { notesMap: {}, tagsMap: {}, tagDefs: {} };
+        _trackingState = { notesMap: {}, remindersMap: {}, tagsMap: {}, tagDefs: {} };
         return _trackingState;
     }
 
     const storageKeys = [TAG_DEFS_STORAGE_KEY];
     issues.forEach(issue => {
-        storageKeys.push(`notes_jira:${issue.key}`);
+        storageKeys.push(getNotesStorageKey(issue.key));
+        storageKeys.push(getReminderStorageKey(issue.key));
         storageKeys.push(getTagsStorageKey(issue.key));
     });
 
     const stored = await storage.get(storageKeys);
+    _trackingState = buildSprintTrackingState(stored);
+    return _trackingState;
+}
+
+export function buildSprintTrackingState(stored = {}) {
     const parsed = parseTrackingStorage(stored, { activeRemindersOnly: false });
-    _trackingState = {
+    return {
         notesMap: parsed.notesMap,
+        remindersMap: parsed.remindersMap,
         tagsMap: parsed.tagsMap,
         tagDefs: parsed.tagDefs,
     };
-    return _trackingState;
 }
 
 function bindTrackingStorageListener() {
@@ -202,8 +215,49 @@ function bindTrackingStorageListener() {
     _trackingListenerBound = true;
 }
 
-function hasSprintTrackingStorageChange(changes = {}) {
-    return Object.keys(changes).some(key => key === TAG_DEFS_STORAGE_KEY || key.startsWith('tags_jira:') || key.startsWith('notes_jira:'));
+function bindTrackingEventListener() {
+    if (_trackingEventListenerBound) return;
+
+    document.addEventListener(TRACKING_UPDATED_EVENT, event => {
+        const issueKey = String(event.detail?.issueKey || '').split(':').pop();
+        if (!issueKey) return;
+        if (!_currentIssues.some(issue => issue.key === issueKey)) return;
+
+        const noteText = String(event.detail?.noteText || '').trim();
+        const tagLabels = Array.isArray(event.detail?.tagLabels)
+            ? event.detail.tagLabels.filter(label => String(label || '').trim())
+            : [];
+        const tagDefs = event.detail?.tagDefs && typeof event.detail.tagDefs === 'object'
+            ? event.detail.tagDefs
+            : null;
+        const reminderTs = Number(event.detail?.reminderTs ?? (event.detail?.reminderValue ? new Date(event.detail.reminderValue).getTime() : 0));
+
+        if (noteText) _trackingState.notesMap[issueKey] = noteText;
+        else delete _trackingState.notesMap[issueKey];
+
+        if (Number.isFinite(reminderTs) && reminderTs > 0) _trackingState.remindersMap[issueKey] = reminderTs;
+        else delete _trackingState.remindersMap[issueKey];
+
+        if (tagLabels.length) _trackingState.tagsMap[issueKey] = tagLabels;
+        else delete _trackingState.tagsMap[issueKey];
+
+        if (tagDefs) {
+            _trackingState.tagDefs = {
+                ..._trackingState.tagDefs,
+                ...tagDefs,
+            };
+        }
+
+        document
+            .querySelectorAll(`.issue-chip[data-gh-key="${issueKey}"]`)
+            .forEach(chip => updateSprintTrackingChip(chip));
+    });
+
+    _trackingEventListenerBound = true;
+}
+
+export function hasSprintTrackingStorageChange(changes = {}) {
+    return hasTrackingStorageChange(changes);
 }
 
 async function refreshSprintTrackingChips() {
@@ -211,48 +265,85 @@ async function refreshSprintTrackingChips() {
 
     await loadSprintTrackingState(_currentIssues);
 
-    document.querySelectorAll('.issue-chip[data-gh-key]').forEach(chip => {
-        const issueKey = chip.getAttribute('data-gh-key');
-        if (!issueKey) return;
+    document.querySelectorAll('.issue-chip[data-gh-key]').forEach(chip => updateSprintTrackingChip(chip));
+}
 
-        const chipMain = chip.querySelector('.issue-chip-main');
-        const existingNote = chipMain?.querySelector('.sprint-note-preview');
-        const existingRow = chipMain?.querySelector('.sprint-tag-row');
-        const noteText = String(_trackingState.notesMap[issueKey] || '').trim();
-        const notePreview = noteText ? truncate(noteText.replace(/\s+/g, ' '), 120) : '';
-        const tagHtml = renderReadOnlyTags(_trackingState.tagsMap[issueKey] || [], _trackingState.tagDefs);
+function updateSprintTrackingChip(chip) {
+    const issueKey = chip?.getAttribute('data-gh-key');
+    if (!issueKey) return;
 
-        if (!chipMain) return;
+    const chipMain = chip.querySelector('.issue-chip-main');
+    const existingNote = chipMain?.querySelector('.sprint-note-preview');
+    const existingReminderRow = chipMain?.querySelector('.sprint-reminder-row');
+    const existingRow = chipMain?.querySelector('.sprint-tag-row');
+    const noteButton = chip.querySelector('.issue-chip-actions .et-notes-btn');
+    const trackingModel = buildIssueTrackingViewModel(issueKey, _trackingState);
+    const noteText = trackingModel.noteText;
+    const tagHtml = renderReadOnlyTags(_trackingState.tagsMap[issueKey] || [], _trackingState.tagDefs);
+    const hasTrackedItem = NoteDrawer.hasTrackedItem({
+        noteText,
+        reminderValue: trackingModel.reminderTs,
+        tagLabels: _trackingState.tagsMap[issueKey] || [],
+    });
 
-        if (!notePreview) {
-            existingNote?.remove();
-        } else if (existingNote) {
-            existingNote.textContent = notePreview;
-            existingNote.title = noteText;
+    if (!chipMain) return;
+
+    if (!noteText) {
+        existingNote?.remove();
+    } else if (existingNote) {
+        existingNote.textContent = noteText;
+        existingNote.title = noteText;
+    } else {
+        const noteEl = document.createElement('div');
+        noteEl.className = 'sprint-note-preview';
+        noteEl.textContent = noteText;
+        noteEl.title = noteText;
+        const summary = chipMain.querySelector('.issue-chip-summary');
+        if (summary?.nextSibling) {
+            chipMain.insertBefore(noteEl, summary.nextSibling);
         } else {
-            const noteEl = document.createElement('div');
-            noteEl.className = 'sprint-note-preview';
-            noteEl.textContent = notePreview;
-            noteEl.title = noteText;
-            const summary = chipMain.querySelector('.issue-chip-summary');
-            if (summary?.nextSibling) {
-                chipMain.insertBefore(noteEl, summary.nextSibling);
+            chipMain.appendChild(noteEl);
+        }
+    }
+
+    if (!trackingModel.reminderLabel) {
+        existingReminderRow?.remove();
+    } else {
+        let row = existingReminderRow;
+        let pill = row?.querySelector('.sprint-reminder-pill');
+
+        if (!row) {
+            row = document.createElement('div');
+            row.className = 'sprint-reminder-row';
+            pill = document.createElement('span');
+            pill.className = 'sprint-reminder-pill';
+            row.appendChild(pill);
+            const anchor = chipMain.querySelector('.sprint-note-preview') || chipMain.querySelector('.issue-chip-summary');
+            if (anchor?.nextSibling) {
+                chipMain.insertBefore(row, anchor.nextSibling);
             } else {
-                chipMain.appendChild(noteEl);
+                chipMain.appendChild(row);
             }
         }
 
-        if (!tagHtml) {
-            existingRow?.remove();
-            return;
+        if (pill) {
+            pill.className = `sprint-reminder-pill${trackingModel.reminderIsOverdue ? ' is-overdue' : ''}`;
+            pill.textContent = `🔔 ${trackingModel.reminderLabel}`;
+            pill.title = trackingModel.reminderTitle;
         }
+    }
 
+    if (!tagHtml) {
+        existingRow?.remove();
+    } else {
         let row = existingRow;
         if (!row) {
             row = document.createElement('div');
             row.className = 'sprint-tag-row';
             row.innerHTML = '<div class="et-tag-read-list sprint-tag-list"></div>';
-            const anchor = chipMain.querySelector('.sprint-note-preview') || chipMain.querySelector('.issue-chip-summary');
+            const anchor = chipMain.querySelector('.sprint-reminder-row')
+                || chipMain.querySelector('.sprint-note-preview')
+                || chipMain.querySelector('.issue-chip-summary');
             if (anchor?.nextSibling) {
                 chipMain.insertBefore(row, anchor.nextSibling);
             } else {
@@ -262,37 +353,44 @@ async function refreshSprintTrackingChips() {
 
         const list = row.querySelector('.sprint-tag-list');
         if (list) list.innerHTML = tagHtml;
-    });
+    }
+
+    if (noteButton) noteButton.classList.toggle('has-note', hasTrackedItem);
 }
 
 // ============================================================
 // DASH STATE
 // ============================================================
 
-export function showDashState(state, msg = '') {
-    document.getElementById('dash-loading').classList.add('hidden');
-    document.getElementById('dash-error').classList.add('hidden');
-    document.getElementById('dash-empty').classList.add('hidden');
-    document.getElementById('dash-placeholder').classList.add('hidden');
-    document.getElementById('dev-cards-grid').classList.add('hidden');
-    document.getElementById('sprint-banner').classList.add('hidden');
-    document.getElementById('sprint-overview').classList.add('hidden');
+function setVisibility(el, isVisible) {
+    el?.classList.toggle('hidden', !isVisible);
+}
 
-    if (state === 'loading') {
-        document.getElementById('dash-loading').classList.remove('hidden');
-        if (msg) document.getElementById('dash-loading-text').textContent = msg;
-    } else if (state === 'error') {
-        document.getElementById('dash-error').classList.remove('hidden');
-        if (msg) document.getElementById('dash-error-text').textContent = msg;
-    } else if (state === 'empty') {
-        document.getElementById('dash-empty').classList.remove('hidden');
-    } else if (state === 'placeholder') {
-        document.getElementById('dash-placeholder').classList.remove('hidden');
-    } else if (state === 'data') {
-        document.getElementById('sprint-banner').classList.remove('hidden');
-        document.getElementById('sprint-overview').classList.remove('hidden');
-        document.getElementById('dev-cards-grid').classList.remove('hidden');
+function isDashDataVisible() {
+    return ['sprint-banner', 'sprint-overview', 'dev-cards-grid']
+        .some(id => !document.getElementById(id)?.classList.contains('hidden'));
+}
+
+export function showDashState(state, msg = '') {
+    const shell = document.getElementById('dash-content-shell');
+    const errorText = document.getElementById('dash-error-text');
+    const visibility = getDashVisibilityState(state, { hasVisibleData: isDashDataVisible() });
+
+    if (msg && visibility.showError && errorText) {
+        errorText.textContent = msg;
     }
+
+    setVisibility(document.getElementById('dash-error'), visibility.showError);
+    setVisibility(document.getElementById('dash-empty'), visibility.showEmpty);
+    setVisibility(document.getElementById('dash-placeholder'), visibility.showPlaceholder);
+    setVisibility(document.getElementById('dash-skeleton'), visibility.showSkeleton);
+    setVisibility(document.getElementById('dash-reload-overlay'), visibility.showReloadOverlay);
+    setVisibility(document.getElementById('sprint-banner'), visibility.showData);
+    setVisibility(document.getElementById('sprint-overview'), visibility.showData);
+    setVisibility(document.getElementById('dev-cards-grid'), visibility.showData);
+
+    shell?.classList.toggle('is-loading-overlay', visibility.showReloadOverlay);
+    if (shell) shell.setAttribute('aria-busy', visibility.isBusy ? 'true' : 'false');
 }
 
 
@@ -305,6 +403,7 @@ export async function loadDashboard(projectKey) {
     bindSprintViewListener();
     bindGithubAvailabilityListener();
     bindTrackingStorageListener();
+    bindTrackingEventListener();
     showDashState('loading', 'Connecting to Jira...');
     markAnalyticsPerf(`sprint:${projectKey}:start`);
 
@@ -435,7 +534,7 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
         _currentIssues = issues;
 
         if (issues.length === 0) {
-            _trackingState = { tagsMap: {}, tagDefs: {} };
+            _trackingState = { notesMap: {}, remindersMap: {}, tagsMap: {}, tagDefs: {} };
             showDashState('empty');
             return;
         }

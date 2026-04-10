@@ -1,6 +1,7 @@
 import { storage } from './storage.js';
 
 export const TAG_DEFS_STORAGE_KEY = 'tag_defs_jira';
+export const TRACKING_UPDATED_EVENT = 'pmtoolkit:tracking-updated';
 
 export const TAG_COLOR_OPTIONS = {
     red: {

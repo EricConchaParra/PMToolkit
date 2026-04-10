@@ -3,9 +3,9 @@
  * Developer card renderer — one card per assignee in the sprint dashboard
  */
 
-import { getTagInlineStyle, getTagObjects } from '../../../../common/tagging.js';
+import { getTagInlineStyle, getTagObjects, hasTrackedContent } from '../../../../common/tagging.js';
 import { buildBoardColumnBuckets, resolveIssueBoardColumn, summarizeBoardBuckets } from '../boardFlow.js';
-import { escapeHtml, formatDate, formatHours, calculateETA, spToHours, truncate, workingHoursElapsed, workingHoursBetween } from '../utils.js';
+import { escapeHtml, formatDate, formatHours, calculateETA, spToHours, workingHoursElapsed, workingHoursBetween } from '../utils.js';
 
 export function getInitialsOrImg(assignee) {
     if (!assignee) return { initials: '?', imgUrl: null };
@@ -22,12 +22,101 @@ function getIssueToneClass(issue, boardFlow) {
     return column ? `board-tone-${column.tone}` : 'board-tone-todo';
 }
 
+function isSameDay(left, right) {
+    return left.getFullYear() === right.getFullYear()
+        && left.getMonth() === right.getMonth()
+        && left.getDate() === right.getDate();
+}
+
+export function formatSprintReminderLabel(reminderTs, now = Date.now()) {
+    const reminderTime = Number(reminderTs);
+    if (!Number.isFinite(reminderTime) || reminderTime <= 0) return '';
+
+    const reminderDate = new Date(reminderTime);
+    if (Number.isNaN(reminderDate.getTime())) return '';
+
+    const nowDate = new Date(now);
+    const timeLabel = reminderDate.toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+
+    if (isSameDay(reminderDate, nowDate)) {
+        return `${reminderTime <= now ? 'Overdue' : 'Today'} ${timeLabel}`;
+    }
+
+    const tomorrow = new Date(nowDate);
+    tomorrow.setDate(nowDate.getDate() + 1);
+    if (isSameDay(reminderDate, tomorrow)) {
+        return `Tomorrow ${timeLabel}`;
+    }
+
+    const dateLabel = reminderDate.toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        ...(reminderDate.getFullYear() === nowDate.getFullYear() ? {} : { year: 'numeric' }),
+    });
+    return `${dateLabel} ${timeLabel}`;
+}
+
+export function formatSprintReminderTitle(reminderTs) {
+    const reminderTime = Number(reminderTs);
+    if (!Number.isFinite(reminderTime) || reminderTime <= 0) return '';
+
+    const reminderDate = new Date(reminderTime);
+    if (Number.isNaN(reminderDate.getTime())) return '';
+
+    return reminderDate.toLocaleString([], {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+}
+
+export function buildIssueTrackingViewModel(issueKey, tracking = {}, now = Date.now()) {
+    const noteText = String(tracking.notesMap?.[issueKey] || '').trim();
+    const reminderTsRaw = tracking.remindersMap?.[issueKey];
+    const reminderTs = Number.isFinite(Number(reminderTsRaw)) && Number(reminderTsRaw) > 0
+        ? Number(reminderTsRaw)
+        : null;
+    const tagLabels = tracking.tagsMap?.[issueKey] || [];
+    const tagDefs = tracking.tagDefs || {};
+    const tagHtml = renderReadOnlyTags(tagLabels, tagDefs);
+
+    return {
+        noteText,
+        reminderTs,
+        reminderLabel: reminderTs ? formatSprintReminderLabel(reminderTs, now) : '',
+        reminderTitle: reminderTs ? formatSprintReminderTitle(reminderTs) : '',
+        reminderIsOverdue: reminderTs ? reminderTs <= now : false,
+        tagHtml,
+        hasTrackedItem: hasTrackedContent(noteText, reminderTs, tagLabels),
+    };
+}
+
+export function buildIssueTrackingMarkup(issueKey, tracking = {}, now = Date.now()) {
+    const model = buildIssueTrackingViewModel(issueKey, tracking, now);
+
+    return {
+        ...model,
+        noteHtml: model.noteText
+            ? `<div class="sprint-note-preview" title="${escapeHtml(model.noteText)}">${escapeHtml(model.noteText)}</div>`
+            : '',
+        reminderHtml: model.reminderLabel
+            ? `<div class="sprint-reminder-row"><span class="sprint-reminder-pill${model.reminderIsOverdue ? ' is-overdue' : ''}" title="${escapeHtml(model.reminderTitle)}">🔔 ${escapeHtml(model.reminderLabel)}</span></div>`
+            : '',
+        tagRowHtml: model.tagHtml
+            ? `<div class="sprint-tag-row"><div class="et-tag-read-list sprint-tag-list">${model.tagHtml}</div></div>`
+            : '',
+        notesButtonClassName: `et-notes-btn${model.hasTrackedItem ? ' has-note' : ''}`,
+    };
+}
+
 export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracking = {}, boardFlow) {
     const { assignee, issues, velocity } = devData;
     const { hoursPerDay, spHours } = settings;
-    const notesMap = tracking.notesMap || {};
-    const tagsMap = tracking.tagsMap || {};
-    const tagDefs = tracking.tagDefs || {};
 
     const now = new Date();
     const sprintEnd = sprintEndDate ? new Date(sprintEndDate) : null;
@@ -59,26 +148,27 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
     const visibleBuckets = buckets.filter(bucket => bucket.count > 0 || bucket.column.isDone);
 
     function issueChip(issue) {
-        const noteText = String(notesMap[issue.key] || '').trim();
-        const notePreview = noteText ? truncate(noteText.replace(/\s+/g, ' '), 120) : '';
-        const tagHtml = renderReadOnlyTags(tagsMap[issue.key] || [], tagDefs);
+        const trackingMarkup = buildIssueTrackingMarkup(issue.key, tracking, now.getTime());
         const overdueAge = overdueCounts.get(issue.key);
         return `
             <div class="issue-chip ${getIssueToneClass(issue, boardFlow)}${overdueAge ? ' issue-chip-overdue' : ''}" data-gh-key="${issue.key}" data-status="${escapeHtml(issue.fields?.status?.name || '?')}">
                 <div class="issue-chip-main">
-                    <div class="issue-chip-top">
-                        <a class="issue-chip-key" href="https://${jiraHost}/browse/${issue.key}" target="_blank">${issue.key}</a>
-                        <span class="issue-chip-status">${escapeHtml(issue.fields?.status?.name || '?')}</span>
-                        <span class="issue-chip-sp">${issue._sp ?? '?'} SP</span>
-                        ${overdueAge ? `<span class="overdue-time-badge">⏰ ${escapeHtml(formatHours(overdueAge))} in column</span>` : ''}
+                    <div class="issue-chip-header">
+                        <div class="issue-chip-top">
+                            <a class="issue-chip-key" href="https://${jiraHost}/browse/${issue.key}" target="_blank">${issue.key}</a>
+                            <span class="issue-chip-status">${escapeHtml(issue.fields?.status?.name || '?')}</span>
+                            <span class="issue-chip-sp">${issue._sp ?? '?'} SP</span>
+                            ${overdueAge ? `<span class="overdue-time-badge">⏰ ${escapeHtml(formatHours(overdueAge))} in column</span>` : ''}
+                        </div>
+                        <div class="issue-chip-actions">
+                            <button class="${trackingMarkup.notesButtonClassName}" data-issue-key="${issue.key}" data-summary="${escapeHtml(issue.fields?.summary || '')}" title="Notes">📝</button>
+                            <button class="overdue-copy-btn" title="Copy for Slack" data-key="${issue.key}" data-summary="${escapeHtml(issue.fields?.summary || '')}" data-url="https://${jiraHost}/browse/${issue.key}">🔗</button>
+                        </div>
                     </div>
                     <div class="issue-chip-summary" title="${escapeHtml(issue.fields?.summary || '')}">${escapeHtml(issue.fields?.summary || '')}</div>
-                    ${notePreview ? `<div class="sprint-note-preview" title="${escapeHtml(noteText)}">${escapeHtml(notePreview)}</div>` : ''}
-                    ${tagHtml ? `<div class="sprint-tag-row"><div class="et-tag-read-list sprint-tag-list">${tagHtml}</div></div>` : ''}
-                </div>
-                <div class="issue-chip-actions">
-                    <button class="et-notes-btn" data-issue-key="${issue.key}" data-summary="${escapeHtml(issue.fields?.summary || '')}" title="Notes">📝</button>
-                    <button class="overdue-copy-btn" title="Copy for Slack" data-key="${issue.key}" data-summary="${escapeHtml(issue.fields?.summary || '')}" data-url="https://${jiraHost}/browse/${issue.key}">🔗</button>
+                    ${trackingMarkup.noteHtml}
+                    ${trackingMarkup.reminderHtml}
+                    ${trackingMarkup.tagRowHtml}
                 </div>
             </div>
         `;

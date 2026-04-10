@@ -31,10 +31,6 @@
                 <span class="nav-icon">📈</span>
                 <span class="nav-label">Team Performance</span>
             </button>
-            <button class="nav-item" data-view="followup-dashboard">
-                <span class="nav-icon">🔔</span>
-                <span class="nav-label">Follow-up Work</span>
-            </button>
             <button class="nav-item" data-view="sprint-closure-report">
                 <span class="nav-icon">📸</span>
                 <span class="nav-label">Sprint Closure</span>
@@ -47,7 +43,7 @@
 
         <div class="sidebar-footer">
             <a class="sidebar-feedback-link" href="https://tally.so/r/yPxMax" target="_blank" rel="noreferrer">Share feedback</a>
-            <span>v0.8.0 · PMsToolKit</span>
+            <span>v0.9.0 · PMsToolKit</span>
         </div>
     </aside>
 
@@ -142,79 +138,304 @@
                 </div>
             </div>
 
-            <!-- Sprint Info Banner -->
-            <div id="sprint-banner" class="sprint-banner hidden">
-                <div class="sprint-banner-info">
-                    <span class="sprint-label">Active Sprint</span>
-                    <span class="sprint-name" id="sprint-name">—</span>
+            <div id="dash-content-shell" class="dash-content-shell" aria-busy="false">
+                <!-- Dashboard States -->
+                <div id="dash-error" class="state-box error hidden">
+                    <span class="state-icon">❌</span>
+                    <p id="dash-error-text">An error occurred.</p>
                 </div>
-                <div class="sprint-meta">
-                    <div class="sprint-meta-item">
-                        <span class="meta-label">Start</span>
-                        <span class="meta-value" id="sprint-start">—</span>
+
+                <div id="dash-empty" class="state-box hidden">
+                    <span class="state-icon">😴</span>
+                    <p>No active sprint found for the selected project, or the sprint has no assigned issues.</p>
+                </div>
+
+                <div id="dash-placeholder" class="state-box">
+                    <span class="state-icon">👆</span>
+                    <p>Select a project above to load the active sprint dashboard.</p>
+                </div>
+
+                <div id="dash-skeleton" class="dash-skeleton hidden" aria-hidden="true">
+                    <div class="dash-skeleton-banner">
+                        <div class="dash-skeleton-banner-info">
+                            <span class="dash-skeleton-block dash-skeleton-pill dash-skeleton-banner-label"></span>
+                            <span class="dash-skeleton-block dash-skeleton-banner-title"></span>
+                        </div>
+                        <div class="dash-skeleton-banner-meta">
+                            <div class="dash-skeleton-banner-item">
+                                <span class="dash-skeleton-block dash-skeleton-meta-label"></span>
+                                <span class="dash-skeleton-block dash-skeleton-meta-value"></span>
+                            </div>
+                            <div class="dash-skeleton-banner-item">
+                                <span class="dash-skeleton-block dash-skeleton-meta-label"></span>
+                                <span class="dash-skeleton-block dash-skeleton-meta-value"></span>
+                            </div>
+                            <div class="dash-skeleton-banner-item">
+                                <span class="dash-skeleton-block dash-skeleton-meta-label"></span>
+                                <span class="dash-skeleton-block dash-skeleton-meta-value dash-skeleton-meta-value-lg"></span>
+                            </div>
+                            <div class="dash-skeleton-banner-item">
+                                <span class="dash-skeleton-block dash-skeleton-meta-label"></span>
+                                <span class="dash-skeleton-block dash-skeleton-meta-value dash-skeleton-meta-value-lg"></span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="sprint-meta-item">
-                        <span class="meta-label">End</span>
-                        <span class="meta-value" id="sprint-end">—</span>
+
+                    <div class="dash-skeleton-overview">
+                        <div class="dash-skeleton-overview-header">
+                            <span class="dash-skeleton-block dash-skeleton-overview-title"></span>
+                            <span class="dash-skeleton-block dash-skeleton-overview-subtitle"></span>
+                        </div>
+                        <div class="dash-skeleton-overview-stats">
+                            <div class="dash-skeleton-stat">
+                                <span class="dash-skeleton-block dash-skeleton-stat-icon"></span>
+                                <div class="dash-skeleton-stat-body">
+                                    <span class="dash-skeleton-block dash-skeleton-stat-label"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-value"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-copy"></span>
+                                </div>
+                            </div>
+                            <div class="dash-skeleton-stat">
+                                <span class="dash-skeleton-block dash-skeleton-stat-icon"></span>
+                                <div class="dash-skeleton-stat-body">
+                                    <span class="dash-skeleton-block dash-skeleton-stat-label"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-value"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-copy"></span>
+                                </div>
+                            </div>
+                            <div class="dash-skeleton-stat">
+                                <span class="dash-skeleton-block dash-skeleton-stat-icon"></span>
+                                <div class="dash-skeleton-stat-body">
+                                    <span class="dash-skeleton-block dash-skeleton-stat-label"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-value"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-copy"></span>
+                                </div>
+                            </div>
+                            <div class="dash-skeleton-stat">
+                                <span class="dash-skeleton-block dash-skeleton-stat-icon"></span>
+                                <div class="dash-skeleton-stat-body">
+                                    <span class="dash-skeleton-block dash-skeleton-stat-label"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-value"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-stat-copy"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="dash-skeleton-overview-progress">
+                            <div class="dash-skeleton-overview-progress-labels">
+                                <span class="dash-skeleton-block dash-skeleton-progress-copy"></span>
+                                <span class="dash-skeleton-block dash-skeleton-progress-pct"></span>
+                            </div>
+                            <span class="dash-skeleton-block dash-skeleton-progress-track"></span>
+                            <div class="dash-skeleton-overview-legend">
+                                <span class="dash-skeleton-block dash-skeleton-legend-item"></span>
+                                <span class="dash-skeleton-block dash-skeleton-legend-item"></span>
+                                <span class="dash-skeleton-block dash-skeleton-legend-item"></span>
+                            </div>
+                        </div>
+                        <div class="dash-skeleton-overview-prediction">
+                            <span class="dash-skeleton-block dash-skeleton-prediction-icon"></span>
+                            <div class="dash-skeleton-overview-prediction-body">
+                                <span class="dash-skeleton-block dash-skeleton-prediction-label"></span>
+                                <span class="dash-skeleton-block dash-skeleton-prediction-copy"></span>
+                                <span class="dash-skeleton-block dash-skeleton-prediction-copy dash-skeleton-prediction-copy-short"></span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="sprint-meta-item">
-                        <span class="meta-label">Days left</span>
-                        <span class="meta-value highlight" id="sprint-days-left">—</span>
+
+                    <div class="dash-skeleton-cards">
+                        <div class="dash-skeleton-card">
+                            <div class="dash-skeleton-card-header">
+                                <span class="dash-skeleton-block dash-skeleton-avatar"></span>
+                                <div class="dash-skeleton-card-heading">
+                                    <span class="dash-skeleton-block dash-skeleton-card-title"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-subtitle"></span>
+                                </div>
+                                <span class="dash-skeleton-block dash-skeleton-card-badge"></span>
+                            </div>
+                            <div class="dash-skeleton-card-body">
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-stat"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-bar"></span>
+                                    <div class="dash-skeleton-card-row">
+                                        <span class="dash-skeleton-block dash-skeleton-card-copy"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-card-copy dash-skeleton-card-copy-short"></span>
+                                    </div>
+                                </div>
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title dash-skeleton-section-title-wide"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-line"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-line dash-skeleton-card-line-short"></span>
+                                </div>
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title"></span>
+                                    <div class="dash-skeleton-tag-row">
+                                        <span class="dash-skeleton-block dash-skeleton-tag"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-tag"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-tag dash-skeleton-tag-short"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dash-skeleton-card">
+                            <div class="dash-skeleton-card-header">
+                                <span class="dash-skeleton-block dash-skeleton-avatar"></span>
+                                <div class="dash-skeleton-card-heading">
+                                    <span class="dash-skeleton-block dash-skeleton-card-title"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-subtitle"></span>
+                                </div>
+                                <span class="dash-skeleton-block dash-skeleton-card-badge"></span>
+                            </div>
+                            <div class="dash-skeleton-card-body">
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-stat"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-bar"></span>
+                                    <div class="dash-skeleton-card-row">
+                                        <span class="dash-skeleton-block dash-skeleton-card-copy"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-card-copy dash-skeleton-card-copy-short"></span>
+                                    </div>
+                                </div>
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title dash-skeleton-section-title-wide"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-line"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-line dash-skeleton-card-line-short"></span>
+                                </div>
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title"></span>
+                                    <div class="dash-skeleton-tag-row">
+                                        <span class="dash-skeleton-block dash-skeleton-tag"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-tag"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-tag dash-skeleton-tag-short"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dash-skeleton-card">
+                            <div class="dash-skeleton-card-header">
+                                <span class="dash-skeleton-block dash-skeleton-avatar"></span>
+                                <div class="dash-skeleton-card-heading">
+                                    <span class="dash-skeleton-block dash-skeleton-card-title"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-subtitle"></span>
+                                </div>
+                                <span class="dash-skeleton-block dash-skeleton-card-badge"></span>
+                            </div>
+                            <div class="dash-skeleton-card-body">
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-stat"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-bar"></span>
+                                    <div class="dash-skeleton-card-row">
+                                        <span class="dash-skeleton-block dash-skeleton-card-copy"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-card-copy dash-skeleton-card-copy-short"></span>
+                                    </div>
+                                </div>
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title dash-skeleton-section-title-wide"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-line"></span>
+                                    <span class="dash-skeleton-block dash-skeleton-card-line dash-skeleton-card-line-short"></span>
+                                </div>
+                                <div class="dash-skeleton-card-section">
+                                    <span class="dash-skeleton-block dash-skeleton-section-title"></span>
+                                    <div class="dash-skeleton-tag-row">
+                                        <span class="dash-skeleton-block dash-skeleton-tag"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-tag"></span>
+                                        <span class="dash-skeleton-block dash-skeleton-tag dash-skeleton-tag-short"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="sprint-meta-item">
-                        <span class="meta-label">Work hrs left</span>
-                        <span class="meta-value highlight" id="sprint-hours-left">—</span>
+                </div>
+
+                <div id="dash-live-content">
+                    <!-- Sprint Info Banner -->
+                    <div id="sprint-banner" class="sprint-banner hidden">
+                        <div class="sprint-banner-info">
+                            <span class="sprint-label">Active Sprint</span>
+                            <span class="sprint-name" id="sprint-name">—</span>
+                        </div>
+                        <div class="sprint-meta">
+                            <div class="sprint-meta-item">
+                                <span class="meta-label">Start</span>
+                                <span class="meta-value" id="sprint-start">—</span>
+                            </div>
+                            <div class="sprint-meta-item">
+                                <span class="meta-label">End</span>
+                                <span class="meta-value" id="sprint-end">—</span>
+                            </div>
+                            <div class="sprint-meta-item">
+                                <span class="meta-label">Days left</span>
+                                <span class="meta-value highlight" id="sprint-days-left">—</span>
+                            </div>
+                            <div class="sprint-meta-item">
+                                <span class="meta-label">Work hrs left</span>
+                                <span class="meta-value highlight" id="sprint-hours-left">—</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sprint Overview -->
+                    <div id="sprint-overview" class="sprint-overview hidden">
+                        <div class="overview-header">
+                            <span class="overview-title">📋 Sprint Overview</span>
+                            <span class="overview-subtitle" id="overview-subtitle">Team-level summary</span>
+                        </div>
+                        <div class="overview-stats" id="overview-stats"></div>
+                        <div class="overview-progress-section">
+                            <div class="overview-progress-labels">
+                                <span id="overview-progress-label">Sprint Progress</span>
+                                <span id="overview-progress-pct" class="overview-progress-pct">0%</span>
+                            </div>
+                            <div class="overview-progress-track" id="overview-progress-track"></div>
+                            <div class="overview-progress-legend" id="overview-progress-legend"></div>
+                        </div>
+                        <div class="overview-prediction" id="overview-prediction">
+                            <div class="prediction-icon" id="prediction-icon">—</div>
+                            <div class="prediction-body">
+                                <div class="prediction-label" id="prediction-label">Calculating…</div>
+                                <div class="prediction-detail" id="prediction-detail"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Developer Cards -->
+                    <div id="dev-cards-grid" class="dev-cards-grid hidden"></div>
+                </div>
+
+                <div id="dash-reload-overlay" class="dash-reload-overlay hidden" aria-hidden="true">
+                    <div class="dash-reload-overlay-shell">
+                        <div class="dash-reload-overlay-banner">
+                            <span class="dash-skeleton-block dash-skeleton-pill dash-reload-overlay-pill"></span>
+                            <span class="dash-skeleton-block dash-reload-overlay-title"></span>
+                            <div class="dash-reload-overlay-meta">
+                                <span class="dash-skeleton-block dash-reload-overlay-meta-item"></span>
+                                <span class="dash-skeleton-block dash-reload-overlay-meta-item"></span>
+                                <span class="dash-skeleton-block dash-reload-overlay-meta-item"></span>
+                            </div>
+                        </div>
+                        <div class="dash-reload-overlay-overview">
+                            <span class="dash-skeleton-block dash-reload-overlay-copy"></span>
+                            <span class="dash-skeleton-block dash-reload-overlay-copy dash-reload-overlay-copy-short"></span>
+                            <span class="dash-skeleton-block dash-reload-overlay-track"></span>
+                        </div>
+                        <div class="dash-reload-overlay-cards">
+                            <div class="dash-reload-overlay-card">
+                                <span class="dash-skeleton-block dash-reload-overlay-card-title"></span>
+                                <span class="dash-skeleton-block dash-reload-overlay-card-copy"></span>
+                                <span class="dash-skeleton-block dash-reload-overlay-card-copy dash-reload-overlay-card-copy-short"></span>
+                            </div>
+                            <div class="dash-reload-overlay-card">
+                                <span class="dash-skeleton-block dash-reload-overlay-card-title"></span>
+                                <span class="dash-skeleton-block dash-reload-overlay-card-copy"></span>
+                                <span class="dash-skeleton-block dash-reload-overlay-card-copy dash-reload-overlay-card-copy-short"></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-
-            <!-- Dashboard States -->
-            <div id="dash-loading" class="state-box hidden">
-                <div class="spinner"></div>
-                <p id="dash-loading-text">Loading sprint data...</p>
-            </div>
-
-            <div id="dash-error" class="state-box error hidden">
-                <span class="state-icon">❌</span>
-                <p id="dash-error-text">An error occurred.</p>
-            </div>
-
-            <div id="dash-empty" class="state-box hidden">
-                <span class="state-icon">😴</span>
-                <p>No active sprint found for the selected project, or the sprint has no assigned issues.</p>
-            </div>
-
-            <div id="dash-placeholder" class="state-box">
-                <span class="state-icon">👆</span>
-                <p>Select a project above to load the active sprint dashboard.</p>
-            </div>
-
-            <!-- Sprint Overview -->
-            <div id="sprint-overview" class="sprint-overview hidden">
-                <div class="overview-header">
-                    <span class="overview-title">📋 Sprint Overview</span>
-                    <span class="overview-subtitle" id="overview-subtitle">Team-level summary</span>
-                </div>
-                <div class="overview-stats" id="overview-stats"></div>
-                <div class="overview-progress-section">
-                    <div class="overview-progress-labels">
-                        <span id="overview-progress-label">Sprint Progress</span>
-                        <span id="overview-progress-pct" class="overview-progress-pct">0%</span>
-                    </div>
-                    <div class="overview-progress-track" id="overview-progress-track"></div>
-                    <div class="overview-progress-legend" id="overview-progress-legend"></div>
-                </div>
-                <div class="overview-prediction" id="overview-prediction">
-                    <div class="prediction-icon" id="prediction-icon">—</div>
-                    <div class="prediction-body">
-                        <div class="prediction-label" id="prediction-label">Calculating…</div>
-                        <div class="prediction-detail" id="prediction-detail"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Developer Cards -->
-            <div id="dev-cards-grid" class="dev-cards-grid hidden"></div>
         </div>
 
         <!-- ========== PERFORMANCE DASHBOARD VIEW ========== -->

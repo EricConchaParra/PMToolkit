@@ -11,7 +11,6 @@ import {
     getTagObjects,
     hasTrackingStorageChange,
     matchesSearchTerm,
-    matchesTagFilter,
     normalizeTagList,
     parseTrackingStorage,
 } from '../common/tagging.js';
@@ -41,7 +40,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const notesList = document.getElementById('notes-list');
     const notesCount = document.getElementById('notes-count');
     const searchInput = document.getElementById('search');
-    const tagFilterHost = document.getElementById('tag-filter-host');
     const testNotifBtn = document.getElementById('test-notification-btn');
     const notifStatus = document.getElementById('notif-status');
     const githubToggle = document.getElementById('github-pr-link-toggle');
@@ -54,8 +52,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isSettingsOpen = false;
     let currentJiraHost = 'jira.atlassian.net';
     let popupTagDefs = {};
-    let selectedFilterTags = [];
-    let tagFilterEditor = null;
     let storageReloadTimer = null;
 
     function setPrimaryTitle(text) {
@@ -79,10 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function applyFiltersAndRender() {
-        const filtered = allNotes.filter(item => (
-            matchesSearchTerm(item, searchInput.value) &&
-            matchesTagFilter(item.tags, selectedFilterTags)
-        ));
+        const filtered = allNotes.filter(item => matchesSearchTerm(item, searchInput.value));
         renderNotes(filtered);
     }
 
@@ -117,8 +110,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             meta: metaMap[key] || null,
         })).sort((a, b) => b.key.localeCompare(a.key));
 
-        tagFilterEditor?.setTagDefs(popupTagDefs);
-        selectedFilterTags = tagFilterEditor?.getValue() || selectedFilterTags;
         applyFiltersAndRender();
     }
 
@@ -127,11 +118,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         notesCount.textContent = notes.length;
 
         if (notes.length === 0) {
-            const hasFilters = Boolean(searchInput.value.trim() || selectedFilterTags.length);
+            const hasSearch = Boolean(searchInput.value.trim());
             notesList.innerHTML = `
                 <div class="empty-state">
-                    <div class="emoji">${hasFilters ? '🔎' : '📝'}</div>
-                    <p>${hasFilters ? 'No notes, reminders or tags match your filters.' : 'No notes, reminders or tags found.'}</p>
+                    <div class="emoji">${hasSearch ? '🔎' : '📝'}</div>
+                    <p>${hasSearch ? 'No notes, reminders or tags match your search.' : 'No notes, reminders or tags found.'}</p>
                 </div>
             `;
             return;
@@ -169,23 +160,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 el.innerHTML = `
                     <div class="note-header">
-                        <a href="https://${host}/browse/${item.key}" target="_blank" class="note-key">${escapeHtml(item.key)}</a>
+                        <div class="note-header-main">
+                            <a href="https://${host}/browse/${item.key}" target="_blank" class="note-key">${escapeHtml(item.key)}</a>
+                            ${statusHtml}
+                        </div>
                         <div class="note-actions">
                             <button class="icon-only edit-btn" title="Edit note">✏️</button>
                             <button class="icon-only copy-btn" title="Copy Link for Slack">🔗</button>
                             <button class="icon-only delete-btn" title="Delete tracked item">🗑️</button>
                         </div>
                     </div>
+                    <div class="note-summary" title="${escapeHtml(summaryText)}">${escapeHtml(summaryText)}</div>
                     <div class="note-meta">
-                        <div class="note-meta-top">
-                            ${statusHtml}
-                            <div class="note-summary" title="${escapeHtml(summaryText)}">${escapeHtml(summaryText)}</div>
-                        </div>
                         <div class="note-meta-bottom">
                             👤 ${escapeHtml(assigneeText)}
                         </div>
+                        ${renderTagList(item.tags, 'popup-note-tags')}
                     </div>
-                    ${renderTagList(item.tags, 'popup-note-tags')}
                     ${item.text ? `<div class="note-text">${escapeHtml(item.text)}</div>` : ''}
                     ${reminderHtml}
                 `;
@@ -285,7 +276,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 color: created.color,
                             },
                         };
-                        tagFilterEditor?.setTagDefs(popupTagDefs);
                         tagEditor.setTagDefs(popupTagDefs);
                         return created;
                     },
@@ -339,7 +329,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             viewTitle.textContent = '⚙️ Settings';
             settingsToggle.textContent = '📝';
         } else {
-            notesView.style.display = 'block';
+            notesView.style.display = 'flex';
             settingsView.style.display = 'none';
             viewTitle.textContent = '📝 My Notes';
             settingsToggle.textContent = '⚙️';
@@ -440,18 +430,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => {
             githubPatStatus.style.display = 'none';
         }, 2500);
-    });
-
-    tagFilterEditor = createTagEditor(tagFilterHost, {
-        value: [],
-        tagDefs: {},
-        allowCreate: false,
-        compact: true,
-        placeholder: 'Filter tags...',
-        onChange: tags => {
-            selectedFilterTags = tags.slice();
-            applyFiltersAndRender();
-        },
     });
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
