@@ -1,4 +1,5 @@
 import { storage, syncStorage } from './storage';
+import { getIssueTypeMeta } from './issueType.js';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
@@ -18,7 +19,7 @@ export const jiraApi = {
 
         try {
             const resp = await fetch(
-                `https://${host}/rest/api/2/issue/${id}?fields=summary,assignee,status`,
+                `https://${host}/rest/api/2/issue/${id}?fields=summary,assignee,status,issuetype`,
                 { credentials: 'include' }
             );
             if (!resp.ok) return null;
@@ -29,7 +30,8 @@ export const jiraApi = {
                 status: {
                     name: data.fields?.status?.name || 'Unknown',
                     category: data.fields?.status?.statusCategory?.key || 'new'
-                }
+                },
+                issueType: getIssueTypeMeta(data),
             };
         } catch (e) {
             console.error('PMsToolKit: API fetch error', e);

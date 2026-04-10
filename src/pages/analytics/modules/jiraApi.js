@@ -130,7 +130,7 @@ export async function fetchBoardConfiguration(host, boardId) {
 }
 
 export async function fetchSprintIssues(host, sprintId, spFieldId, extraFields = []) {
-    const fields = ['summary', 'status', 'assignee', 'updated', spFieldId, ...extraFields].filter(Boolean);
+    const fields = ['summary', 'status', 'assignee', 'updated', 'issuetype', spFieldId, ...extraFields].filter(Boolean);
     let all = [];
     let nextPageToken;
     while (true) {

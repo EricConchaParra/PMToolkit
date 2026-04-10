@@ -214,6 +214,13 @@ body {
     min-width: 0;
 }
 
+.note-type-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    flex: 0 0 auto;
+}
+
 .note-key {
     font-size: 12px;
     font-weight: 800;

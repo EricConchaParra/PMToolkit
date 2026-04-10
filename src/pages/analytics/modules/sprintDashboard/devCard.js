@@ -3,6 +3,7 @@
  * Developer card renderer — one card per assignee in the sprint dashboard
  */
 
+import { getIssueTypeMeta } from '../../../../common/issueType.js';
 import { getTagInlineStyle, getTagObjects, hasTrackedContent } from '../../../../common/tagging.js';
 import { buildBoardColumnBuckets, resolveIssueBoardColumn, summarizeBoardBuckets } from '../boardFlow.js';
 import { escapeHtml, formatDate, formatHours, calculateETA, spToHours, workingHoursElapsed, workingHoursBetween } from '../utils.js';
@@ -150,11 +151,16 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
     function issueChip(issue) {
         const trackingMarkup = buildIssueTrackingMarkup(issue.key, tracking, now.getTime());
         const overdueAge = overdueCounts.get(issue.key);
+        const issueType = getIssueTypeMeta(issue);
+        const issueTypeHtml = issueType.iconUrl
+            ? `<img class="issue-chip-type-icon" src="${escapeHtml(issueType.iconUrl)}" alt="${escapeHtml(issueType.name || 'Issue type')}" title="${escapeHtml(issueType.name || 'Issue type')}">`
+            : '';
         return `
             <div class="issue-chip ${getIssueToneClass(issue, boardFlow)}${overdueAge ? ' issue-chip-overdue' : ''}" data-gh-key="${issue.key}" data-status="${escapeHtml(issue.fields?.status?.name || '?')}">
                 <div class="issue-chip-main">
                     <div class="issue-chip-header">
                         <div class="issue-chip-top">
+                            ${issueTypeHtml}
                             <a class="issue-chip-key" href="https://${jiraHost}/browse/${issue.key}" target="_blank">${issue.key}</a>
                             <span class="issue-chip-status">${escapeHtml(issue.fields?.status?.name || '?')}</span>
                             <span class="issue-chip-sp">${issue._sp ?? '?'} SP</span>

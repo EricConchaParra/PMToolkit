@@ -23,6 +23,10 @@ function makeIssue() {
         fields: {
             summary: 'Wire sprint auto-refresh',
             status: { id: '2', name: 'In Progress' },
+            issuetype: {
+                name: 'Task',
+                iconUrl: 'https://example.atlassian.net/images/icons/issuetypes/task.svg',
+            },
             assignee: {
                 accountId: 'acc-1',
                 displayName: 'Ada Lovelace',
@@ -165,6 +169,7 @@ describe('renderDevCard', () => {
         );
 
         expect(card.innerHTML).toContain('issue-chip-header');
+        expect(card.innerHTML).toContain('issue-chip-type-icon');
         expect(card.innerHTML.indexOf('issue-chip-actions')).toBeLessThan(card.innerHTML.indexOf('issue-chip-summary'));
     });
 });

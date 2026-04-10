@@ -2224,6 +2224,13 @@ body {
     min-width: 0;
 }
 
+.issue-chip-type-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    flex: 0 0 auto;
+}
+
 .issue-chip-assignee {
     display: flex;
     align-items: center;

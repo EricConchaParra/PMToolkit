@@ -1,5 +1,6 @@
 import { storage, syncStorage } from '../common/storage.js';
 import { jiraApi } from '../common/jira-api.js';
+import { getIssueTypeMeta } from '../common/issueType.js';
 import { createTagEditor } from '../common/tagEditor.js';
 import {
     ensureTagDefinition,
@@ -85,7 +86,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const metaMap = { ...parsed.metaMap };
         popupTagDefs = parsed.tagDefs;
 
-        const missingMetaKeys = parsed.allKeys.filter(key => !metaMap[key] || !metaMap[key].status);
+        const missingMetaKeys = parsed.allKeys.filter(key => {
+            const meta = metaMap[key];
+            return !meta || !meta.status || !Object.prototype.hasOwnProperty.call(meta, 'issueType');
+        });
         if (missingMetaKeys.length > 0) {
             setPrimaryTitle('⏳ Loading info...');
             for (const key of missingMetaKeys) {
@@ -95,6 +99,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         summary: details.summary,
                         assignee: details.assignee,
                         status: details.status,
+                        issueType: details.issueType,
                     };
                     await storage.set({ [`meta_jira:${key}`]: metaMap[key] });
                 }
@@ -143,6 +148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const summaryText = item.meta ? item.meta.summary : 'No summary loaded';
                 const assigneeText = item.meta ? item.meta.assignee : 'Unknown assignee';
                 const status = item.meta ? item.meta.status : null;
+                const issueType = getIssueTypeMeta(item.meta);
                 let statusClass = '';
                 if (status) {
                     const normalized = status.name.toLowerCase();
@@ -155,12 +161,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const statusHtml = status ? `
                     <div class="note-status-badge status-${escapeHtml(status.category)} ${statusClass}">${escapeHtml(status.name)}</div>
                 ` : '';
+                const issueTypeHtml = issueType.iconUrl ? `
+                    <img class="note-type-icon" src="${escapeHtml(issueType.iconUrl)}" alt="${escapeHtml(issueType.name || 'Issue type')}" title="${escapeHtml(issueType.name || 'Issue type')}">
+                ` : '';
 
                 const host = currentJiraHost;
 
                 el.innerHTML = `
                     <div class="note-header">
                         <div class="note-header-main">
+                            ${issueTypeHtml}
                             <a href="https://${host}/browse/${item.key}" target="_blank" class="note-key">${escapeHtml(item.key)}</a>
                             ${statusHtml}
                         </div>
@@ -359,6 +369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         summary: details.summary,
                         assignee: details.assignee,
                         status: details.status,
+                        issueType: details.issueType,
                     },
                 });
             } catch (err) {
