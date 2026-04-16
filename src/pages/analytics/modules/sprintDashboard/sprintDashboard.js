@@ -11,7 +11,10 @@ import {
     getNotesStorageKey,
     getReminderStorageKey,
     getTagsStorageKey,
+    getTagObjects,
     hasTrackingStorageChange,
+    matchesTagFilter,
+    normalizeTagLabel,
     parseTrackingStorage,
 } from '../../../../common/tagging.js';
 import {
@@ -23,7 +26,7 @@ import {
 } from '../jiraApi.js';
 import { createBoardFlow, resolveCurrentBoardColumnSince, resolveIssueBoardColumn } from '../boardFlow.js';
 import { fetchIssueTimeline } from '../issueTimeline.js';
-import { workingHoursBetween, formatDate } from '../utils.js';
+import { workingHoursBetween, formatDate, escapeHtml } from '../utils.js';
 import { buildIssueTrackingViewModel, renderDevCard, renderReadOnlyTags } from './devCard.js';
 import { renderSprintOverview } from './sprintOverview.js';
 import { getDashVisibilityState } from './dashVisibility.js';
@@ -55,12 +58,17 @@ let _githubForceRefresh = false;
 let _currentSprint = null;
 let _trackingReloadTimer = null;
 let _currentIssues = [];
+let _selectedTagFilter = '';
+let _velocityByAssignee = {};
+let _tagFilterListenerBound = false;
 let _trackingState = {
     notesMap: {},
     remindersMap: {},
     tagsMap: {},
     tagDefs: {},
 };
+
+const ANY_TAG_FILTER_VALUE = '__any_tag__';
 
 export function getCurrentSprints() { return _currentSprints; }
 export function getSelectedSprintId() { return _selectedSprintId; }
@@ -198,6 +206,163 @@ export function buildSprintTrackingState(stored = {}) {
     };
 }
 
+export function buildSprintTagFilterOptions(issues = [], tracking = {}) {
+    const tagMap = new Map();
+
+    (Array.isArray(issues) ? issues : []).forEach(issue => {
+        getTagObjects(tracking.tagsMap?.[issue.key] || [], tracking.tagDefs || {}).forEach(tag => {
+            if (!tagMap.has(tag.normalized)) {
+                tagMap.set(tag.normalized, tag.label);
+            }
+        });
+    });
+
+    const options = Array.from(tagMap.entries())
+        .map(([value, label]) => ({ value, label }))
+        .sort((left, right) => left.label.localeCompare(right.label));
+
+    return [
+        { value: '', label: 'No Filter' },
+        { value: ANY_TAG_FILTER_VALUE, label: 'Any Tag' },
+        ...options,
+    ];
+}
+
+export function filterSprintIssuesByTag(issues = [], selectedTag = '', tracking = {}) {
+    if (selectedTag === ANY_TAG_FILTER_VALUE) {
+        return (Array.isArray(issues) ? issues : []).filter(issue =>
+            (tracking.tagsMap?.[issue.key] || []).length > 0
+        );
+    }
+
+    const normalizedSelectedTag = normalizeTagLabel(selectedTag);
+    if (!normalizedSelectedTag) return Array.isArray(issues) ? issues.slice() : [];
+
+    return (Array.isArray(issues) ? issues : []).filter(issue =>
+        matchesTagFilter(tracking.tagsMap?.[issue.key] || [], [normalizedSelectedTag])
+    );
+}
+
+function renderSprintTagFilter(issues = _currentIssues, tracking = _trackingState) {
+    const select = document.getElementById('sprint-tag-filter');
+    if (!select) return [{ value: '', label: 'No Filter' }];
+
+    const options = buildSprintTagFilterOptions(issues, tracking);
+    const optionValues = new Set(options.map(option => option.value));
+    const normalizedSelection = _selectedTagFilter === ANY_TAG_FILTER_VALUE
+        ? ANY_TAG_FILTER_VALUE
+        : normalizeTagLabel(_selectedTagFilter);
+
+    if (!optionValues.has(normalizedSelection)) {
+        _selectedTagFilter = '';
+    } else {
+        _selectedTagFilter = normalizedSelection;
+    }
+
+    select.innerHTML = options.map(option => `
+        <option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>
+    `).join('');
+    select.value = _selectedTagFilter;
+    select.disabled = options.length <= 1;
+    select.title = options.length <= 1
+        ? 'No tags found in this sprint'
+        : 'Filter sprint issues by tag';
+
+    return options;
+}
+
+function getVelocity(accountId) {
+    const spList = _velocityByAssignee[accountId] || [];
+    if (spList.length === 0) return { avg: 0, sprints: [], trend: 'same' };
+
+    const total = spList.reduce((sum, sprint) => sum + sprint.sp, 0);
+    const avg = Math.round((total / spList.length) * 10) / 10;
+    let trend = 'same';
+    if (spList.length >= 2) {
+        const last = spList[spList.length - 1].sp;
+        const prev = spList[spList.length - 2].sp;
+        trend = last > prev ? 'up' : last < prev ? 'down' : 'same';
+    }
+
+    return { avg, sprints: spList, trend };
+}
+
+function renderCurrentSprintDashboard() {
+    if (!_currentSprint || !_boardFlow) return;
+
+    const grid = document.getElementById('dev-cards-grid');
+    if (!grid) return;
+
+    const filterOptions = renderSprintTagFilter(_currentIssues, _trackingState);
+    const visibleIssues = filterSprintIssuesByTag(_currentIssues, _selectedTagFilter, _trackingState);
+    const selectedTagLabel = filterOptions.find(option => option.value === _selectedTagFilter)?.label || '';
+
+    const devMap = {};
+    visibleIssues.forEach(issue => {
+        const key = issue.fields?.assignee?.accountId || 'unassigned';
+        if (!devMap[key]) devMap[key] = { assignee: issue.fields?.assignee || null, issues: [] };
+        devMap[key].issues.push(issue);
+    });
+
+    grid.innerHTML = '';
+
+    const sortedDevs = Object.values(devMap).sort((left, right) => {
+        const leftName = left.assignee?.displayName || 'Unassigned';
+        const rightName = right.assignee?.displayName || 'Unassigned';
+        return leftName.localeCompare(rightName);
+    });
+
+    for (const dev of sortedDevs) {
+        const accountId = dev.assignee?.accountId || 'unassigned';
+        const velocity = getVelocity(accountId);
+        const card = renderDevCard(
+            { assignee: dev.assignee, issues: dev.issues, velocity },
+            _currentSprint.endDate,
+            _settings,
+            _host,
+            _trackingState,
+            _boardFlow
+        );
+        grid.appendChild(card);
+    }
+
+    if (!visibleIssues.length) {
+        grid.innerHTML = `
+            <div class="dash-filter-empty">
+                No issues match the selected tag${selectedTagLabel ? `: ${escapeHtml(selectedTagLabel)}` : '.'}
+            </div>
+        `;
+    }
+
+    const devCount = Object.values(devMap).filter(dev => dev.assignee !== null).length;
+    const totalCommittedSP = visibleIssues.reduce((sum, issue) => sum + (issue._sp || 0), 0);
+    const teamVelAvg = Object.keys(devMap).reduce((sum, key) => {
+        const accountId = devMap[key].assignee?.accountId || key;
+        return sum + (getVelocity(accountId)?.avg || 0);
+    }, 0);
+
+    document.querySelectorAll('.prediction-velocity-hint').forEach(el => el.remove());
+    renderSprintOverview(
+        visibleIssues,
+        _currentSprint,
+        _settings,
+        devCount,
+        Math.round(teamVelAvg * 10) / 10,
+        totalCommittedSP,
+        _boardFlow
+    );
+
+    const overviewSubtitle = document.getElementById('overview-subtitle');
+    if (overviewSubtitle && _selectedTagFilter) {
+        overviewSubtitle.textContent = `${overviewSubtitle.textContent} · tag: ${selectedTagLabel}`;
+    }
+
+    renderGithubStatus();
+    if (getActiveView() === 'sprint-dashboard') {
+        void enrichCurrentSprintView();
+    }
+}
+
 function bindTrackingStorageListener() {
     if (_trackingListenerBound || typeof chrome === 'undefined' || !chrome.storage) return;
 
@@ -248,9 +413,7 @@ function bindTrackingEventListener() {
             };
         }
 
-        document
-            .querySelectorAll(`.issue-chip[data-gh-key="${issueKey}"]`)
-            .forEach(chip => updateSprintTrackingChip(chip));
+        renderCurrentSprintDashboard();
     });
 
     _trackingEventListenerBound = true;
@@ -265,7 +428,23 @@ async function refreshSprintTrackingChips() {
 
     await loadSprintTrackingState(_currentIssues);
 
-    document.querySelectorAll('.issue-chip[data-gh-key]').forEach(chip => updateSprintTrackingChip(chip));
+    renderCurrentSprintDashboard();
+}
+
+function bindTagFilterListener() {
+    if (_tagFilterListenerBound) return;
+
+    const select = document.getElementById('sprint-tag-filter');
+    if (!select) return;
+
+    select.addEventListener('change', event => {
+        _selectedTagFilter = event.target.value === ANY_TAG_FILTER_VALUE
+            ? ANY_TAG_FILTER_VALUE
+            : normalizeTagLabel(event.target.value);
+        renderCurrentSprintDashboard();
+    });
+
+    _tagFilterListenerBound = true;
 }
 
 function updateSprintTrackingChip(chip) {
@@ -400,10 +579,13 @@ export async function loadDashboard(projectKey) {
     const requestId = ++_loadRequestId;
     _currentProjectKey = projectKey;
     _boardFlow = null;
+    _velocityByAssignee = {};
+    renderSprintTagFilter([], { notesMap: {}, remindersMap: {}, tagsMap: {}, tagDefs: {} });
     bindSprintViewListener();
     bindGithubAvailabilityListener();
     bindTrackingStorageListener();
     bindTrackingEventListener();
+    bindTagFilterListener();
     showDashState('loading', 'Connecting to Jira...');
     markAnalyticsPerf(`sprint:${projectKey}:start`);
 
@@ -534,7 +716,9 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
         _currentIssues = issues;
 
         if (issues.length === 0) {
+            _velocityByAssignee = {};
             _trackingState = { notesMap: {}, remindersMap: {}, tagsMap: {}, tagDefs: {} };
+            renderSprintTagFilter([], _trackingState);
             showDashState('empty');
             return;
         }
@@ -546,14 +730,6 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
 
         await loadSprintTrackingState(issues);
         if (requestId !== _loadRequestId) return;
-
-        // Group by assignee
-        const devMap = {};
-        issues.forEach(i => {
-            const key = i.fields?.assignee?.accountId || 'unassigned';
-            if (!devMap[key]) devMap[key] = { assignee: i.fields?.assignee || null, issues: [] };
-            devMap[key].issues.push(i);
-        });
 
         showDashState('loading', 'Checking board column durations...');
         const activeIssues = issues.filter(issue => resolveIssueBoardColumn(issue, boardFlow)?.isDone !== true);
@@ -589,60 +765,9 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
             });
         }
 
-        // Compute velocity stats per dev
-        function getVelocity(accountId) {
-            const spList = velocityByDev[accountId] || [];
-            if (spList.length === 0) return { avg: 0, sprints: [], trend: 'same' };
-            const total = spList.reduce((a, s) => a + s.sp, 0);
-            const avg = Math.round((total / spList.length) * 10) / 10;
-            let trend = 'same';
-            if (spList.length >= 2) {
-                const last = spList[spList.length - 1].sp;
-                const prev = spList[spList.length - 2].sp;
-                trend = last > prev ? 'up' : last < prev ? 'down' : 'same';
-            }
-            return { avg, sprints: spList, trend };
-        }
-
-        // Render cards
+        _velocityByAssignee = velocityByDev;
         showDashState('data');
-        const grid = document.getElementById('dev-cards-grid');
-        grid.innerHTML = '';
-
-        const sortedDevs = Object.values(devMap).sort((a, b) => {
-            const aName = a.assignee?.displayName || 'Unassigned';
-            const bName = b.assignee?.displayName || 'Unassigned';
-            return aName.localeCompare(bName);
-        });
-
-        for (const dev of sortedDevs) {
-            const accountId = dev.assignee?.accountId || 'unassigned';
-            const velocity = getVelocity(accountId);
-            const card = renderDevCard(
-                { assignee: dev.assignee, issues: dev.issues, velocity },
-                sprint.endDate,
-                settings,
-                host,
-                _trackingState,
-                boardFlow
-            );
-            grid.appendChild(card);
-        }
-
-        // Render sprint overview panel
-        const devCount = Object.values(devMap).filter(d => d.assignee !== null).length;
-        const totalCommittedSP = issues.reduce((a, i) => a + (i._sp || 0), 0);
-        const teamVelAvg = Object.keys(devMap).reduce((sum, key) => {
-            const accountId = devMap[key].assignee?.accountId || key;
-            return sum + (getVelocity(accountId)?.avg || 0);
-        }, 0);
-        document.querySelectorAll('.prediction-velocity-hint').forEach(el => el.remove());
-        renderSprintOverview(issues, sprint, settings, devCount, Math.round(teamVelAvg * 10) / 10, totalCommittedSP, boardFlow);
-
-        renderGithubStatus();
-        if (getActiveView() === 'sprint-dashboard') {
-            void enrichCurrentSprintView();
-        }
+        renderCurrentSprintDashboard();
         markAnalyticsPerf(`sprint:${projectKey}:base`);
         measureAnalyticsPerf(`sprint:${projectKey}:base`, `sprint:${projectKey}:start`, `sprint:${projectKey}:base`, {
             sprintId: sprint.id,
@@ -651,6 +776,7 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
         });
 
         // Event delegation — copy-for-Slack + Notes
+        const grid = document.getElementById('dev-cards-grid');
         if (!grid.dataset.delegated) {
             grid.addEventListener('click', (e) => {
                 const copyBtn = e.target.closest('.overdue-copy-btn');

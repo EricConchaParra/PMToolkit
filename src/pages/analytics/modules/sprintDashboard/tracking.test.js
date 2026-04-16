@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createBoardFlow } from '../boardFlow.js';
 import { buildIssueTrackingMarkup, renderDevCard } from './devCard.js';
-import { buildSprintTrackingState, hasSprintTrackingStorageChange } from './sprintDashboard.js';
+import {
+    buildSprintTagFilterOptions,
+    buildSprintTrackingState,
+    filterSprintIssuesByTag,
+    hasSprintTrackingStorageChange,
+} from './sprintDashboard.js';
 
 const BOARD_FLOW = createBoardFlow({
     columnConfig: {
@@ -82,6 +87,59 @@ describe('sprint tracking state', () => {
         expect(hasSprintTrackingStorageChange({
             'ignored_jira:PM-1': { oldValue: null, newValue: true },
         })).toBe(false);
+    });
+});
+
+describe('sprint tag filter', () => {
+    it('builds tag options with No Filter and Any Tag before the sprint tag list', () => {
+        const options = buildSprintTagFilterOptions(
+            [
+                { key: 'PM-1' },
+                { key: 'PM-2' },
+            ],
+            {
+                tagsMap: {
+                    'PM-1': ['Urgent', 'Customer'],
+                    'PM-2': ['Customer'],
+                },
+                tagDefs: {
+                    urgent: { label: 'Urgent', color: 'red' },
+                    customer: { label: 'Customer', color: 'blue' },
+                    blocked: { label: 'Blocked', color: 'yellow' },
+                },
+            },
+        );
+
+        expect(options).toEqual([
+            { value: '', label: 'No Filter' },
+            { value: '__any_tag__', label: 'Any Tag' },
+            { value: 'customer', label: 'Customer' },
+            { value: 'urgent', label: 'Urgent' },
+        ]);
+    });
+
+    it('filters sprint issues by Any Tag or a specific tag and leaves all issues for No Filter', () => {
+        const issues = [
+            { key: 'PM-1' },
+            { key: 'PM-2' },
+            { key: 'PM-3' },
+        ];
+
+        expect(filterSprintIssuesByTag(issues, '__any_tag__', {
+            tagsMap: {
+                'PM-1': ['Urgent'],
+                'PM-2': ['Customer'],
+            },
+        })).toEqual([{ key: 'PM-1' }, { key: 'PM-2' }]);
+
+        expect(filterSprintIssuesByTag(issues, 'Urgent', {
+            tagsMap: {
+                'PM-1': ['Urgent'],
+                'PM-2': ['Customer'],
+            },
+        })).toEqual([{ key: 'PM-1' }]);
+
+        expect(filterSprintIssuesByTag(issues, '', { tagsMap: {} })).toEqual(issues);
     });
 });
 
