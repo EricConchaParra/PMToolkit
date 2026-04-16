@@ -277,7 +277,8 @@ body {
 #project-search,
 #perf-project-search,
 #fu-project-search,
-#sprint-search {
+#sprint-search,
+#sprint-tag-filter {
     width: 100%;
     padding: 8px 32px 8px 12px;
     border: 1.5px solid var(--border);
@@ -294,9 +295,21 @@ body {
 #project-search:focus,
 #perf-project-search:focus,
 #fu-project-search:focus,
-#sprint-search:focus {
+#sprint-search:focus,
+#sprint-tag-filter:focus {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+#sprint-tag-filter {
+    appearance: none;
+    cursor: pointer;
+}
+
+#sprint-tag-filter:disabled {
+    color: var(--text-sub);
+    cursor: not-allowed;
+    background: #f7f8fa;
 }
 
 .combo-dropdown {
@@ -1702,6 +1715,18 @@ body {
 
 .dev-cards-grid.hidden {
     display: none;
+}
+
+.dash-filter-empty {
+    grid-column: 1 / -1;
+    padding: 26px 24px;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--r-lg);
+    background: linear-gradient(135deg, #f8f9fc, #edf1f9);
+    color: var(--text-sub);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
 }
 
 /* ---- Developer Card ---- */
