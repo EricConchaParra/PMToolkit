@@ -11,6 +11,7 @@
     <div class="header">
         <h1 id="view-title">📝 My Notes</h1>
         <div class="header-actions">
+            <span class="demo-mode-badge hidden" id="demo-mode-badge">Demo</span>
             <span class="count" id="notes-count"></span>
             <button id="sync-notes-btn" class="icon-btn" title="Sync Statuses">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -27,6 +28,7 @@
     <div id="notes-view">
         <div class="search-bar">
             <input type="text" id="search" placeholder="Search by ticket, content or tags...">
+            <div class="demo-mode-hint hidden" id="demo-mode-hint">Demo Mode active. No real data and no writes to your Jira tracking.</div>
             <div class="popup-feedback-row">
                 <span class="popup-feedback-text">Found something to improve?</span>
                 <a class="popup-feedback-link" href="https://tally.so/r/yPxMax" target="_blank" rel="noreferrer">Send feedback</a>
@@ -35,7 +37,7 @@
         <div class="notes-list" id="notes-list"></div>
     </div>
 
-    <div id="settings-view" style="display: none;">
+        <div id="settings-view" style="display: none;">
         <div class="settings-content">
             <div class="settings-group">
                 <h3>Navigation & Info</h3>
@@ -174,6 +176,21 @@
                     <button id="test-notification-btn" class="et-notes-save-btn" style="width: 100%; margin: 0;">Test
                         System Notification</button>
                     <div id="notif-status" style="font-size: 11px; margin-top: 4px; display: none;"></div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <h3>Demo Mode</h3>
+                <label class="setting-item">
+                    <div class="setting-info">
+                        <span>Use demo data for screenshots</span>
+                        <p>Popup and Analytics Hub will use mock data only, without touching your real local tracking data.</p>
+                    </div>
+                    <input type="checkbox" data-setting="demo_mode">
+                </label>
+                <div class="setting-item" style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <span style="font-size: 12px; color: #6b778c;">Restore the built-in demo dataset after editing notes or tags in Demo Mode.</span>
+                    <button id="reset-demo-data-btn" class="et-notes-save-btn" style="width: 100%; margin: 0; display: none;">Reset Demo Dataset</button>
                 </div>
             </div>
         </div>

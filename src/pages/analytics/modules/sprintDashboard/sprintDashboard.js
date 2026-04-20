@@ -4,7 +4,7 @@
  */
 
 import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
-import { storage } from '../../../../common/storage.js';
+import { getTrackingItems } from '../../../../common/trackingRepository.js';
 import {
     TAG_DEFS_STORAGE_KEY,
     TRACKING_UPDATED_EVENT,
@@ -61,6 +61,7 @@ let _currentIssues = [];
 let _selectedTagFilter = '';
 let _velocityByAssignee = {};
 let _tagFilterListenerBound = false;
+let _demoMode = false;
 let _trackingState = {
     notesMap: {},
     remindersMap: {},
@@ -77,8 +78,13 @@ export function setHost(h) { _host = h; }
 export function setSpFieldId(id) { _spFieldId = id; }
 export function setSettings(s) { _settings = s; }
 export function getSpFieldId() { return _spFieldId; }
+export function setDemoMode(enabled) { _demoMode = enabled === true; }
 
 async function loadGithubSettings() {
+    if (_demoMode) {
+        _github = { enabled: false, token: '' };
+        return _github;
+    }
     if (!(typeof chrome !== 'undefined' && chrome.storage)) {
         _github = { enabled: false, token: '' };
         return _github;
@@ -191,7 +197,7 @@ async function loadSprintTrackingState(issues = []) {
         storageKeys.push(getTagsStorageKey(issue.key));
     });
 
-    const stored = await storage.get(storageKeys);
+    const stored = await getTrackingItems(storageKeys, { demoMode: _demoMode });
     _trackingState = buildSprintTrackingState(stored);
     return _trackingState;
 }
@@ -364,6 +370,7 @@ function renderCurrentSprintDashboard() {
 }
 
 function bindTrackingStorageListener() {
+    if (_demoMode) return;
     if (_trackingListenerBound || typeof chrome === 'undefined' || !chrome.storage) return;
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -834,6 +841,7 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
 
                 const notesBtn = e.target.closest('.et-notes-btn');
                 if (notesBtn) {
+                    if (_demoMode) return;
                     const { issueKey, summary } = notesBtn.dataset;
                     if (issueKey) NoteDrawer.open(issueKey, summary);
                     return;
@@ -843,7 +851,9 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
         }
 
         // Initialize note indicators
-        NoteDrawer.initIndicators();
+        if (!_demoMode) {
+            NoteDrawer.initIndicators();
+        }
 
     } catch (err) {
         console.error('PMsToolKit Dashboard:', err);

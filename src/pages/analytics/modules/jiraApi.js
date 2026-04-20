@@ -11,21 +11,39 @@ import {
     getCachedSpFieldId,
     getCachedSprintFieldId,
 } from './analyticsDataCache.js';
+import {
+    DEMO_HOST,
+    DEMO_SP_FIELD_ID,
+    DEMO_SPRINT_FIELD_ID,
+    getDemoBoardConfig,
+    getDemoBoardId,
+    getDemoBoardSprints,
+    getDemoClosedSprints,
+    getDemoJiraResponse,
+    getDemoProjectStatuses,
+    getDemoProjects,
+    getDemoSprintDoneIssues,
+    getDemoSprintIssues,
+} from '../../../common/demoData.js';
+import { getDemoMode } from '../../../common/demoMode.js';
 
 // ============================================================
 // JIRA HOST
 // ============================================================
 
 export function getJiraHost() {
-    return new Promise(resolve => {
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.get(['et_jira_host'], result => {
-                resolve(result.et_jira_host || null);
-            });
-        } else {
-            resolve(null);
-        }
-    });
+    return (async () => {
+        if (await getDemoMode()) return DEMO_HOST;
+        return new Promise(resolve => {
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                chrome.storage.local.get(['et_jira_host'], result => {
+                    resolve(result.et_jira_host || null);
+                });
+            } else {
+                resolve(null);
+            }
+        });
+    })();
 }
 
 // ============================================================
@@ -33,6 +51,9 @@ export function getJiraHost() {
 // ============================================================
 
 export async function jiraFetch(host, path, opts = {}) {
+    if (await getDemoMode()) {
+        return getDemoJiraResponse(path, opts);
+    }
     const url = path.startsWith('http') ? path : `https://${host}${path}`;
     const resp = await fetch(url, {
         credentials: 'include',
@@ -98,6 +119,9 @@ export async function findPrForTicket(ticketId, token) {
 }
 
 export async function fetchProjects(host) {
+    if (await getDemoMode()) {
+        return getDemoProjects();
+    }
     return getCachedProjects(host, async () => {
         let all = [];
         let startAt = 0;
@@ -112,6 +136,9 @@ export async function fetchProjects(host) {
 }
 
 export async function fetchBoardId(host, projectKey) {
+    if (await getDemoMode()) {
+        return getDemoBoardId(projectKey);
+    }
     return getCachedBoardId(host, projectKey, async () => {
         const data = await jiraFetch(host, `/rest/agile/1.0/board?projectKeyOrId=${projectKey}&type=scrum&maxResults=1`);
         return data.values?.[0]?.id || null;
@@ -124,12 +151,18 @@ export async function fetchActiveSprint(host, boardId) {
 }
 
 export async function fetchBoardConfiguration(host, boardId) {
+    if (await getDemoMode()) {
+        return getDemoBoardConfig(boardId);
+    }
     return getCachedBoardConfig(host, boardId, async () =>
         jiraFetch(host, `/rest/agile/1.0/board/${boardId}/configuration`)
     );
 }
 
 export async function fetchSprintIssues(host, sprintId, spFieldId, extraFields = []) {
+    if (await getDemoMode()) {
+        return getDemoSprintIssues(sprintId);
+    }
     const fields = ['summary', 'status', 'assignee', 'updated', 'issuetype', spFieldId, ...extraFields].filter(Boolean);
     let all = [];
     let nextPageToken;
@@ -185,12 +218,18 @@ export async function fetchIssueChangelog(host, issueKey) {
 }
 
 export async function fetchClosedSprints(host, boardId, count = 3) {
+    if (await getDemoMode()) {
+        return getDemoClosedSprints(boardId, count);
+    }
     const data = await jiraFetch(host, `/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=50`);
     const all = data.values || [];
     return all.slice(-count); // take last N
 }
 
 export async function fetchBoardSprints(host, boardId, states = ['active', 'closed']) {
+    if (await getDemoMode()) {
+        return getDemoBoardSprints(boardId, states);
+    }
     const stateParam = Array.isArray(states) ? states.filter(Boolean).join(',') : String(states || '');
     let all = [];
     let startAt = 0;
@@ -208,6 +247,9 @@ export async function fetchBoardSprints(host, boardId, states = ['active', 'clos
 }
 
 export async function fetchSprintDoneIssues(host, sprintId, spFieldId) {
+    if (await getDemoMode()) {
+        return getDemoSprintDoneIssues(sprintId);
+    }
     const fields = [spFieldId, 'assignee'].filter(Boolean);
     let all = [];
     let nextPageToken;
@@ -235,6 +277,9 @@ export async function fetchSprintDoneIssues(host, sprintId, spFieldId) {
 }
 
 export async function fetchSpFieldId(host) {
+    if (await getDemoMode()) {
+        return DEMO_SP_FIELD_ID;
+    }
     return getCachedSpFieldId(host, async () => {
         const fields = await jiraFetch(host, '/rest/api/3/field');
         const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
@@ -243,6 +288,9 @@ export async function fetchSpFieldId(host) {
 }
 
 export async function fetchSprintFieldId(host) {
+    if (await getDemoMode()) {
+        return DEMO_SPRINT_FIELD_ID;
+    }
     return getCachedSprintFieldId(host, async () => {
         const fields = await jiraFetch(host, '/rest/api/3/field');
         const sprintField = fields.find(field =>
@@ -255,6 +303,9 @@ export async function fetchSprintFieldId(host) {
 
 // Returns a deduplicated list of { name, categoryKey } for a project
 export async function fetchProjectStatuses(host, projectKey) {
+    if (await getDemoMode()) {
+        return getDemoProjectStatuses(projectKey);
+    }
     return getCachedProjectStatuses(host, projectKey, async () => {
         const data = await jiraFetch(host, `/rest/api/3/project/${projectKey}/statuses`);
         const seen = new Set();

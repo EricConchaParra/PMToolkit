@@ -13,13 +13,14 @@ import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, SP_KEYS } from './modules/cons
 import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from './modules/analyticsPerf.js';
 import { populateSettingsUI, readGithubReposFromUI } from './modules/sprintDashboard/settingsUI.js';
 import {
-    setHost, setSettings, setSpFieldId,
+    setHost, setSettings, setSpFieldId, setDemoMode as setSprintDashboardDemoMode,
     loadDashboard, loadDashboardForSprint, resetSprintGithubState,
     getCurrentSprints, getSelectedSprintId, setSelectedSprintId,
 } from './modules/sprintDashboard/sprintDashboard.js';
 import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
 import { initPerfCombo } from './modules/performanceDashboard/performanceDashboard.js';
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
+import { getDemoMode, subscribeDemoMode } from '../../common/demoMode.js';
 
 // ============================================================
 // BOOTSTRAP
@@ -27,6 +28,12 @@ import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClo
 
 document.addEventListener('DOMContentLoaded', async () => {
     markAnalyticsPerf('bootstrap:start');
+    const demoMode = await getDemoMode();
+    setSprintDashboardDemoMode(demoMode);
+    document.body.classList.toggle('demo-mode-active', demoMode);
+    document.getElementById('analytics-demo-badge')?.classList.toggle('hidden', !demoMode);
+    document.getElementById('analytics-demo-hint')?.classList.toggle('hidden', !demoMode);
+
     // ---- Nav ----
     initNav();
 
@@ -244,6 +251,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Sprint Closure Report ----
     initSprintClosureReport(allProjects, currentHost, lastProject);
+    subscribeDemoMode(() => {
+        window.location.reload();
+    });
     markAnalyticsPerf('bootstrap:end');
     measureAnalyticsPerf('bootstrap', 'bootstrap:start', 'bootstrap:end', {
         projectCount: allProjects.length,

@@ -71,6 +71,18 @@ body {
     gap: 12px;
 }
 
+.demo-mode-badge {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: #fff6e5;
+    border: 1px solid rgba(255, 171, 0, 0.28);
+    color: #7a5d00;
+}
+
 @keyframes spin {
     100% {
         transform: rotate(360deg);
@@ -149,6 +161,17 @@ body {
     border-color: var(--primary-blue);
     background: #fff;
     box-shadow: 0 0 0 4px rgba(0, 82, 204, 0.12);
+}
+
+.demo-mode-hint {
+    font-size: 11px;
+    font-weight: 700;
+    color: #7a5d00;
+    background: #fff6e5;
+    border: 1px solid rgba(255, 171, 0, 0.22);
+    border-radius: 10px;
+    padding: 10px 12px;
+    line-height: 1.4;
 }
 
 .popup-feedback-row {
@@ -663,6 +686,10 @@ body {
 .about-footer strong {
     color: var(--primary-blue);
     font-weight: 700;
+}
+
+.hidden {
+    display: none !important;
 }
 
 /* ---- Animations ---- */

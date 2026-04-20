@@ -10,7 +10,7 @@
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
   <link rel="modulepreload" crossorigin href="/assets/tagEditor.js">
   <link rel="modulepreload" crossorigin href="/assets/jira-styles.js">
-  <link rel="modulepreload" crossorigin href="/assets/issueType.js">
+  <link rel="modulepreload" crossorigin href="/assets/trackingRepository.js">
   <link rel="modulepreload" crossorigin href="/assets/githubPrStorage.js">
   <link rel="stylesheet" crossorigin href="/assets/tagEditor.css">
   <link rel="stylesheet" crossorigin href="/assets/jira-styles.css">
@@ -27,6 +27,7 @@
                 <span class="brand-name">PMsToolKit</span>
                 <span class="brand-sub">Analytics Hub</span>
             </div>
+            <span class="analytics-demo-badge hidden" id="analytics-demo-badge">Demo</span>
         </div>
 
         <nav class="sidebar-nav">
@@ -63,6 +64,7 @@
                 <div class="view-header-left">
                     <h1>🚀 Sprint Dashboard</h1>
                     <p>Real-time analysis of your active sprint per developer</p>
+                    <div class="analytics-demo-hint hidden" id="analytics-demo-hint">Demo Mode active. Analytics is rendering mock data only and will not touch your real Jira tracking data.</div>
                 </div>
                 <div class="view-header-right">
                     <div class="project-select-wrap">

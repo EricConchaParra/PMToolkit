@@ -114,3 +114,77 @@ export const syncStorage = {
         });
     }
 };
+
+export const sessionStorage = {
+    get(keys) {
+        return new Promise((resolve) => {
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (sessionStorage.get).');
+                return resolve({});
+            }
+            if (!chrome.storage?.session) {
+                resolve({});
+                return;
+            }
+            try {
+                chrome.storage.session.get(keys, (items) => {
+                    if (chrome.runtime?.lastError) {
+                        console.warn('PMsToolKit: Session storage fetch error', chrome.runtime.lastError);
+                        resolve({});
+                    } else {
+                        resolve(items);
+                    }
+                });
+            } catch (e) {
+                console.warn('PMsToolKit: Context invalidated during sessionStorage.get.');
+                resolve({});
+            }
+        });
+    },
+    set(data) {
+        return new Promise((resolve) => {
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (sessionStorage.set).');
+                return resolve();
+            }
+            if (!chrome.storage?.session) {
+                resolve();
+                return;
+            }
+            try {
+                chrome.storage.session.set(data, () => {
+                    if (chrome.runtime?.lastError) {
+                        console.warn('PMsToolKit: Session storage set error', chrome.runtime.lastError);
+                    }
+                    resolve();
+                });
+            } catch (e) {
+                console.warn('PMsToolKit: Context invalidated during sessionStorage.set.');
+                resolve();
+            }
+        });
+    },
+    remove(keys) {
+        return new Promise((resolve) => {
+            if (!isContextValid()) {
+                console.warn('PMsToolKit: Context invalidated (sessionStorage.remove).');
+                return resolve();
+            }
+            if (!chrome.storage?.session) {
+                resolve();
+                return;
+            }
+            try {
+                chrome.storage.session.remove(keys, () => {
+                    if (chrome.runtime?.lastError) {
+                        console.warn('PMsToolKit: Session storage remove error', chrome.runtime.lastError);
+                    }
+                    resolve();
+                });
+            } catch (e) {
+                console.warn('PMsToolKit: Context invalidated during sessionStorage.remove.');
+                resolve();
+            }
+        });
+    }
+};

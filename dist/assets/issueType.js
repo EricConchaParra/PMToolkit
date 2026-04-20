@@ -1,1 +1,0 @@
-function l(t={}){var i;const n=((i=t==null?void 0:t.fields)==null?void 0:i.issuetype)||(t==null?void 0:t.issueType)||(t==null?void 0:t.issuetype)||null;return{name:String((n==null?void 0:n.name)||"").trim(),iconUrl:String((n==null?void 0:n.iconUrl)||"").trim()}}export{l as g};

@@ -1,8 +1,11 @@
-import { storage, syncStorage } from '../common/storage.js';
+import { syncStorage } from '../common/storage.js';
 import { jiraApi } from '../common/jira-api.js';
 import { getIssueTypeMeta } from '../common/issueType.js';
 import { createTagEditor } from '../common/tagEditor.js';
+import { subscribeDemoMode } from '../common/demoMode.js';
+import { resetDemoTrackingItems, getAllTrackingItems, removeTrackingItems, setTrackingItems } from '../common/trackingRepository.js';
 import {
+    TAG_DEFS_STORAGE_KEY,
     ensureTagDefinition,
     escapeHtml,
     getNotesStorageKey,
@@ -30,6 +33,7 @@ const DEFAULT_SETTINGS = {
     jira_native_table_icons: true,
     zoom_copy_transcript: true,
     github_pr_link: false,
+    demo_mode: false,
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -48,12 +52,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     const githubPatInput = document.getElementById('github-pat-input');
     const githubPatSaveBtn = document.getElementById('github-pat-save-btn');
     const githubPatStatus = document.getElementById('github-pat-status');
+    const demoBadge = document.getElementById('demo-mode-badge');
+    const demoHint = document.getElementById('demo-mode-hint');
+    const resetDemoBtn = document.getElementById('reset-demo-data-btn');
+    const demoModeToggle = document.querySelector('input[data-setting="demo_mode"]');
 
     let allNotes = [];
     let isSettingsOpen = false;
     let currentJiraHost = 'jira.atlassian.net';
     let popupTagDefs = {};
     let storageReloadTimer = null;
+    let demoModeEnabled = false;
+
+    function applyDemoModeUi() {
+        demoBadge?.classList.toggle('hidden', !demoModeEnabled);
+        demoHint?.classList.toggle('hidden', !demoModeEnabled);
+        if (resetDemoBtn) resetDemoBtn.style.display = demoModeEnabled ? 'block' : 'none';
+        if (syncNotesBtn) {
+            syncNotesBtn.disabled = demoModeEnabled;
+            syncNotesBtn.title = demoModeEnabled
+                ? 'Disabled in Demo Mode'
+                : 'Sync Statuses';
+        }
+    }
 
     function setPrimaryTitle(text) {
         if (!isSettingsOpen) viewTitle.textContent = text;
@@ -81,12 +102,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function loadNotes() {
-        const data = await storage.getAll();
+        const data = await getAllTrackingItems({ demoMode: demoModeEnabled });
         const parsed = parseTrackingStorage(data);
         const metaMap = { ...parsed.metaMap };
         popupTagDefs = parsed.tagDefs;
 
-        const missingMetaKeys = parsed.allKeys.filter(key => {
+        const missingMetaKeys = demoModeEnabled ? [] : parsed.allKeys.filter(key => {
             const meta = metaMap[key];
             return !meta || !meta.status || !Object.prototype.hasOwnProperty.call(meta, 'issueType');
         });
@@ -101,7 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         status: details.status,
                         issueType: details.issueType,
                     };
-                    await storage.set({ [`meta_jira:${key}`]: metaMap[key] });
+                    await setTrackingItems({ [`meta_jira:${key}`]: metaMap[key] }, { demoMode: false });
                 }
             }
             setPrimaryTitle('📝 My Notes');
@@ -229,11 +250,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 el.querySelector('.delete-btn').onclick = async () => {
                     if (!confirm(`Delete note, reminder, and tags for ${item.key}?`)) return;
-                    await storage.remove([
+                    await removeTrackingItems([
                         getNotesStorageKey(item.key),
                         getReminderStorageKey(item.key),
                         getTagsStorageKey(item.key),
-                    ]);
+                    ], { demoMode: demoModeEnabled });
                     await loadNotes();
                 };
             }
@@ -277,7 +298,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     tagDefs: popupTagDefs,
                     placeholder: 'Add or create tags...',
                     onCreateTag: async (label, color) => {
-                        const created = await ensureTagDefinition(label, color);
+                        const created = demoModeEnabled
+                            ? (() => {
+                                const normalized = String(label || '').trim().toLocaleLowerCase();
+                                if (!normalized) return null;
+                                return {
+                                    normalized,
+                                    label: String(label || '').trim().replace(/\s+/g, ' '),
+                                    color: color || 'gray',
+                                };
+                            })()
+                            : await ensureTagDefinition(label, color);
                         if (!created) return false;
                         popupTagDefs = {
                             ...popupTagDefs,
@@ -286,6 +317,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 color: created.color,
                             },
                         };
+                        if (demoModeEnabled) {
+                            await setTrackingItems({
+                                [TAG_DEFS_STORAGE_KEY]: popupTagDefs,
+                            }, { demoMode: true });
+                        }
                         tagEditor.setTagDefs(popupTagDefs);
                         return created;
                     },
@@ -304,18 +340,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const newReminder = el.querySelector('.edit-reminder-input').value;
                     const finalTags = normalizeTagList(editedTags, popupTagDefs);
 
-                    if (newText) await storage.set({ [getNotesStorageKey(item.key)]: newText });
-                    else await storage.remove(getNotesStorageKey(item.key));
+                    if (newText) await setTrackingItems({ [getNotesStorageKey(item.key)]: newText }, { demoMode: demoModeEnabled });
+                    else await removeTrackingItems(getNotesStorageKey(item.key), { demoMode: demoModeEnabled });
 
                     if (newReminder) {
                         const reminderTimestamp = new Date(newReminder).getTime();
-                        await storage.set({ [getReminderStorageKey(item.key)]: reminderTimestamp });
+                        await setTrackingItems({ [getReminderStorageKey(item.key)]: reminderTimestamp }, { demoMode: demoModeEnabled });
                     } else {
-                        await storage.remove(getReminderStorageKey(item.key));
+                        await removeTrackingItems(getReminderStorageKey(item.key), { demoMode: demoModeEnabled });
                     }
 
-                    if (finalTags.length) await storage.set({ [getTagsStorageKey(item.key)]: finalTags });
-                    else await storage.remove(getTagsStorageKey(item.key));
+                    if (finalTags.length) await setTrackingItems({ [getTagsStorageKey(item.key)]: finalTags }, { demoMode: demoModeEnabled });
+                    else await removeTrackingItems(getTagsStorageKey(item.key), { demoMode: demoModeEnabled });
 
                     item.text = newText;
                     item.reminder = newReminder ? new Date(newReminder).getTime() : null;
@@ -352,26 +388,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     syncNotesBtn.addEventListener('click', async () => {
+        if (demoModeEnabled) return;
         if (syncNotesBtn.classList.contains('syncing-spin')) return;
 
         syncNotesBtn.classList.add('syncing-spin');
         setPrimaryTitle('⏳ Syncing statuses...');
 
-        const data = await storage.getAll();
+        const data = await getAllTrackingItems({ demoMode: false });
         const parsed = parseTrackingStorage(data);
 
         for (const key of parsed.allKeys) {
             try {
                 const details = await jiraApi.fetchIssueDetails(key);
                 if (!details) continue;
-                await storage.set({
+                await setTrackingItems({
                     [`meta_jira:${key}`]: {
                         summary: details.summary,
                         assignee: details.assignee,
                         status: details.status,
                         issueType: details.issueType,
                     },
-                });
+                }, { demoMode: false });
             } catch (err) {
                 console.warn(`Failed to sync details for ${key}`, err);
             }
@@ -386,6 +423,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function loadSettings() {
         const settings = await syncStorage.get(DEFAULT_SETTINGS);
+        demoModeEnabled = settings.demo_mode === true;
+        applyDemoModeUi();
         document.querySelectorAll('input[data-setting]').forEach(input => {
             const key = input.getAttribute('data-setting');
             if (Object.prototype.hasOwnProperty.call(settings, key)) {
@@ -405,6 +444,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         input.addEventListener('change', async () => {
             const key = input.getAttribute('data-setting');
             await syncStorage.set({ [key]: input.checked });
+            if (key === 'demo_mode') {
+                demoModeEnabled = input.checked;
+                applyDemoModeUi();
+                currentJiraHost = await jiraApi.getHost();
+                await loadNotes();
+            }
         });
     });
 
@@ -443,14 +488,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 2500);
     });
 
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== 'local') return;
-        if (!hasTrackingStorageChange(changes, { includeMeta: true })) return;
+    resetDemoBtn?.addEventListener('click', async () => {
+        await resetDemoTrackingItems();
+        await loadNotes();
+    });
 
-        clearTimeout(storageReloadTimer);
-        storageReloadTimer = setTimeout(() => {
-            loadNotes();
-        }, 120);
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === 'local') {
+            if (demoModeEnabled) return;
+            if (!hasTrackingStorageChange(changes, { includeMeta: true })) return;
+
+            clearTimeout(storageReloadTimer);
+            storageReloadTimer = setTimeout(() => {
+                loadNotes();
+            }, 120);
+        }
+    });
+
+    subscribeDemoMode(async enabled => {
+        demoModeEnabled = enabled;
+        if (demoModeToggle) demoModeToggle.checked = enabled;
+        applyDemoModeUi();
+        currentJiraHost = await jiraApi.getHost();
+        await loadNotes();
     });
 
     try {
@@ -459,6 +519,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error(e);
     }
 
-    await loadNotes();
     await loadSettings();
+    await loadNotes();
 });

@@ -1,4 +1,6 @@
 import { storage } from '../../../../common/storage.js';
+import { getDemoMode } from '../../../../common/demoMode.js';
+import { loadDemoSessionValue, saveDemoSessionValue } from '../../../../common/demoSessionStore.js';
 import {
     fetchBoardId,
     fetchBoardSprints,
@@ -39,6 +41,38 @@ const closureState = {
     saveTimer: null,
     loadRequestId: 0,
 };
+
+const DEMO_CLOSURE_NAMESPACE = 'closure-report';
+
+async function readClosurePersistedState(storageKey) {
+    if (await getDemoMode()) {
+        const saved = await loadDemoSessionValue(DEMO_CLOSURE_NAMESPACE, {});
+        return { [storageKey]: saved[storageKey] || null };
+    }
+    return storage.get(storageKey);
+}
+
+async function writeClosurePersistedState(storageKey, value) {
+    if (await getDemoMode()) {
+        const saved = await loadDemoSessionValue(DEMO_CLOSURE_NAMESPACE, {});
+        await saveDemoSessionValue(DEMO_CLOSURE_NAMESPACE, {
+            ...saved,
+            [storageKey]: value,
+        });
+        return;
+    }
+    await storage.set({ [storageKey]: value });
+}
+
+async function removeClosurePersistedState(storageKey) {
+    if (await getDemoMode()) {
+        const saved = await loadDemoSessionValue(DEMO_CLOSURE_NAMESPACE, {});
+        delete saved[storageKey];
+        await saveDemoSessionValue(DEMO_CLOSURE_NAMESPACE, saved);
+        return;
+    }
+    await storage.remove(storageKey);
+}
 
 export function initSprintClosureReport(allProjects = [], host = '', initialProjectKey = '') {
     closureState.allProjects = Array.isArray(allProjects) ? allProjects : [];
@@ -110,7 +144,7 @@ function bindUiEvents() {
             closureState.reportState = getDefaultSprintClosureState();
             closureState.captureMode = false;
             clearTimeout(closureState.saveTimer);
-            await storage.remove(storageKey);
+            await removeClosurePersistedState(storageKey);
             rebuildClosureModel();
             renderClosureContent();
             renderInlineNotice('Report reset to the original detected state.');
@@ -297,7 +331,7 @@ async function selectClosureSprint(sprintId, opts = {}) {
         }
 
         const storageKey = getSprintClosureStorageKey(closureState.projectKey, sprint.id);
-        const saved = await storage.get(storageKey);
+        const saved = await readClosurePersistedState(storageKey);
         if (requestId !== closureState.loadRequestId) return;
 
         closureState.reportState = normalizeSprintClosureState(saved[storageKey] || {});
@@ -580,9 +614,7 @@ async function persistCurrentState() {
     if (!closureState.projectKey || !closureState.selectedSprintId) return;
     const storageKey = getSprintClosureStorageKey(closureState.projectKey, closureState.selectedSprintId);
     closureState.reportState.updatedAt = Date.now();
-    await storage.set({
-        [storageKey]: normalizeSprintClosureState(closureState.reportState),
-    });
+    await writeClosurePersistedState(storageKey, normalizeSprintClosureState(closureState.reportState));
 }
 
 function syncCaptureModeUi() {
