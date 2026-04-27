@@ -34,6 +34,7 @@ import { enrichChips, clearPrCache } from '../githubPrCache.js';
 import { getActiveView } from '../nav.js';
 import { getGithubAvailabilityState, subscribeGithubAvailability } from '../githubPrSnapshotStore.js';
 import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from '../analyticsPerf.js';
+import { getDemoPrSnapshots } from '../../../../common/demoData.js';
 
 // ============================================================
 // MODULE STATE
@@ -81,11 +82,14 @@ export function setHost(h) { _host = h; }
 export function setSpFieldId(id) { _spFieldId = id; }
 export function setSettings(s) { _settings = s; }
 export function getSpFieldId() { return _spFieldId; }
-export function setDemoMode(enabled) { _demoMode = enabled === true; }
+export function setDemoMode(enabled) {
+    _demoMode = enabled === true;
+    NoteDrawer.setDemoMode(_demoMode);
+}
 
 async function loadGithubSettings() {
     if (_demoMode) {
-        _github = { enabled: false, token: '' };
+        _github = { enabled: true, token: '' };
         return _github;
     }
     if (!(typeof chrome !== 'undefined' && chrome.storage)) {
@@ -140,6 +144,14 @@ async function enrichCurrentSprintView() {
 
     await loadGithubSettings();
     renderGithubStatus();
+    if (_demoMode) {
+        enrichChips(grid, '', {
+            onStateChange: renderGithubStatus,
+            snapshotsByKey: getDemoPrSnapshots(_currentIssues.map(issue => issue.key)),
+        });
+        return;
+    }
+
     if (!_github.enabled || !_github.token) return;
 
     enrichChips(grid, _github.token, {
@@ -1002,7 +1014,6 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
 
                 const notesBtn = e.target.closest('.et-notes-btn');
                 if (notesBtn) {
-                    if (_demoMode) return;
                     const { issueKey, summary } = notesBtn.dataset;
                     if (issueKey) NoteDrawer.open(issueKey, summary);
                     return;

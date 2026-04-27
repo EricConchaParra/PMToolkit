@@ -1,4 +1,5 @@
 import { storage } from './storage.js';
+import { getTrackingItems, setTrackingItems } from './trackingRepository.js';
 
 export const TAG_DEFS_STORAGE_KEY = 'tag_defs_jira';
 export const TRACKING_UPDATED_EVENT = 'pmtoolkit:tracking-updated';
@@ -261,12 +262,15 @@ export async function loadTagDefs() {
     return normalizeTagDefs(result[TAG_DEFS_STORAGE_KEY] || {});
 }
 
-export async function ensureTagDefinition(label, color) {
+export async function ensureTagDefinition(label, color, opts = {}) {
     const cleanLabel = cleanTagLabel(label);
     const normalized = normalizeTagLabel(cleanLabel);
     if (!normalized) return null;
 
-    const currentDefs = await loadTagDefs();
+    const demoMode = opts.demoMode === true;
+    const currentDefs = demoMode
+        ? normalizeTagDefs((await getTrackingItems({ [TAG_DEFS_STORAGE_KEY]: {} }, { demoMode: true }))[TAG_DEFS_STORAGE_KEY] || {})
+        : await loadTagDefs();
     if (currentDefs[normalized]) {
         return {
             normalized,
@@ -281,7 +285,11 @@ export async function ensureTagDefinition(label, color) {
             color: getTagColorMeta(color).id,
         },
     };
-    await storage.set({ [TAG_DEFS_STORAGE_KEY]: nextDefs });
+    if (demoMode) {
+        await setTrackingItems({ [TAG_DEFS_STORAGE_KEY]: nextDefs }, { demoMode: true });
+    } else {
+        await storage.set({ [TAG_DEFS_STORAGE_KEY]: nextDefs });
+    }
 
     return {
         normalized,

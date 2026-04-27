@@ -30,7 +30,9 @@ export function clearPrCache(keys) {
  * @param {{ onStateChange?: Function }} [options]
  */
 export async function enrichChips(container, token, options = {}) {
-    if (!container || !token) return;
+    if (!container) return;
+    const providedSnapshots = options.snapshotsByKey || null;
+    if (!token && !providedSnapshots) return;
 
     const chips = /** @type {NodeListOf<Element>} */ (
         container.querySelectorAll(GITHUB_ENRICHABLE_CHIP_SELECTOR)
@@ -53,6 +55,21 @@ export async function enrichChips(container, token, options = {}) {
         pending.push({ chip, ticketId, actions, loadingBtn });
     });
     if (pending.length === 0) return;
+
+    if (providedSnapshots) {
+        pending.forEach(({ chip, ticketId, loadingBtn, actions }) => {
+            loadingBtn.remove();
+            delete chip.dataset.ghLoading;
+
+            const snapshot = providedSnapshots[String(ticketId || '').toUpperCase()];
+            if (snapshot) {
+                _injectPrButton(actions, snapshot);
+            }
+            chip.dataset.ghEnriched = 'true';
+        });
+        options.onStateChange?.();
+        return;
+    }
 
     try {
         const result = await resolveGithubPrBatch({

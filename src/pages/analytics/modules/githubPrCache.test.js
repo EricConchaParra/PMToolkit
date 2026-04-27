@@ -96,6 +96,45 @@ describe('githubPrCache', () => {
         expect(actions.children.some(child => child.className === 'gh-pr-btn gh-pr-found')).toBe(true);
         expect(chipMain.children.some(child => child.className === 'gh-pr-meta')).toBe(true);
     });
+
+    it('supports provided demo snapshots without calling the background GitHub resolver', async () => {
+        const actions = createFakeElement('div');
+        const chipMain = createFakeElement('div');
+        const chip = createFakeElement('div');
+
+        chip.className = 'issue-chip';
+        chip.dataset.ghKey = 'OPS-142';
+        chip.dataset.status = 'In Review';
+        chip.querySelector = vi.fn(selector => {
+            if (selector === '.issue-chip-actions') return actions;
+            if (selector === '.issue-chip-main') return chipMain;
+            return null;
+        });
+
+        actions.closest = vi.fn(selector => selector === '.issue-chip' ? chip : null);
+
+        const container = {
+            querySelectorAll: vi.fn(selector => (
+                selector.includes('.issue-chip[data-gh-key]') ? [chip] : []
+            )),
+        };
+
+        await enrichChips(container, '', {
+            snapshotsByKey: {
+                'OPS-142': {
+                    url: 'https://github.com/acme/repo/pull/42',
+                    state: 'open',
+                    draft: false,
+                    labels: ['qa-pass', 'review-ready'],
+                },
+            },
+        });
+
+        expect(mockedResolveGithubPrBatch).not.toHaveBeenCalled();
+        expect(chip.dataset.ghEnriched).toBe('true');
+        expect(actions.children.some(child => child.className === 'gh-pr-btn gh-pr-found')).toBe(true);
+        expect(chipMain.children.some(child => child.className === 'gh-pr-meta')).toBe(true);
+    });
 });
 
 afterEach(() => {

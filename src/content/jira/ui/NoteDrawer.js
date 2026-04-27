@@ -1,5 +1,5 @@
-import { storage } from '../../../common/storage.js';
 import { createTagEditor } from '../../../common/tagEditor.js';
+import { getTrackingItems, removeTrackingItems, setTrackingItems } from '../../../common/trackingRepository.js';
 import {
     TAG_DEFS_STORAGE_KEY,
     TRACKING_UPDATED_EVENT,
@@ -21,6 +21,11 @@ export const NoteDrawer = {
     currentTagDefs: {},
     baselineSnapshot: null,
     isDirty: false,
+    demoMode: false,
+
+    setDemoMode(enabled) {
+        this.demoMode = enabled === true;
+    },
 
     hasTrackedItem({ noteText = '', reminderValue = '', tagLabels = [] } = {}) {
         return hasTrackedContent(noteText, reminderValue, tagLabels);
@@ -45,7 +50,7 @@ export const NoteDrawer = {
             storageKeys.push(`notes_${cleanKey}`, `reminder_${cleanKey}`, `tags_${cleanKey}`);
         });
 
-        const result = await storage.get(storageKeys);
+        const result = await getTrackingItems(storageKeys, { demoMode: this.demoMode });
 
         keys.forEach(k => {
             const cleanKey = k.includes(':') ? k : `jira:${k}`;
@@ -138,7 +143,7 @@ export const NoteDrawer = {
             tagDefs: {},
             placeholder: 'Type a tag or create one...',
             onCreateTag: async (label, color) => {
-                const created = await ensureTagDefinition(label, color);
+                const created = await ensureTagDefinition(label, color, { demoMode: this.demoMode });
                 if (!created) return false;
                 this.currentTagDefs = {
                     ...this.currentTagDefs,
@@ -253,7 +258,7 @@ export const NoteDrawer = {
         const reminderKey = getReminderStorageKey(issueKey);
         const tagsKey = getTagsStorageKey(issueKey);
 
-        const result = await storage.get([storageKey, reminderKey, tagsKey, TAG_DEFS_STORAGE_KEY]);
+        const result = await getTrackingItems([storageKey, reminderKey, tagsKey, TAG_DEFS_STORAGE_KEY], { demoMode: this.demoMode });
         if (this.currentKey !== issueKey) return;
 
         this.currentTagDefs = normalizeTagDefs(result[TAG_DEFS_STORAGE_KEY] || {});
@@ -324,7 +329,7 @@ export const NoteDrawer = {
             tagDefs: this.currentTagDefs,
         });
 
-        await storage.remove([storageKey, reminderKey, tagsKey, ignoredKey]);
+        await removeTrackingItems([storageKey, reminderKey, tagsKey, ignoredKey], { demoMode: this.demoMode });
 
         // Reset fields
         this.el.querySelector('.et-drawer-textarea').value = '';
@@ -361,22 +366,22 @@ export const NoteDrawer = {
         });
 
         if (value) {
-            await storage.set({ [storageKey]: value });
+            await setTrackingItems({ [storageKey]: value }, { demoMode: this.demoMode });
         } else {
-            await storage.remove(storageKey);
+            await removeTrackingItems(storageKey, { demoMode: this.demoMode });
         }
 
         if (reminderValue) {
-            await storage.set({ [reminderKey]: reminderTs });
-            await storage.remove(`ignored_${finalKey}`);
+            await setTrackingItems({ [reminderKey]: reminderTs }, { demoMode: this.demoMode });
+            await removeTrackingItems(`ignored_${finalKey}`, { demoMode: this.demoMode });
         } else {
-            await storage.remove(reminderKey);
-            await storage.remove(`ignored_${finalKey}`);
+            await removeTrackingItems(reminderKey, { demoMode: this.demoMode });
+            await removeTrackingItems(`ignored_${finalKey}`, { demoMode: this.demoMode });
         }
 
-        await storage.remove(getTagsStorageKey(this.currentKey));
+        await removeTrackingItems(getTagsStorageKey(this.currentKey), { demoMode: this.demoMode });
         if (tagsValue.length) {
-            await storage.set({ [getTagsStorageKey(this.currentKey)]: tagsValue });
+            await setTrackingItems({ [getTagsStorageKey(this.currentKey)]: tagsValue }, { demoMode: this.demoMode });
         }
 
         status.classList.add('show');
