@@ -19,6 +19,8 @@ export const NoteDrawer = {
     saveTimeout: null,
     tagEditor: null,
     currentTagDefs: {},
+    baselineSnapshot: null,
+    isDirty: false,
 
     hasTrackedItem({ noteText = '', reminderValue = '', tagLabels = [] } = {}) {
         return hasTrackedContent(noteText, reminderValue, tagLabels);
@@ -149,17 +151,15 @@ export const NoteDrawer = {
                 return created;
             },
             onChange: () => {
-                clearTimeout(this.saveTimeout);
-                this.saveTimeout = setTimeout(() => this.save(), 350);
+                this.updateDirtyState();
             },
         });
 
         textarea.oninput = () => {
-            clearTimeout(this.saveTimeout);
-            this.saveTimeout = setTimeout(() => this.save(), 500);
+            this.updateDirtyState();
         };
 
-        reminderInput.onchange = () => this.save();
+        reminderInput.onchange = () => this.updateDirtyState();
 
         this.el.querySelectorAll('.et-shortcut-btn').forEach(btn => {
             btn.onclick = () => {
@@ -193,7 +193,45 @@ export const NoteDrawer = {
         const offset = target.getTimezoneOffset() * 60000;
         const localISODate = new Date(target.getTime() - offset).toISOString().slice(0, 16);
         reminderInput.value = localISODate;
-        this.save();
+        this.updateDirtyState();
+    },
+
+    getFormSnapshot() {
+        if (!this.el) {
+            return {
+                noteText: '',
+                reminderValue: '',
+                tagLabels: [],
+            };
+        }
+
+        return {
+            noteText: this.el.querySelector('.et-drawer-textarea')?.value.trim() || '',
+            reminderValue: this.el.querySelector('.et-drawer-reminder-input')?.value || '',
+            tagLabels: normalizeTagList(this.tagEditor?.getValue() || [], this.currentTagDefs),
+        };
+    },
+
+    setBaselineFromCurrentForm() {
+        this.baselineSnapshot = this.getFormSnapshot();
+        this.isDirty = false;
+    },
+
+    hasUnsavedChanges() {
+        const current = this.getFormSnapshot();
+        const baseline = this.baselineSnapshot || {
+            noteText: '',
+            reminderValue: '',
+            tagLabels: [],
+        };
+
+        return current.noteText !== baseline.noteText
+            || current.reminderValue !== baseline.reminderValue
+            || current.tagLabels.join('\n') !== baseline.tagLabels.join('\n');
+    },
+
+    updateDirtyState() {
+        this.isDirty = this.hasUnsavedChanges();
     },
 
     async open(issueKey, summary) {
@@ -228,18 +266,27 @@ export const NoteDrawer = {
         }
         this.tagEditor?.setTagDefs(this.currentTagDefs);
         this.tagEditor?.setValue(normalizeTagList(result[tagsKey], this.currentTagDefs));
+        this.setBaselineFromCurrentForm();
 
         this.backdrop.classList.add('visible');
         this.el.classList.add('visible');
         setTimeout(() => textarea.focus(), 350);
     },
 
-    close(skipSave = false) {
+    async close(skipSave = false) {
         if (!this.el) return;
+        clearTimeout(this.saveTimeout);
+
+        if (!skipSave && this.hasUnsavedChanges()) {
+            const shouldSave = confirm('Save changes before closing? Press OK to save, or Cancel to discard.');
+            if (shouldSave) {
+                await this.save();
+            }
+        }
+
         this.el.classList.remove('visible');
         this.backdrop.classList.remove('visible');
-        clearTimeout(this.saveTimeout);
-        if (!skipSave) this.save();
+        this.isDirty = false;
     },
 
     emitTrackingUpdated(detail = {}) {
@@ -268,14 +315,6 @@ export const NoteDrawer = {
         const tagsKey = getTagsStorageKey(this.currentKey);
         const ignoredKey = `ignored_${prefixedKey}`;
 
-        await storage.remove([storageKey, reminderKey, tagsKey, ignoredKey]);
-
-        // Reset fields
-        this.el.querySelector('.et-drawer-textarea').value = '';
-        this.el.querySelector('.et-drawer-reminder-input').value = '';
-        this.tagEditor?.setValue([]);
-
-        this.updateIndicators(false);
         this.emitTrackingUpdated({
             issueKey: this.currentKey,
             noteText: '',
@@ -284,6 +323,15 @@ export const NoteDrawer = {
             tagLabels: [],
             tagDefs: this.currentTagDefs,
         });
+
+        await storage.remove([storageKey, reminderKey, tagsKey, ignoredKey]);
+
+        // Reset fields
+        this.el.querySelector('.et-drawer-textarea').value = '';
+        this.el.querySelector('.et-drawer-reminder-input').value = '';
+        this.tagEditor?.setValue([]);
+
+        this.updateIndicators(false);
         this.close(true); // Close without saving (it's already deleted)
     },
 
@@ -302,6 +350,15 @@ export const NoteDrawer = {
         const storageKey = getNotesStorageKey(this.currentKey);
         const reminderKey = getReminderStorageKey(this.currentKey);
         const finalKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
+
+        this.emitTrackingUpdated({
+            issueKey: this.currentKey,
+            noteText: value,
+            reminderValue,
+            reminderTs,
+            tagLabels: tagsValue,
+            tagDefs: this.currentTagDefs,
+        });
 
         if (value) {
             await storage.set({ [storageKey]: value });
@@ -330,15 +387,7 @@ export const NoteDrawer = {
             reminderValue,
             tagLabels: tagsValue,
         }));
-
-        this.emitTrackingUpdated({
-            issueKey: this.currentKey,
-            noteText: value,
-            reminderValue,
-            reminderTs,
-            tagLabels: tagsValue,
-            tagDefs: this.currentTagDefs,
-        });
+        this.setBaselineFromCurrentForm();
     },
 
     updateIndicators(hasActiveItem) {

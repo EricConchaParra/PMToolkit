@@ -17,6 +17,7 @@ export async function fetchIssueTimeline(host, issueKey) {
             const changes = (history.items || []).filter(item => item.field === 'status');
             return changes.map(item => ({
                 created: history.created,
+                changedBy: history.author?.displayName || history.author?.name || '',
                 from: item.fromString || '',
                 fromId: item.from || '',
                 to: item.toString || '',

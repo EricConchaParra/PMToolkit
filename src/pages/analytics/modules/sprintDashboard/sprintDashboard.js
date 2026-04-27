@@ -62,6 +62,7 @@ let _selectedTagFilter = '';
 let _velocityByAssignee = {};
 let _tagFilterListenerBound = false;
 let _demoMode = false;
+let _recentDirectTrackingUpdates = new Map();
 let _trackingState = {
     notesMap: {},
     remindersMap: {},
@@ -70,6 +71,8 @@ let _trackingState = {
 };
 
 const ANY_TAG_FILTER_VALUE = '__any_tag__';
+const TRACKING_STORAGE_REFRESH_DELAY_MS = 120;
+const DIRECT_TRACKING_STORAGE_SUPPRESS_MS = 1500;
 
 export function getCurrentSprints() { return _currentSprints; }
 export function getSelectedSprintId() { return _selectedSprintId; }
@@ -264,6 +267,134 @@ export function filterSprintIssuesByTag(issues = [], selectedTag = '', tracking 
     );
 }
 
+export function normalizeTrackingEventDetail(detail = {}) {
+    const noteText = String(detail.noteText || '').trim();
+    const tagLabels = Array.isArray(detail.tagLabels)
+        ? detail.tagLabels.filter(label => String(label || '').trim())
+        : [];
+    const tagDefs = detail.tagDefs && typeof detail.tagDefs === 'object'
+        ? detail.tagDefs
+        : null;
+    const reminderTs = Number(detail.reminderTs ?? (detail.reminderValue ? new Date(detail.reminderValue).getTime() : 0));
+
+    return {
+        noteText,
+        tagLabels,
+        tagDefs,
+        reminderTs: Number.isFinite(reminderTs) && reminderTs > 0 ? reminderTs : null,
+    };
+}
+
+export function applyTrackingEventToState(issueKey, detail = {}, trackingState = _trackingState) {
+    const normalizedIssueKey = String(issueKey || '').split(':').pop();
+    if (!normalizedIssueKey || !trackingState) return trackingState;
+
+    const { noteText, tagLabels, tagDefs, reminderTs } = normalizeTrackingEventDetail(detail);
+
+    if (noteText) trackingState.notesMap[normalizedIssueKey] = noteText;
+    else delete trackingState.notesMap[normalizedIssueKey];
+
+    if (reminderTs) trackingState.remindersMap[normalizedIssueKey] = reminderTs;
+    else delete trackingState.remindersMap[normalizedIssueKey];
+
+    if (tagLabels.length) trackingState.tagsMap[normalizedIssueKey] = tagLabels;
+    else delete trackingState.tagsMap[normalizedIssueKey];
+
+    if (tagDefs) {
+        trackingState.tagDefs = {
+            ...trackingState.tagDefs,
+            ...tagDefs,
+        };
+    }
+
+    return trackingState;
+}
+
+function cloneTrackingState(tracking = {}) {
+    return {
+        notesMap: { ...(tracking.notesMap || {}) },
+        remindersMap: { ...(tracking.remindersMap || {}) },
+        tagsMap: { ...(tracking.tagsMap || {}) },
+        tagDefs: { ...(tracking.tagDefs || {}) },
+    };
+}
+
+function areTagFilterOptionsEqual(left = [], right = []) {
+    if (left.length !== right.length) return false;
+
+    return left.every((option, index) =>
+        option.value === right[index]?.value && option.label === right[index]?.label
+    );
+}
+
+export function getSprintTrackingUpdatePlan({
+    issueKey,
+    issues = [],
+    selectedTagFilter = '',
+    previousTracking = {},
+    nextTracking = {},
+} = {}) {
+    const normalizedIssueKey = String(issueKey || '').split(':').pop();
+    const previousOptions = buildSprintTagFilterOptions(issues, previousTracking);
+    const nextOptions = buildSprintTagFilterOptions(issues, nextTracking);
+    const previousVisible = new Set(
+        filterSprintIssuesByTag(issues, selectedTagFilter, previousTracking).map(issue => issue.key)
+    );
+    const nextVisible = new Set(
+        filterSprintIssuesByTag(issues, selectedTagFilter, nextTracking).map(issue => issue.key)
+    );
+    const normalizedFilter = selectedTagFilter === ANY_TAG_FILTER_VALUE
+        ? ANY_TAG_FILTER_VALUE
+        : normalizeTagLabel(selectedTagFilter);
+    const selectionExistedBefore = normalizedFilter
+        ? previousOptions.some(option => option.value === normalizedFilter)
+        : false;
+    const selectionExistsAfter = normalizedFilter
+        ? nextOptions.some(option => option.value === normalizedFilter)
+        : false;
+    const visibilityChanged = normalizedIssueKey
+        ? previousVisible.has(normalizedIssueKey) !== nextVisible.has(normalizedIssueKey)
+        : false;
+    const selectionInvalidated = Boolean(normalizedFilter
+        && normalizedFilter !== ANY_TAG_FILTER_VALUE
+        && selectionExistedBefore
+        && !selectionExistsAfter);
+
+    return {
+        rerenderTagFilter: !areTagFilterOptionsEqual(previousOptions, nextOptions),
+        rerenderDashboard: visibilityChanged || selectionInvalidated,
+        issueVisibleAfter: normalizedIssueKey ? nextVisible.has(normalizedIssueKey) : false,
+    };
+}
+
+export function getTrackingStorageChangeIssueKeys(changes = {}) {
+    const issueKeys = new Set();
+
+    Object.keys(changes || {}).forEach(key => {
+        const match = key.match(/^(?:notes|reminder|tags)_jira:(.+)$/);
+        if (match?.[1]) issueKeys.add(match[1]);
+    });
+
+    return issueKeys;
+}
+
+function pruneRecentDirectTrackingUpdates(now = Date.now()) {
+    _recentDirectTrackingUpdates.forEach((expiresAt, issueKey) => {
+        if (expiresAt <= now) _recentDirectTrackingUpdates.delete(issueKey);
+    });
+}
+
+export function shouldSuppressTrackingStorageRefresh(changes = {}, recentUpdates = _recentDirectTrackingUpdates, now = Date.now()) {
+    const issueKeys = getTrackingStorageChangeIssueKeys(changes);
+    if (!issueKeys.size) return false;
+
+    for (const issueKey of issueKeys) {
+        if ((recentUpdates.get(issueKey) || 0) <= now) return false;
+    }
+
+    return true;
+}
+
 function renderSprintTagFilter(issues = _currentIssues, tracking = _trackingState) {
     const select = document.getElementById('sprint-tag-filter');
     if (!select) return [{ value: '', label: 'No Filter' }];
@@ -290,6 +421,44 @@ function renderSprintTagFilter(issues = _currentIssues, tracking = _trackingStat
         : 'Filter sprint issues by tag';
 
     return options;
+}
+
+function applyIncrementalTrackingUpdate(issueKey, detail = {}) {
+    if (!_currentIssues.length) return;
+
+    const normalizedIssueKey = String(issueKey || '').split(':').pop();
+    if (!normalizedIssueKey) return;
+
+    clearTimeout(_trackingReloadTimer);
+    pruneRecentDirectTrackingUpdates();
+    _recentDirectTrackingUpdates.set(
+        normalizedIssueKey,
+        Date.now() + DIRECT_TRACKING_STORAGE_SUPPRESS_MS
+    );
+
+    const previousTracking = cloneTrackingState(_trackingState);
+    applyTrackingEventToState(normalizedIssueKey, detail, _trackingState);
+
+    const updatePlan = getSprintTrackingUpdatePlan({
+        issueKey: normalizedIssueKey,
+        issues: _currentIssues,
+        selectedTagFilter: _selectedTagFilter,
+        previousTracking,
+        nextTracking: _trackingState,
+    });
+
+    if (updatePlan.rerenderTagFilter) {
+        renderSprintTagFilter(_currentIssues, _trackingState);
+    }
+
+    if (updatePlan.rerenderDashboard) {
+        renderCurrentSprintDashboard();
+        return;
+    }
+
+    document
+        .querySelectorAll(`.issue-chip[data-gh-key="${normalizedIssueKey}"]`)
+        .forEach(updateSprintTrackingChip);
 }
 
 function getVelocity(accountId) {
@@ -392,11 +561,13 @@ function bindTrackingStorageListener() {
         if (areaName !== 'local') return;
         if (!hasSprintTrackingStorageChange(changes)) return;
         if (!_currentIssues.length) return;
+        pruneRecentDirectTrackingUpdates();
+        if (shouldSuppressTrackingStorageRefresh(changes)) return;
 
         clearTimeout(_trackingReloadTimer);
         _trackingReloadTimer = setTimeout(() => {
             void refreshSprintTrackingChips();
-        }, 120);
+        }, TRACKING_STORAGE_REFRESH_DELAY_MS);
     });
 
     _trackingListenerBound = true;
@@ -410,32 +581,7 @@ function bindTrackingEventListener() {
         if (!issueKey) return;
         if (!_currentIssues.some(issue => issue.key === issueKey)) return;
 
-        const noteText = String(event.detail?.noteText || '').trim();
-        const tagLabels = Array.isArray(event.detail?.tagLabels)
-            ? event.detail.tagLabels.filter(label => String(label || '').trim())
-            : [];
-        const tagDefs = event.detail?.tagDefs && typeof event.detail.tagDefs === 'object'
-            ? event.detail.tagDefs
-            : null;
-        const reminderTs = Number(event.detail?.reminderTs ?? (event.detail?.reminderValue ? new Date(event.detail.reminderValue).getTime() : 0));
-
-        if (noteText) _trackingState.notesMap[issueKey] = noteText;
-        else delete _trackingState.notesMap[issueKey];
-
-        if (Number.isFinite(reminderTs) && reminderTs > 0) _trackingState.remindersMap[issueKey] = reminderTs;
-        else delete _trackingState.remindersMap[issueKey];
-
-        if (tagLabels.length) _trackingState.tagsMap[issueKey] = tagLabels;
-        else delete _trackingState.tagsMap[issueKey];
-
-        if (tagDefs) {
-            _trackingState.tagDefs = {
-                ..._trackingState.tagDefs,
-                ...tagDefs,
-            };
-        }
-
-        renderCurrentSprintDashboard();
+        applyIncrementalTrackingUpdate(issueKey, event.detail);
     });
 
     _trackingEventListenerBound = true;
@@ -528,7 +674,7 @@ function updateSprintTrackingChip(chip) {
         }
 
         if (pill) {
-            pill.className = `sprint-reminder-pill${trackingModel.reminderIsOverdue ? ' is-overdue' : ''}`;
+            pill.className = 'sprint-reminder-pill';
             pill.textContent = `🔔 ${trackingModel.reminderLabel}`;
             pill.title = trackingModel.reminderTitle;
         }

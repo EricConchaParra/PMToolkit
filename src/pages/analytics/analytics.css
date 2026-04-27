@@ -2058,18 +2058,57 @@ body {
     white-space: nowrap;
 }
 
-.overdue-time-badge {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
-    background: #de350b;
-    color: white;
-    border-radius: 12px;
-    font-size: 10px;
-    font-weight: 800;
+.et-age-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 6px;
+    vertical-align: middle;
+    letter-spacing: 0.3px;
     white-space: nowrap;
-    flex-shrink: 0;
+    position: relative;
+    pointer-events: auto;
+    cursor: default;
+}
+
+.et-tooltip {
+    position: fixed;
+    background: #172b4d;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 6px 10px;
+    border-radius: 4px;
+    white-space: pre-line;
+    width: max-content;
+    max-width: 240px;
+    box-shadow: 0 4px 12px rgba(9, 30, 66, 0.3);
+    pointer-events: none;
+    z-index: 2147483647;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.et-tooltip.visible {
+    opacity: 1;
+}
+
+.et-age-badge.et-age-green {
+    background: #e3fcef;
+    color: #006644;
+}
+
+.et-age-badge.et-age-yellow {
+    background: #fffae6;
+    color: #974f0c;
+}
+
+.et-age-badge.et-age-red {
+    background: #ffebe6;
+    color: #bf2600;
 }
 
 .overdue-sp {
@@ -2194,11 +2233,6 @@ body {
     border-radius: var(--r-sm);
     font-size: 12px;
     transition: border-color 0.15s;
-}
-
-.issue-chip-overdue {
-    background: #fff5f5;
-    border-color: rgba(222, 53, 11, 0.2);
 }
 
 .issue-chip.done-chip,
@@ -2430,12 +2464,6 @@ body {
     white-space: nowrap;
 }
 
-.sprint-reminder-pill.is-overdue {
-    color: #a54800;
-    background: #ffead8;
-    border-color: #fec195;
-}
-
 .sprint-tag-row {
     display: flex;
     align-items: flex-start;
@@ -2473,18 +2501,6 @@ body {
 .section-count {
     font-weight: 500;
     opacity: 0.7;
-}
-
-.overdue-count-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 7px;
-    background: #de350b;
-    color: white;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 800;
-    margin-left: 4px;
 }
 
 /* QA SP in summary row */

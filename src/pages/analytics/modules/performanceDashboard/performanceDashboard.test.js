@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCapacityReportCSV } from './performanceDashboard.js';
+import { buildCapacityReportCSV, buildDeveloperVelocityRows } from './performanceDashboard.js';
 
 describe('buildCapacityReportCSV', () => {
     it('builds detailed rows with developer, sprint and team totals', () => {
@@ -74,5 +74,36 @@ describe('buildCapacityReportCSV', () => {
         expect(row3).toContain('Bob');
         expect(row3).toContain('PM-3');
         expect(row3).toContain(',1,2,1,2,1,2,3,10');
+    });
+});
+
+describe('buildDeveloperVelocityRows', () => {
+    it('calculates each developer velocity across all sprints, including sprints without their work', () => {
+        const rows = buildDeveloperVelocityRows([
+            {
+                id: 1,
+                issues: [
+                    { fields: { customfield_10016: 8, assignee: { displayName: 'Alice', accountId: 'alice-1' } } },
+                    { fields: { customfield_10016: 1, assignee: { displayName: 'Bob', accountId: 'bob-1' } } },
+                ],
+            },
+            {
+                id: 2,
+                issues: [
+                    { fields: { customfield_10016: 4, assignee: { displayName: 'Alice', accountId: 'alice-1' } } },
+                ],
+            },
+            {
+                id: 3,
+                issues: [
+                    { fields: { customfield_10016: 2, assignee: { displayName: 'Bob', accountId: 'bob-1' } } },
+                ],
+            },
+        ], 'customfield_10016');
+
+        expect(rows.map(row => [row.assignee.displayName, row.velocity, row.totalSP, row.activeSprintCount])).toEqual([
+            ['Alice', 4, 12, 2],
+            ['Bob', 1, 3, 2],
+        ]);
     });
 });

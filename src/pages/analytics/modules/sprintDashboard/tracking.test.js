@@ -3,10 +3,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createBoardFlow } from '../boardFlow.js';
 import { buildIssueTrackingMarkup, renderDevCard } from './devCard.js';
 import {
+    applyTrackingEventToState,
     buildSprintTagFilterOptions,
     buildSprintTrackingState,
     filterSprintIssuesByTag,
+    getSprintTrackingUpdatePlan,
+    getTrackingStorageChangeIssueKeys,
     hasSprintTrackingStorageChange,
+    normalizeTrackingEventDetail,
+    shouldSuppressTrackingStorageRefresh,
 } from './sprintDashboard.js';
 
 const BOARD_FLOW = createBoardFlow({
@@ -87,6 +92,158 @@ describe('sprint tracking state', () => {
         expect(hasSprintTrackingStorageChange({
             'ignored_jira:PM-1': { oldValue: null, newValue: true },
         })).toBe(false);
+    });
+
+    it('normalizes drawer tracking payloads before applying them to state', () => {
+        expect(normalizeTrackingEventDetail({
+            noteText: '  Need PM review  ',
+            reminderValue: '2026-04-21T09:00',
+            tagLabels: ['Urgent', '', '  Customer  '],
+            tagDefs: { urgent: { label: 'Urgent', color: 'red' } },
+        })).toEqual({
+            noteText: 'Need PM review',
+            reminderTs: new Date('2026-04-21T09:00').getTime(),
+            tagLabels: ['Urgent', '  Customer  '],
+            tagDefs: { urgent: { label: 'Urgent', color: 'red' } },
+        });
+    });
+
+    it('applies a tracking event into the in-memory sprint state', () => {
+        const trackingState = {
+            notesMap: { 'PM-1': 'Old note' },
+            remindersMap: {},
+            tagsMap: {},
+            tagDefs: {},
+        };
+
+        applyTrackingEventToState('jira:PM-1', {
+            noteText: 'Updated note',
+            reminderTs: 1_900_000_000_000,
+            tagLabels: ['Urgent'],
+            tagDefs: { urgent: { label: 'Urgent', color: 'red' } },
+        }, trackingState);
+
+        expect(trackingState).toEqual({
+            notesMap: { 'PM-1': 'Updated note' },
+            remindersMap: { 'PM-1': 1_900_000_000_000 },
+            tagsMap: { 'PM-1': ['Urgent'] },
+            tagDefs: { urgent: { label: 'Urgent', color: 'red' } },
+        });
+    });
+});
+
+describe('incremental sprint tracking updates', () => {
+    it('keeps the dashboard incremental for note-only updates', () => {
+        const issues = [{ key: 'PM-1' }, { key: 'PM-2' }];
+        const previousTracking = {
+            notesMap: {},
+            remindersMap: {},
+            tagsMap: { 'PM-1': ['Urgent'] },
+            tagDefs: { urgent: { label: 'Urgent', color: 'red' } },
+        };
+        const nextTracking = {
+            notesMap: { 'PM-1': 'Need PM review' },
+            remindersMap: {},
+            tagsMap: { 'PM-1': ['Urgent'] },
+            tagDefs: { urgent: { label: 'Urgent', color: 'red' } },
+        };
+
+        expect(getSprintTrackingUpdatePlan({
+            issueKey: 'PM-1',
+            issues,
+            selectedTagFilter: '',
+            previousTracking,
+            nextTracking,
+        })).toEqual({
+            rerenderTagFilter: false,
+            rerenderDashboard: false,
+            issueVisibleAfter: true,
+        });
+    });
+
+    it('forces a dashboard rerender when tags change issue visibility under the active filter', () => {
+        const issues = [{ key: 'PM-1' }, { key: 'PM-2' }];
+        const previousTracking = {
+            notesMap: {},
+            remindersMap: {},
+            tagsMap: { 'PM-1': ['Urgent'] },
+            tagDefs: { urgent: { label: 'Urgent', color: 'red' } },
+        };
+        const nextTracking = {
+            notesMap: {},
+            remindersMap: {},
+            tagsMap: { 'PM-1': ['Customer'] },
+            tagDefs: {
+                urgent: { label: 'Urgent', color: 'red' },
+                customer: { label: 'Customer', color: 'blue' },
+            },
+        };
+
+        expect(getSprintTrackingUpdatePlan({
+            issueKey: 'PM-1',
+            issues,
+            selectedTagFilter: 'Urgent',
+            previousTracking,
+            nextTracking,
+        })).toEqual({
+            rerenderTagFilter: true,
+            rerenderDashboard: true,
+            issueVisibleAfter: false,
+        });
+    });
+
+    it('does not request a full rerender for reminder-only updates', () => {
+        const issues = [{ key: 'PM-1' }];
+        const previousTracking = {
+            notesMap: {},
+            remindersMap: {},
+            tagsMap: {},
+            tagDefs: {},
+        };
+        const nextTracking = {
+            notesMap: {},
+            remindersMap: { 'PM-1': 1_900_000_000_000 },
+            tagsMap: {},
+            tagDefs: {},
+        };
+
+        expect(getSprintTrackingUpdatePlan({
+            issueKey: 'PM-1',
+            issues,
+            selectedTagFilter: '',
+            previousTracking,
+            nextTracking,
+        })).toEqual({
+            rerenderTagFilter: false,
+            rerenderDashboard: false,
+            issueVisibleAfter: true,
+        });
+    });
+
+    it('extracts changed tracking issue keys from storage changes', () => {
+        expect(Array.from(getTrackingStorageChangeIssueKeys({
+            'notes_jira:PM-1': { oldValue: '', newValue: 'Note' },
+            'reminder_jira:PM-2': { oldValue: null, newValue: 1_900_000_000_000 },
+            tag_defs_jira: { oldValue: {}, newValue: {} },
+        }))).toEqual(['PM-1', 'PM-2']);
+    });
+
+    it('suppresses storage refreshes that are already covered by a direct tracking event', () => {
+        const recentUpdates = new Map([
+            ['PM-1', 2_000],
+        ]);
+
+        expect(shouldSuppressTrackingStorageRefresh({
+            'notes_jira:PM-1': { oldValue: '', newValue: 'Note' },
+        }, recentUpdates, 1_500)).toBe(true);
+
+        expect(shouldSuppressTrackingStorageRefresh({
+            'notes_jira:PM-1': { oldValue: '', newValue: 'Note' },
+        }, recentUpdates, 2_500)).toBe(false);
+
+        expect(shouldSuppressTrackingStorageRefresh({
+            'notes_jira:PM-2': { oldValue: '', newValue: 'Other note' },
+        }, recentUpdates, 1_500)).toBe(false);
     });
 });
 

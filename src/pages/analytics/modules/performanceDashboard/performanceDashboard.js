@@ -1,11 +1,11 @@
 /**
  * PMsToolKit — Analytics Hub
- * Performance Dashboard — team metrics across last 5 closed sprints
+ * Performance Dashboard — team metrics across all closed sprints
  */
 
 import {
     fetchBoardId, fetchBoardSprints, fetchSprintDoneIssues,
-    fetchSprintIssues, fetchSpFieldId, jiraFetch,
+    fetchSprintIssues, fetchSpFieldId,
 } from '../jiraApi.js';
 import { escapeHtml } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
@@ -43,6 +43,36 @@ function setPerfExportStatus(kind, message) {
 
 function getSprintSortValue(sprint) {
     return new Date(sprint?.startDate || sprint?.endDate || 0).getTime() || 0;
+}
+
+function roundToOneDecimal(value) {
+    return Math.round(value * 10) / 10;
+}
+
+export function buildDeveloperVelocityRows(sprintData, spFieldId) {
+    const sprintCount = sprintData.length;
+    const contribMap = {};
+
+    sprintData.forEach(sprint => {
+        (sprint.issues || []).forEach(issue => {
+            const key = issue.fields?.assignee?.accountId || 'unassigned';
+            const sp = Number(issue.fields?.[spFieldId]) || 0;
+            if (!contribMap[key]) {
+                contribMap[key] = { assignee: issue.fields?.assignee || null, totalSP: 0, count: 0, sprintSP: new Map() };
+            }
+            contribMap[key].totalSP += sp;
+            contribMap[key].count++;
+            contribMap[key].sprintSP.set(sprint.id, (contribMap[key].sprintSP.get(sprint.id) || 0) + sp);
+        });
+    });
+
+    return Object.values(contribMap)
+        .map(contributor => ({
+            ...contributor,
+            velocity: sprintCount > 0 ? roundToOneDecimal(contributor.totalSP / sprintCount) : 0,
+            activeSprintCount: [...contributor.sprintSP.values()].filter(sp => sp > 0).length,
+        }))
+        .sort((a, b) => b.velocity - a.velocity || b.totalSP - a.totalSP);
 }
 
 function buildCapacityReportRows({ projectKey, host, sprints, spFieldId }) {
@@ -274,10 +304,10 @@ export async function loadPerfDashboard(projectKey, host) {
         perfState.boardId = boardId;
         if (!boardId) { showState('error', `No Scrum board found for "${projectKey}".`); return; }
 
-        showState('loading', 'Fetching last 5 sprints...');
-        const spData = await jiraFetch(host, `/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=50`);
+        showState('loading', 'Fetching all closed sprints...');
+        const closedSprints = (await fetchBoardSprints(host, boardId, ['closed']))
+            .sort((a, b) => getSprintSortValue(a) - getSprintSortValue(b) || String(a.name || '').localeCompare(String(b.name || '')));
         if (requestId !== perfState.loadRequestId) return;
-        const closedSprints = (spData.values || []).slice(-5);
         if (closedSprints.length === 0) { showState('error', 'No closed sprints found. Complete at least one sprint first.'); return; }
 
         showState('loading', 'Resolving Story Points field...');
@@ -286,24 +316,32 @@ export async function loadPerfDashboard(projectKey, host) {
         perfState.spFieldId = spFId;
 
         showState('loading', 'Loading sprint data...');
-        const sprintData = await Promise.all(closedSprints.map(async cs => {
-            const issues = await fetchSprintDoneIssues(host, cs.id, spFId).catch(() => []);
-            return {
-                id: cs.id,
-                name: cs.name,
-                startDate: cs.startDate,
-                endDate: cs.completeDate || cs.endDate,
-                issues,
-            };
-        }));
+        const sprintData = [];
+        const sprintConcurrency = 4;
+        for (let i = 0; i < closedSprints.length; i += sprintConcurrency) {
+            const batch = closedSprints.slice(i, i + sprintConcurrency);
+            const results = await Promise.all(batch.map(async cs => {
+                const issues = await fetchSprintDoneIssues(host, cs.id, spFId).catch(() => []);
+                return {
+                    id: cs.id,
+                    name: cs.name,
+                    startDate: cs.startDate,
+                    endDate: cs.completeDate || cs.endDate,
+                    issues,
+                };
+            }));
+            sprintData.push(...results);
+            showState('loading', `Loading sprint data: ${Math.min(i + sprintConcurrency, closedSprints.length)} / ${closedSprints.length}...`);
+            if (requestId !== perfState.loadRequestId) return;
+        }
         if (requestId !== perfState.loadRequestId) return;
 
         // ---- KPI calculations ----
         const sprintCount = sprintData.length;
         const totalIssues = sprintData.reduce((a, s) => a + s.issues.length, 0);
         const totalSP = sprintData.reduce((a, s) => a + s.issues.reduce((b, i) => b + (Number(i.fields?.[spFId]) || 0), 0), 0);
-        const avgThroughput = Math.round((totalIssues / sprintCount) * 10) / 10;
-        const avgVelocity = Math.round((totalSP / sprintCount) * 10) / 10;
+        const avgThroughput = roundToOneDecimal(totalIssues / sprintCount);
+        const avgVelocity = roundToOneDecimal(totalSP / sprintCount);
 
         // Trend: compare last sprint vs previous
         const velocityBySprintArr = sprintData.map(s => s.issues.reduce((a, i) => a + (Number(i.fields?.[spFId]) || 0), 0));
@@ -373,23 +411,11 @@ export async function loadPerfDashboard(projectKey, host) {
         renderBarChart('perf-throughput-chart', sprintNames, throughputBySprintArr, ' issues');
         renderBarChart('perf-velocity-chart', sprintNames, velocityBySprintArr, ' SP');
 
-        // ---- Render top contributors ----
-        const contribMap = {};
-        sprintData.forEach(s => {
-            s.issues.forEach(i => {
-                const key = i.fields?.assignee?.accountId || 'unassigned';
-                const sp = Number(i.fields?.[spFId]) || 0;
-                if (!contribMap[key]) contribMap[key] = { assignee: i.fields?.assignee || null, totalSP: 0, count: 0 };
-                contribMap[key].totalSP += sp;
-                contribMap[key].count++;
-            });
-        });
-
-        const sortedContribs = Object.values(contribMap)
-            .sort((a, b) => b.totalSP - a.totalSP)
+        // ---- Render developer velocity ----
+        const sortedContribs = buildDeveloperVelocityRows(sprintData, spFId)
             .slice(0, 8);
 
-        const maxContribSP = Math.max(...sortedContribs.map(c => c.totalSP), 1);
+        const maxVelocity = Math.max(...sortedContribs.map(c => c.velocity), 1);
 
         const contribEl = document.getElementById('perf-contributors');
         if (sortedContribs.length === 0) {
@@ -398,7 +424,7 @@ export async function loadPerfDashboard(projectKey, host) {
             contribEl.innerHTML = sortedContribs.map(c => {
                 const { initials, imgUrl } = getInitialsOrImg(c.assignee);
                 const avatarHtml = imgUrl ? `<img src="${imgUrl}" alt="avatar">` : initials;
-                const barPct = Math.round((c.totalSP / maxContribSP) * 100);
+                const barPct = Math.round((c.velocity / maxVelocity) * 100);
                 const name = c.assignee?.displayName || 'Unassigned';
                 return `
                     <div class="perf-contributor-row">
@@ -410,8 +436,8 @@ export async function loadPerfDashboard(projectKey, host) {
                             </div>
                         </div>
                         <div>
-                            <div class="perf-contrib-sp">${c.totalSP} SP</div>
-                            <div class="perf-contrib-sp-sub">${c.count} issues</div>
+                            <div class="perf-contrib-sp">${c.velocity} SP/sprint</div>
+                            <div class="perf-contrib-sp-sub">${c.totalSP} SP · ${c.count} issues</div>
                         </div>
                     </div>
                 `;
