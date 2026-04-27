@@ -19,12 +19,17 @@ const availabilityListeners = new Set();
 const recoveryTimers = new Map();
 const pendingBatchRequests = new Map();
 const pendingSingleRequests = new Map();
-const NOT_FOUND_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const ACTIVE_NOT_FOUND_CACHE_TTL_MS = 10 * 60 * 1000;
+const DONE_NOT_FOUND_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const SEARCH_RESERVE_REQUESTS = 5;
+const CORE_RESERVE_REQUESTS = 100;
+const SEARCH_REQUESTS_PER_LOOKUP = 2;
+const CORE_REQUESTS_PER_LOOKUP = 2;
 
 const DEFAULT_OPTIONS = {
     repoConcurrency: 1,
     closedWindowDays: 14,
-    searchLimit: 5,
     allowGlobalFallback: false,
 };
 
@@ -40,6 +45,7 @@ function createBucketState(bucket) {
     return {
         bucket,
         blocked: false,
+        paused: false,
         reason: '',
         retryAt: null,
         pendingKeys: new Set(),
@@ -92,6 +98,7 @@ function restoreAvailabilityState(rawState = null) {
         if (!rawBucket) return;
 
         bucketState.blocked = rawBucket.blocked === true;
+        bucketState.paused = rawBucket.paused === true;
         bucketState.reason = rawBucket.reason || '';
         bucketState.retryAt = Number(rawBucket.retryAt) || null;
         bucketState.retryCount = Number(rawBucket.retryCount) || 0;
@@ -109,7 +116,7 @@ function restoreAvailabilityState(rawState = null) {
     });
 }
 
-async function persistSnapshots(snapshotEntries = {}) {
+async function persistSnapshots(snapshotEntries = {}, ticketStateByKey = {}) {
     const payload = {};
     const removeKeys = [];
     const now = Date.now();
@@ -117,7 +124,10 @@ async function persistSnapshots(snapshotEntries = {}) {
     Object.entries(snapshotEntries).forEach(([ticketKey, snapshot]) => {
         payload[makePrSnapshotStorageKey(ticketKey)] = snapshot;
         if (snapshot == null) {
-            const meta = { fetchedAt: now };
+            const meta = {
+                fetchedAt: now,
+                isDone: resolveTicketDoneState(ticketStateByKey[ticketKey]),
+            };
             payload[makePrNotFoundStorageKey(ticketKey)] = meta;
             notFoundMetaCache.set(ticketKey, meta);
             return;
@@ -166,18 +176,23 @@ export function subscribeGithubAvailability(listener) {
 
 export function getGithubAvailabilityState() {
     const blockedBuckets = Object.values(rateLimitState).filter(bucket => bucket.blocked);
+    const pausedBuckets = Object.values(rateLimitState).filter(bucket => bucket.paused);
     const activeBlock = blockedBuckets
         .slice()
         .sort((left, right) => Number(left.retryAt || Infinity) - Number(right.retryAt || Infinity))[0] || null;
+    const activePause = pausedBuckets[0] || null;
+    const activeBucket = activeBlock || activePause;
+    const activePendingBuckets = Object.values(rateLimitState).filter(bucket => bucket.blocked || bucket.paused);
 
     return {
         blocked: blockedBuckets.length > 0,
-        reason: activeBlock?.reason || '',
-        status: blockedBuckets.length > 0 ? 'blocked' : 'available',
+        paused: blockedBuckets.length === 0 && pausedBuckets.length > 0,
+        reason: activeBucket?.reason || '',
+        status: blockedBuckets.length > 0 ? 'blocked' : pausedBuckets.length > 0 ? 'paused' : 'available',
         retryAt: activeBlock?.retryAt || null,
         retryInMs: activeBlock?.retryAt ? Math.max(0, activeBlock.retryAt - Date.now()) : null,
-        bucket: activeBlock?.bucket || null,
-        pendingKeys: Array.from(new Set(blockedBuckets.flatMap(bucket => Array.from(bucket.pendingKeys)))),
+        bucket: activeBucket?.bucket || null,
+        pendingKeys: Array.from(new Set(activePendingBuckets.flatMap(bucket => Array.from(bucket.pendingKeys)))),
         lastSuccessfulSyncAt: lastSuccessfulSyncAt || null,
         buckets: {
             rest: serializeBucketState(rateLimitState.rest),
@@ -234,22 +249,24 @@ export async function resolveGithubPrBatch(options = {}) {
     const normalizedKeys = uniqueTicketKeys(options.ticketKeys || []);
     const orderedKeys = uniqueTicketKeys([...(options.visibleTicketKeys || []), ...normalizedKeys]);
     const normalizedRepos = uniqueRepos(options.repos || []);
+    const ticketStateByKey = normalizeTicketStateMap(options.ticketStateByKey || {}, orderedKeys);
     const requestOptions = {
         ...DEFAULT_OPTIONS,
         ...options,
         ticketKeys: normalizedKeys,
         visibleTicketKeys: orderedKeys,
         repos: normalizedRepos,
+        ticketStateByKey,
     };
 
     const requestKey = JSON.stringify({
         ticketKeys: orderedKeys,
         repos: normalizedRepos,
+        ticketStateByKey,
         forceRefresh: requestOptions.forceRefresh === true,
         allowGlobalFallback: requestOptions.allowGlobalFallback === true,
         repoConcurrency: requestOptions.repoConcurrency,
         closedWindowDays: requestOptions.closedWindowDays,
-        searchLimit: requestOptions.searchLimit,
         token: requestOptions.token,
     });
 
@@ -272,8 +289,10 @@ async function resolveGithubPrBatchInternal({
     allowGlobalFallback = false,
     repoConcurrency = DEFAULT_OPTIONS.repoConcurrency,
     closedWindowDays = DEFAULT_OPTIONS.closedWindowDays,
-    searchLimit = DEFAULT_OPTIONS.searchLimit,
+    ticketStateByKey = {},
 } = {}) {
+    clearPreventivePauses();
+
     const orderedKeys = uniqueTicketKeys([...visibleTicketKeys, ...ticketKeys]);
     const snapshotsByKey = {};
     const pendingKeys = new Set();
@@ -295,7 +314,7 @@ async function resolveGithubPrBatchInternal({
 
     const unresolved = [];
     orderedKeys.forEach(ticketKey => {
-        if (hasFreshCachedSnapshot(ticketKey)) {
+        if (hasFreshCachedSnapshot(ticketKey, ticketStateByKey[ticketKey])) {
             snapshotsByKey[ticketKey] = snapshotCache.get(ticketKey);
         } else {
             snapshotCache.delete(ticketKey);
@@ -320,7 +339,7 @@ async function resolveGithubPrBatchInternal({
                     snapshotsByKey[ticketKey] = snapshot;
                     snapshotCache.set(ticketKey, snapshot);
                 });
-                await persistSnapshots(repoSnapshots);
+                await persistSnapshots(repoSnapshots, ticketStateByKey);
 
                 keysRemaining = keysRemaining.filter(ticketKey => !Object.prototype.hasOwnProperty.call(repoSnapshots, ticketKey));
                 lastSuccessfulSyncAt = Date.now();
@@ -334,7 +353,7 @@ async function resolveGithubPrBatchInternal({
                         notFoundSnapshots[ticketKey] = null;
                         notFoundKeys.add(ticketKey);
                     });
-                    await persistSnapshots(notFoundSnapshots);
+                    await persistSnapshots(notFoundSnapshots, ticketStateByKey);
                     keysRemaining = [];
                 }
             } catch (error) {
@@ -358,9 +377,8 @@ async function resolveGithubPrBatchInternal({
             sourceMeta.fallbackPaused = true;
         } else {
             sourceMeta.usedFallback = true;
-            const fallbackOrder = uniqueTicketKeys([...visibleTicketKeys, ...keysRemaining]).slice(0, Math.max(1, searchLimit));
-            const fallbackSet = new Set(fallbackOrder);
-            const fallbackResults = await resolveSnapshotsFromSearch(fallbackOrder, token).catch(async error => {
+            const fallbackOrder = uniqueTicketKeys([...visibleTicketKeys, ...keysRemaining]);
+            const budget = await getSearchRateLimitBudget(token).catch(async error => {
                 if (isGithubBlocker(error)) {
                     await blockBucket('search', error, fallbackOrder);
                     return null;
@@ -368,30 +386,41 @@ async function resolveGithubPrBatchInternal({
                 throw error;
             });
 
-            if (!fallbackResults) {
+            if (!budget) {
                 fallbackOrder.forEach(ticketKey => pendingKeys.add(ticketKey));
+                sourceMeta.fallbackPaused = true;
             } else {
-                const persistedSnapshots = {};
-                fallbackOrder.forEach(ticketKey => {
-                    if (fallbackResults[ticketKey]) {
-                        snapshotsByKey[ticketKey] = fallbackResults[ticketKey];
-                        snapshotCache.set(ticketKey, fallbackResults[ticketKey]);
-                        persistedSnapshots[ticketKey] = fallbackResults[ticketKey];
-                    } else {
-                        snapshotsByKey[ticketKey] = null;
-                        snapshotCache.set(ticketKey, null);
-                        persistedSnapshots[ticketKey] = null;
-                        notFoundKeys.add(ticketKey);
+                const fallbackResults = await resolveSnapshotsFromSearch(fallbackOrder, token, budget).catch(async error => {
+                    if (isGithubBlocker(error)) {
+                        await blockBucket('search', error, fallbackOrder);
+                        return null;
                     }
+                    throw error;
                 });
-                await persistSnapshots(persistedSnapshots);
-                lastSuccessfulSyncAt = Date.now();
-                resetBucket('search');
-            }
 
-            keysRemaining
-                .filter(ticketKey => !fallbackSet.has(ticketKey))
-                .forEach(ticketKey => pendingKeys.add(ticketKey));
+                if (!fallbackResults) {
+                    fallbackOrder.forEach(ticketKey => pendingKeys.add(ticketKey));
+                    sourceMeta.fallbackPaused = true;
+                } else {
+                    const persistedSnapshots = {};
+                    Object.entries(fallbackResults.snapshotsByKey).forEach(([ticketKey, snapshot]) => {
+                        snapshotsByKey[ticketKey] = snapshot;
+                        snapshotCache.set(ticketKey, snapshot);
+                        persistedSnapshots[ticketKey] = snapshot;
+                        if (snapshot == null) notFoundKeys.add(ticketKey);
+                    });
+                    await persistSnapshots(persistedSnapshots, ticketStateByKey);
+                    lastSuccessfulSyncAt = Date.now();
+
+                    if (fallbackResults.pendingKeys.length > 0) {
+                        await pauseBucket('search', 'Paused: holding GitHub search budget', fallbackResults.pendingKeys);
+                        fallbackResults.pendingKeys.forEach(ticketKey => pendingKeys.add(ticketKey));
+                        sourceMeta.fallbackPaused = true;
+                    } else {
+                        resetBucket('search');
+                    }
+                }
+            }
         }
     }
 
@@ -416,7 +445,7 @@ export async function getPrSnapshots(ticketKeys, token, options = {}) {
         allowGlobalFallback: options.allowGlobalFallback === true,
         repoConcurrency: options.repoConcurrency,
         closedWindowDays: options.closedWindowDays,
-        searchLimit: options.searchLimit,
+        ticketStateByKey: options.ticketStateByKey || {},
     });
     return result.snapshotsByKey;
 }
@@ -425,10 +454,16 @@ export async function getPrSnapshot(ticketKey, token, options = {}) {
     const normalizedTicketKey = normalizeTicketKey(ticketKey);
     if (!normalizedTicketKey) return null;
 
+    const normalizedTicketStateByKey = normalizeTicketStateMap(
+        options.ticketStateByKey || { [normalizedTicketKey]: options.ticketState || {} },
+        [normalizedTicketKey],
+    );
+
     const singleRequestKey = JSON.stringify({
         ticketKey: normalizedTicketKey,
         token,
         repos: uniqueRepos(options.repos || []),
+        ticketStateByKey: normalizedTicketStateByKey,
         forceRefresh: options.forceRefresh === true,
         allowGlobalFallback: options.allowGlobalFallback !== false,
         repoConcurrency: options.repoConcurrency ?? DEFAULT_OPTIONS.repoConcurrency,
@@ -448,7 +483,7 @@ export async function getPrSnapshot(ticketKey, token, options = {}) {
         allowGlobalFallback: options.allowGlobalFallback !== false,
         repoConcurrency: options.repoConcurrency,
         closedWindowDays: options.closedWindowDays,
-        searchLimit: 1,
+        ticketStateByKey: normalizedTicketStateByKey,
     }).then(result => (
         Object.prototype.hasOwnProperty.call(result.snapshotsByKey, normalizedTicketKey)
             ? result.snapshotsByKey[normalizedTicketKey]
@@ -506,49 +541,106 @@ async function fetchPullPage(repo, state, token, page) {
     return githubFetch(`/repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${page}`, token);
 }
 
-async function resolveSnapshotsFromSearch(ticketKeys, token) {
-    const snapshotsByKey = {};
-
-    for (const ticketKey of ticketKeys) {
-        snapshotsByKey[ticketKey] = await fetchPrSnapshotBySearch(ticketKey, token);
-    }
-
-    return snapshotsByKey;
+async function getSearchRateLimitBudget(token) {
+    const data = await githubFetch('/rate_limit', token);
+    return createSearchBudget({
+        searchRemaining: Number(data?.resources?.search?.remaining) || 0,
+        coreRemaining: Number(data?.resources?.core?.remaining) || 0,
+    });
 }
 
-async function fetchPrSnapshotBySearch(ticketKey, token) {
+function createSearchBudget({ searchRemaining = 0, coreRemaining = 0 } = {}) {
+    return {
+        searchBudget: Math.max(0, (Number(searchRemaining) || 0) - SEARCH_RESERVE_REQUESTS),
+        coreBudget: Math.max(0, (Number(coreRemaining) || 0) - CORE_RESERVE_REQUESTS),
+    };
+}
+
+function canStartBudgetedLookup(budget) {
+    return budget.searchBudget >= SEARCH_REQUESTS_PER_LOOKUP && budget.coreBudget >= CORE_REQUESTS_PER_LOOKUP;
+}
+
+function consumeBudget(budget, bucketName, amount = 1) {
+    if (!budget || amount <= 0) return true;
+    if (bucketName === 'search') {
+        if (budget.searchBudget < amount) return false;
+        budget.searchBudget -= amount;
+        return true;
+    }
+    if (bucketName === 'core') {
+        if (budget.coreBudget < amount) return false;
+        budget.coreBudget -= amount;
+        return true;
+    }
+    return false;
+}
+
+async function resolveSnapshotsFromSearch(ticketKeys, token, budget) {
+    const snapshotsByKey = {};
+    const pendingKeys = [];
+
+    for (let index = 0; index < ticketKeys.length; index += 1) {
+        const ticketKey = ticketKeys[index];
+        if (!canStartBudgetedLookup(budget)) {
+            pendingKeys.push(...ticketKeys.slice(index));
+            break;
+        }
+
+        const result = await fetchPrSnapshotBySearch(ticketKey, token, budget);
+        if (result.status === 'pending') {
+            pendingKeys.push(...ticketKeys.slice(index));
+            break;
+        }
+
+        snapshotsByKey[ticketKey] = result.snapshot;
+    }
+
+    return { snapshotsByKey, pendingKeys };
+}
+
+async function fetchPrSnapshotBySearch(ticketKey, token, budget) {
     const searchQueries = [
         `"${ticketKey}" type:pr`,
         `${ticketKey} type:pr`,
     ];
 
     for (const query of searchQueries) {
+        if (!consumeBudget(budget, 'search')) {
+            return { status: 'pending', snapshot: null };
+        }
+
         const data = await githubFetch(
             `/search/issues?q=${encodeURIComponent(query)}&per_page=10&sort=updated&order=desc`,
             token,
         );
 
         const items = Array.isArray(data.items) ? data.items : [];
-        for (const item of items.slice(0, 10)) {
-            if (!item.pull_request?.url) continue;
+        const candidate = items.find(item => item.pull_request?.url && prMatchesTicket({}, item, ticketKey));
+        if (!candidate) continue;
 
-            const detail = await githubFetch(item.pull_request.url, token).catch(error => {
-                if (isGithubBlocker(error)) throw error;
-                return null;
-            });
-            if (!detail) continue;
-            if (!prMatchesTicket(detail, item, ticketKey)) continue;
+        if (!consumeBudget(budget, 'core')) {
+            return { status: 'pending', snapshot: null };
+        }
 
-            return normalizePullSnapshot(
+        const detail = await githubFetch(candidate.pull_request.url, token).catch(error => {
+            if (isGithubBlocker(error)) throw error;
+            return null;
+        });
+        if (!detail) continue;
+        if (!prMatchesTicket(detail, candidate, ticketKey)) continue;
+
+        return {
+            status: 'resolved',
+            snapshot: normalizePullSnapshot(
                 detail,
                 detail.base?.repo?.full_name || null,
-                item,
+                candidate,
                 normalizeTicketKey(ticketKey),
-            );
-        }
+            ),
+        };
     }
 
-    return null;
+    return { status: 'resolved', snapshot: null };
 }
 
 function normalizePullSnapshot(pull, repoName = null, searchItem = null, ticketKey = null) {
@@ -629,6 +721,7 @@ async function blockBucket(bucketName, error, ticketKeys = []) {
 
     const retryAfterMs = resolveRetryAfterMs(error, bucket.retryCount + 1);
     bucket.blocked = true;
+    bucket.paused = false;
     bucket.reason = formatGithubBlockReason(bucketName, error);
     bucket.retryAt = retryAfterMs ? Date.now() + retryAfterMs : null;
     bucket.retryCount += 1;
@@ -641,6 +734,27 @@ async function blockBucket(bucketName, error, ticketKeys = []) {
     }
 
     await notifyAvailabilityListeners();
+}
+
+async function pauseBucket(bucketName, reason, ticketKeys = []) {
+    const bucket = rateLimitState[bucketName];
+    if (!bucket || bucket.blocked) return;
+
+    bucket.paused = true;
+    bucket.reason = reason || 'Paused: holding GitHub rate limit budget';
+    bucket.retryAt = null;
+    bucket.pendingKeys = new Set(ticketKeys.map(ticketKey => normalizeTicketKey(ticketKey)).filter(Boolean));
+
+    await notifyAvailabilityListeners();
+}
+
+function clearPreventivePauses() {
+    Object.values(rateLimitState).forEach(bucket => {
+        if (!bucket.paused || bucket.blocked) return;
+        bucket.paused = false;
+        bucket.reason = '';
+        bucket.pendingKeys.clear();
+    });
 }
 
 function formatGithubBlockReason(bucketName, error) {
@@ -685,6 +799,7 @@ function resetBucket(bucketName) {
     const bucket = rateLimitState[bucketName];
     if (!bucket) return;
     bucket.blocked = false;
+    bucket.paused = false;
     bucket.reason = '';
     bucket.retryAt = null;
     bucket.pendingKeys.clear();
@@ -695,6 +810,7 @@ function serializeBucketState(bucket) {
     return {
         bucket: bucket.bucket,
         blocked: bucket.blocked,
+        paused: bucket.paused,
         reason: bucket.reason,
         retryAt: bucket.retryAt || null,
         pendingKeys: Array.from(bucket.pendingKeys),
@@ -704,7 +820,7 @@ function serializeBucketState(bucket) {
 
 function syncPendingKeys(pendingKeys) {
     Object.values(rateLimitState).forEach(bucket => {
-        if (!bucket.blocked) {
+        if (!bucket.blocked && !bucket.paused) {
             bucket.pendingKeys.clear();
             return;
         }
@@ -720,10 +836,13 @@ function syncPendingKeys(pendingKeys) {
 function normalizeNotFoundMeta(rawValue) {
     const fetchedAt = Number(rawValue?.fetchedAt ?? rawValue) || 0;
     if (!fetchedAt) return null;
-    return { fetchedAt };
+    return {
+        fetchedAt,
+        isDone: rawValue?.isDone === true,
+    };
 }
 
-function hasFreshCachedSnapshot(ticketKey) {
+function hasFreshCachedSnapshot(ticketKey, ticketState = null) {
     if (!snapshotCache.has(ticketKey)) return false;
 
     const snapshot = snapshotCache.get(ticketKey);
@@ -732,7 +851,38 @@ function hasFreshCachedSnapshot(ticketKey) {
     const notFoundMeta = notFoundMetaCache.get(ticketKey);
     if (!notFoundMeta?.fetchedAt) return false;
 
-    return (Date.now() - notFoundMeta.fetchedAt) < NOT_FOUND_CACHE_TTL_MS;
+    const ttlMs = resolveNotFoundTtlMs(ticketState, notFoundMeta);
+    return (Date.now() - notFoundMeta.fetchedAt) < ttlMs;
+}
+
+function resolveNotFoundTtlMs(ticketState = null, cachedMeta = null) {
+    const isDone = resolveTicketDoneState(ticketState) ?? cachedMeta?.isDone === true;
+    return isDone ? DONE_NOT_FOUND_CACHE_TTL_MS : ACTIVE_NOT_FOUND_CACHE_TTL_MS;
+}
+
+function normalizeTicketStateMap(ticketStateByKey = {}, ticketKeys = []) {
+    return ticketKeys.reduce((acc, ticketKey) => {
+        acc[ticketKey] = normalizeTicketState(ticketStateByKey[ticketKey]);
+        return acc;
+    }, {});
+}
+
+function normalizeTicketState(ticketState = {}) {
+    if (ticketState == null || typeof ticketState !== 'object') {
+        return { isDone: false };
+    }
+
+    return {
+        isDone: resolveTicketDoneState(ticketState) === true,
+    };
+}
+
+function resolveTicketDoneState(ticketState = null) {
+    if (ticketState == null) return null;
+    if (typeof ticketState === 'boolean') return ticketState;
+    if (ticketState.isDone === true) return true;
+    if (ticketState.isDone === false) return false;
+    return null;
 }
 
 function uniqueTicketKeys(ticketKeys = []) {

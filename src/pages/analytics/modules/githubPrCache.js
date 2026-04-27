@@ -6,13 +6,7 @@
 import { clearPrSnapshotCache, getGithubAvailabilityState, resolveGithubPrBatch } from './githubPrSnapshotStore.js';
 
 const GITHUB_ENRICHABLE_CHIP_SELECTOR = [
-    '.issue-chip.in-progress-chip[data-gh-key]',
-    '.issue-chip.in-review-chip[data-gh-key]',
-    '.issue-chip.blocked-chip[data-gh-key]',
-    '.issue-chip.board-tone-progress[data-gh-key]',
-    '.issue-chip.board-tone-review[data-gh-key]',
-    '.issue-chip.board-tone-blocked[data-gh-key]',
-    '.issue-chip.board-tone-default[data-gh-key]',
+    '.issue-chip[data-gh-key]',
 ].join(', ');
 
 // ============================================================
@@ -44,11 +38,15 @@ export async function enrichChips(container, token, options = {}) {
     if (chips.length === 0) return;
 
     const pending = [];
+    const ticketStateByKey = {};
     chips.forEach(chip => {
         const ticketId = chip.dataset.ghKey;
         const actions  = chip.querySelector('.issue-chip-actions');
         if (!actions || !ticketId) return;
         if (chip.dataset.ghEnriched === 'true' || chip.dataset.ghLoading === 'true') return;
+        ticketStateByKey[ticketId] = {
+            isDone: isDoneChip(chip),
+        };
         chip.dataset.ghLoading = 'true';
         const loadingBtn = _makeLoadingBtn();
         actions.appendChild(loadingBtn);
@@ -65,7 +63,7 @@ export async function enrichChips(container, token, options = {}) {
             allowGlobalFallback: options.allowGlobalFallback === true || (options.repos || []).length === 0,
             forceRefresh: options.forceRefresh === true,
             repoConcurrency: options.repoConcurrency || 1,
-            searchLimit: Math.min(5, pending.length),
+            ticketStateByKey,
         });
 
         pending.forEach(({ chip, ticketId, actions, loadingBtn }) => {
@@ -96,6 +94,16 @@ export async function enrichChips(container, token, options = {}) {
     }
 
     options.onStateChange?.();
+}
+
+function isDoneChip(chip) {
+    const className = String(chip?.className || '').toLowerCase();
+    const status = String(chip?.dataset?.status || '').toLowerCase();
+    return className.includes('done-chip')
+        || className.includes('board-tone-done')
+        || status === 'done'
+        || status.includes('closed')
+        || status.includes('resolved');
 }
 
 function _injectPrButton(actions, result) {

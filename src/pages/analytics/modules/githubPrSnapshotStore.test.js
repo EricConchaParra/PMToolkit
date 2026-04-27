@@ -52,8 +52,21 @@ function resetStorageData() {
     Object.keys(storageData).forEach(key => delete storageData[key]);
 }
 
+function mockRateLimit({ searchRemaining = 30, coreRemaining = 5000 } = {}) {
+    return {
+        resources: {
+            search: { remaining: searchRemaining },
+            core: { remaining: coreRemaining },
+        },
+    };
+}
+
 function mockPrLookup(ticketKey = 'MMZ-1') {
     mockedGithubFetch.mockImplementation(async path => {
+        if (path === '/rate_limit') {
+            return mockRateLimit();
+        }
+
         if (String(path).startsWith('/search/issues')) {
             return {
                 items: [{
@@ -106,7 +119,7 @@ describe('githubPrPoolService', () => {
 
         expect(first).toEqual(second);
         expect(first.labels).toEqual(['capacity-risk', 'in-review']);
-        expect(mockedGithubFetch).toHaveBeenCalledTimes(2);
+        expect(mockedGithubFetch).toHaveBeenCalledTimes(3);
     });
 
     it('re-fetches after clearing the shared cache', async () => {
@@ -116,7 +129,7 @@ describe('githubPrPoolService', () => {
         await clearPrSnapshotCache();
         await getPrSnapshot('MMZ-2', 'token');
 
-        expect(mockedGithubFetch).toHaveBeenCalledTimes(4);
+        expect(mockedGithubFetch).toHaveBeenCalledTimes(6);
     });
 
     it('expires cached not-found results so a later PR can be discovered', async () => {
@@ -124,6 +137,9 @@ describe('githubPrPoolService', () => {
         vi.setSystemTime(new Date('2026-03-18T10:00:00.000Z'));
 
         mockedGithubFetch.mockImplementation(async path => {
+            if (path === '/rate_limit') {
+                return mockRateLimit();
+            }
             if (String(path).startsWith('/search/issues')) {
                 return { items: [] };
             }
@@ -132,18 +148,55 @@ describe('githubPrPoolService', () => {
 
         const firstResult = await getPrSnapshot('MMZ-2A', 'token');
         expect(firstResult).toBeNull();
-        expect(mockedGithubFetch).toHaveBeenCalledTimes(2);
+        expect(mockedGithubFetch).toHaveBeenCalledTimes(3);
 
         const secondResult = await getPrSnapshot('MMZ-2A', 'token');
         expect(secondResult).toBeNull();
-        expect(mockedGithubFetch).toHaveBeenCalledTimes(2);
+        expect(mockedGithubFetch).toHaveBeenCalledTimes(3);
 
         mockPrLookup('MMZ-2A');
         await vi.advanceTimersByTimeAsync((10 * 60 * 1000) + 1);
 
         const refreshedResult = await getPrSnapshot('MMZ-2A', 'token');
         expect(refreshedResult?.url).toBe('https://github.com/acme/repo/pull/1');
-        expect(mockedGithubFetch.mock.calls.length).toBeGreaterThan(2);
+        expect(mockedGithubFetch.mock.calls.length).toBeGreaterThan(3);
+    });
+
+    it('keeps done ticket misses cached for 24 hours', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-03-18T10:00:00.000Z'));
+
+        mockedGithubFetch.mockImplementation(async path => {
+            if (path === '/rate_limit') {
+                return mockRateLimit();
+            }
+            if (String(path).startsWith('/search/issues')) {
+                return { items: [] };
+            }
+            throw new Error(`Unexpected path ${path}`);
+        });
+
+        const firstResult = await getPrSnapshot('MMZ-2B', 'token', {
+            ticketState: { isDone: true },
+        });
+        expect(firstResult).toBeNull();
+        expect(mockedGithubFetch).toHaveBeenCalledTimes(3);
+
+        await vi.advanceTimersByTimeAsync((10 * 60 * 1000) + 1);
+
+        const cachedResult = await getPrSnapshot('MMZ-2B', 'token', {
+            ticketState: { isDone: true },
+        });
+        expect(cachedResult).toBeNull();
+        expect(mockedGithubFetch).toHaveBeenCalledTimes(3);
+
+        mockPrLookup('MMZ-2B');
+        await vi.advanceTimersByTimeAsync((24 * 60 * 60 * 1000) - (10 * 60 * 1000) + 1);
+
+        const refreshedResult = await getPrSnapshot('MMZ-2B', 'token', {
+            ticketState: { isDone: true },
+        });
+        expect(refreshedResult?.url).toBe('https://github.com/acme/repo/pull/1');
     });
 
     it('blocks the session after a 403 and stops later ticket fetches', async () => {
@@ -240,6 +293,9 @@ describe('githubPrPoolService', () => {
         forbidden.headers = { reset: String(Math.floor(Date.now() / 1000) + 30), remaining: '0', retryAfter: null };
 
         mockedGithubFetch.mockImplementation(async path => {
+            if (path === '/rate_limit') {
+                return mockRateLimit();
+            }
             if (String(path).startsWith('/search/issues')) {
                 return {
                     items: [{
@@ -340,6 +396,9 @@ describe('githubPrPoolService', () => {
 
     it('does not match a search PR for MMZ-408 when looking up MMZ-40', async () => {
         mockedGithubFetch.mockImplementation(async path => {
+            if (path === '/rate_limit') {
+                return mockRateLimit();
+            }
             if (String(path).startsWith('/search/issues')) {
                 return {
                     items: [{
@@ -378,10 +437,40 @@ describe('githubPrPoolService', () => {
         expect(result).toBeNull();
     });
 
+    it('pauses fallback before search budget reaches the reserve', async () => {
+        mockedGithubFetch.mockImplementation(async path => {
+            if (path === '/rate_limit') {
+                return mockRateLimit({ searchRemaining: 6, coreRemaining: 5000 });
+            }
+            throw new Error(`Unexpected path ${path}`);
+        });
+
+        const result = await resolveGithubPrBatch({
+            ticketKeys: ['MMZ-50', 'MMZ-51'],
+            token: 'token',
+            allowGlobalFallback: true,
+        });
+
+        expect(result.snapshotsByKey).toEqual({});
+        expect(result.pendingKeys).toEqual(['MMZ-50', 'MMZ-51']);
+        expect(result.notFoundKeys).toEqual([]);
+        expect(getGithubAvailabilityState()).toMatchObject({
+            blocked: false,
+            paused: true,
+            status: 'paused',
+            reason: 'Paused: holding GitHub search budget',
+            bucket: 'search',
+            pendingKeys: ['MMZ-50', 'MMZ-51'],
+        });
+    });
+
     it('finds MMZ-40 from exact search results without re-matching MMZ-408', async () => {
         mockedGithubFetch.mockImplementation(async path => {
             const requestPath = String(path);
 
+            if (requestPath === '/rate_limit') {
+                return mockRateLimit();
+            }
             if (requestPath.startsWith('/search/issues')) {
                 if (requestPath.includes(encodeURIComponent('"MMZ-40" type:pr'))) {
                     return {
@@ -455,6 +544,9 @@ describe('githubPrPoolService', () => {
         mockedGithubFetch.mockImplementation(async path => {
             const requestPath = String(path);
 
+            if (requestPath === '/rate_limit') {
+                return mockRateLimit();
+            }
             if (requestPath.startsWith('/repos/acme/repo/pulls?state=open')) return [];
             if (requestPath.startsWith('/repos/acme/repo/pulls?state=closed')) return [];
 

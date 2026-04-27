@@ -112,8 +112,15 @@ function renderGithubStatus() {
         return;
     }
 
+    if (availability.paused) {
+        badge.textContent = 'GitHub PR paused to avoid rate limit';
+        badge.className = 'fu-data-pill is-warning';
+        badge.title = availability.reason || 'Paused to avoid rate limit';
+        return;
+    }
+
     if (availability.blocked) {
-        badge.textContent = formatGithubAvailabilityReason(availability);
+        badge.textContent = formatGithubAvailabilityLabel(availability);
         badge.className = 'fu-data-pill is-warning';
         badge.title = formatGithubAvailabilityReason(availability);
         return;
@@ -151,6 +158,14 @@ function formatGithubAvailabilityReason(availability) {
         return `${availability.reason} · ${suffix}`;
     }
     return availability.reason || '';
+}
+
+function formatGithubAvailabilityLabel(availability) {
+    if (!availability?.blocked) return '';
+    if ((availability.reason || '').toLowerCase().includes('invalid github token')) {
+        return 'GitHub PR token invalid';
+    }
+    return 'GitHub PR blocked by rate limit';
 }
 
 function bindSprintViewListener() {

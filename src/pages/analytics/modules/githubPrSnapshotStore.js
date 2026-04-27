@@ -5,6 +5,7 @@ const availabilityListeners = new Set();
 let storageListenerBound = false;
 let cachedAvailability = {
     blocked: false,
+    paused: false,
     reason: '',
     status: 'available',
     retryAt: null,
@@ -13,8 +14,8 @@ let cachedAvailability = {
     pendingKeys: [],
     lastSuccessfulSyncAt: null,
     buckets: {
-        rest: { bucket: 'rest', blocked: false, reason: '', retryAt: null, pendingKeys: [], retryCount: 0 },
-        search: { bucket: 'search', blocked: false, reason: '', retryAt: null, pendingKeys: [], retryCount: 0 },
+        rest: { bucket: 'rest', blocked: false, paused: false, reason: '', retryAt: null, pendingKeys: [], retryCount: 0 },
+        search: { bucket: 'search', blocked: false, paused: false, reason: '', retryAt: null, pendingKeys: [], retryCount: 0 },
     },
 };
 
@@ -29,16 +30,32 @@ function notifyAvailabilityListeners() {
 }
 
 function normalizeAvailability(rawState = {}) {
+    const buckets = rawState.buckets || cachedAvailability.buckets;
+    const bucketValues = Object.values(buckets || {});
+    const blockedBucket = bucketValues.find(bucket => bucket?.blocked) || null;
+    const pausedBucket = bucketValues.find(bucket => bucket?.paused) || null;
+    const activeBucket = blockedBucket || pausedBucket;
+    const pendingKeys = Array.from(new Set(
+        bucketValues.flatMap(bucket => Array.isArray(bucket?.pendingKeys) ? bucket.pendingKeys : [])
+    ));
+
     return {
-        blocked: rawState.blocked === true,
-        reason: rawState.reason || '',
-        status: rawState.blocked ? 'blocked' : 'available',
-        retryAt: rawState.retryAt || null,
-        retryInMs: rawState.retryAt ? Math.max(0, rawState.retryAt - Date.now()) : null,
-        bucket: rawState.bucket || null,
-        pendingKeys: Array.isArray(rawState.pendingKeys) ? rawState.pendingKeys : [],
+        blocked: blockedBucket != null || rawState.blocked === true,
+        paused: blockedBucket == null && (pausedBucket != null || rawState.paused === true),
+        reason: activeBucket?.reason || rawState.reason || '',
+        status: blockedBucket != null || rawState.blocked === true
+            ? 'blocked'
+            : pausedBucket != null || rawState.paused === true
+                ? 'paused'
+                : 'available',
+        retryAt: blockedBucket?.retryAt || rawState.retryAt || null,
+        retryInMs: (blockedBucket?.retryAt || rawState.retryAt)
+            ? Math.max(0, (blockedBucket?.retryAt || rawState.retryAt) - Date.now())
+            : null,
+        bucket: activeBucket?.bucket || rawState.bucket || null,
+        pendingKeys,
         lastSuccessfulSyncAt: rawState.lastSuccessfulSyncAt || null,
-        buckets: rawState.buckets || cachedAvailability.buckets,
+        buckets,
     };
 }
 
@@ -128,7 +145,7 @@ export async function resolveGithubPrBatch({
     allowGlobalFallback = false,
     repoConcurrency = 1,
     closedWindowDays = 14,
-    searchLimit = 5,
+    ticketStateByKey = {},
 } = {}) {
     bindAvailabilityStorageListener();
     const response = await sendRuntimeMessage({
@@ -142,7 +159,7 @@ export async function resolveGithubPrBatch({
             allowGlobalFallback,
             repoConcurrency,
             closedWindowDays,
-            searchLimit,
+            ticketStateByKey,
         },
     });
     updateAvailability(response.availability);
@@ -169,7 +186,7 @@ export async function getPrSnapshots(ticketKeys, token, options = {}) {
         allowGlobalFallback: options.allowGlobalFallback === true,
         repoConcurrency: options.repoConcurrency,
         closedWindowDays: options.closedWindowDays,
-        searchLimit: options.searchLimit,
+        ticketStateByKey: options.ticketStateByKey || {},
     });
     return result.snapshotsByKey;
 }
@@ -184,7 +201,7 @@ export async function getPrSnapshot(ticketKey, token, options = {}) {
         allowGlobalFallback: options.allowGlobalFallback !== false,
         repoConcurrency: options.repoConcurrency,
         closedWindowDays: options.closedWindowDays,
-        searchLimit: 1,
+        ticketStateByKey: options.ticketStateByKey || {},
     });
     return Object.prototype.hasOwnProperty.call(result.snapshotsByKey, String(ticketKey || '').toUpperCase())
         ? result.snapshotsByKey[String(ticketKey || '').toUpperCase()]

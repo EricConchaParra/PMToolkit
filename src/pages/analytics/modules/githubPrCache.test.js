@@ -48,13 +48,14 @@ beforeEach(() => {
 });
 
 describe('githubPrCache', () => {
-    it('enriches board-tone sprint chips with GitHub PR metadata', async () => {
+    it('enriches done sprint chips with GitHub PR metadata and ticket state', async () => {
         const actions = createFakeElement('div');
         const chipMain = createFakeElement('div');
         const chip = createFakeElement('div');
 
-        chip.className = 'issue-chip board-tone-progress';
+        chip.className = 'issue-chip board-tone-done';
         chip.dataset.ghKey = 'PM-1';
+        chip.dataset.status = 'Done';
         chip.querySelector = vi.fn(selector => {
             if (selector === '.issue-chip-actions') return actions;
             if (selector === '.issue-chip-main') return chipMain;
@@ -65,7 +66,7 @@ describe('githubPrCache', () => {
 
         const container = {
             querySelectorAll: vi.fn(selector => (
-                selector.includes('.board-tone-progress[data-gh-key]') ? [chip] : []
+                selector.includes('.issue-chip[data-gh-key]') ? [chip] : []
             )),
         };
 
@@ -89,6 +90,7 @@ describe('githubPrCache', () => {
             ticketKeys: ['PM-1'],
             visibleTicketKeys: ['PM-1'],
             token: 'token',
+            ticketStateByKey: { 'PM-1': { isDone: true } },
         }));
         expect(chip.dataset.ghEnriched).toBe('true');
         expect(actions.children.some(child => child.className === 'gh-pr-btn gh-pr-found')).toBe(true);
