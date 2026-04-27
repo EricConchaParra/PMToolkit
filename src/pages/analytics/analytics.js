@@ -20,6 +20,7 @@ import {
 import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
 import { initPerfCombo } from './modules/performanceDashboard/performanceDashboard.js';
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
+import { initAnalyticsAgeTooltips } from './modules/tooltips.js';
 import { getDemoMode, subscribeDemoMode } from '../../common/demoMode.js';
 
 // ============================================================
@@ -28,6 +29,7 @@ import { getDemoMode, subscribeDemoMode } from '../../common/demoMode.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
     markAnalyticsPerf('bootstrap:start');
+    initAnalyticsAgeTooltips();
     const demoMode = await getDemoMode();
     setSprintDashboardDemoMode(demoMode);
     document.body.classList.toggle('demo-mode-active', demoMode);

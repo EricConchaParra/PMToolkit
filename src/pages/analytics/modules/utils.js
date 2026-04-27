@@ -144,6 +144,53 @@ export function formatHours(h) {
     return `${h % 1 === 0 ? h : h.toFixed(1)}h`;
 }
 
+export function formatAge(diffMs) {
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffWeeks = Math.floor(diffDays / 7);
+
+    if (diffDays === 0) return '<1d';
+    if (diffDays === 1) return '1d';
+    if (diffDays < 7) return `${diffDays}d`;
+    if (diffWeeks < 4) return `${diffWeeks}w`;
+    const diffMonths = Math.floor(diffDays / 30);
+    return `${diffMonths}m`;
+}
+
+export function formatTooltipDate(date) {
+    const then = new Date(date);
+    const now = new Date();
+    const diffMs = now - then;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    const timeStr = then.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+    });
+
+    if (diffDays < 7) {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const thenStart = new Date(then.getFullYear(), then.getMonth(), then.getDate());
+        const dayDiff = Math.round((todayStart - thenStart) / (1000 * 60 * 60 * 24));
+
+        if (dayDiff === 0) return `Today, ${timeStr}`;
+        if (dayDiff === 1) return `Yesterday, ${timeStr}`;
+        return `last ${dayNames[then.getDay()]}, ${timeStr}`;
+    }
+
+    const month = then.toLocaleString('en-US', { month: 'short' });
+    const day = then.getDate();
+    return `on ${month} ${day}, ${timeStr}`;
+}
+
+export function getColorClass(diffMs) {
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays <= 2) return 'et-age-green';
+    if (diffDays <= 4) return 'et-age-yellow';
+    return 'et-age-red';
+}
+
 // Time since a past date in a human-readable string
 export function timeSince(dateStr) {
     const diff = Date.now() - new Date(dateStr).getTime();

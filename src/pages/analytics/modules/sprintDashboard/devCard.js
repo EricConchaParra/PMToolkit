@@ -6,7 +6,7 @@
 import { getIssueTypeMeta } from '../../../../common/issueType.js';
 import { getTagInlineStyle, getTagObjects, hasTrackedContent } from '../../../../common/tagging.js';
 import { buildBoardColumnBuckets, resolveIssueBoardColumn, summarizeBoardBuckets } from '../boardFlow.js';
-import { escapeHtml, formatDate, formatHours, calculateETA, spToHours, workingHoursElapsed, workingHoursBetween } from '../utils.js';
+import { escapeHtml, formatAge, formatDate, formatHours, formatTooltipDate, getColorClass, calculateETA, workingHoursBetween } from '../utils.js';
 
 export function getInitialsOrImg(assignee) {
     if (!assignee) return { initials: '?', imgUrl: null };
@@ -43,7 +43,7 @@ export function formatSprintReminderLabel(reminderTs, now = Date.now()) {
     });
 
     if (isSameDay(reminderDate, nowDate)) {
-        return `${reminderTime <= now ? 'Overdue' : 'Today'} ${timeLabel}`;
+        return `Today ${timeLabel}`;
     }
 
     const tomorrow = new Date(nowDate);
@@ -106,7 +106,7 @@ export function buildIssueTrackingMarkup(issueKey, tracking = {}, now = Date.now
             ? `<div class="sprint-note-preview" title="${escapeHtml(model.noteText)}">${escapeHtml(model.noteText)}</div>`
             : '',
         reminderHtml: model.reminderLabel
-            ? `<div class="sprint-reminder-row"><span class="sprint-reminder-pill${model.reminderIsOverdue ? ' is-overdue' : ''}" title="${escapeHtml(model.reminderTitle)}">🔔 ${escapeHtml(model.reminderLabel)}</span></div>`
+            ? `<div class="sprint-reminder-row"><span class="sprint-reminder-pill" title="${escapeHtml(model.reminderTitle)}">🔔 ${escapeHtml(model.reminderLabel)}</span></div>`
             : '',
         tagRowHtml: model.tagHtml
             ? `<div class="sprint-tag-row"><div class="et-tag-read-list sprint-tag-list">${model.tagHtml}</div></div>`
@@ -135,28 +135,37 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
         else if (summary.pendingHours > 0) capacityPct = 150;
     }
 
-    const overdueCounts = new Map();
+    const timeInStateByIssue = new Map();
     issues.forEach(issue => {
         const column = resolveIssueBoardColumn(issue, boardFlow);
-        if (!column || column.isDone || column.isTodoLike || !issue._currentBoardColumnSince) return;
-        const ageHours = workingHoursElapsed(issue._currentBoardColumnSince, hoursPerDay, now);
-        const allowed = issue._sp ? Math.max(spToHours(issue._sp, spHours), 0) : 8;
-        if (ageHours > Math.max(allowed, 8)) {
-            overdueCounts.set(issue.key, ageHours);
-        }
+        if (!column || column.isDone || !issue._currentBoardColumnSince) return;
+
+        const changedAt = new Date(issue._currentBoardColumnSince);
+        const diffMs = now.getTime() - changedAt.getTime();
+        if (!Number.isFinite(diffMs) || diffMs < 0) return;
+
+        const matchingChange = issue._timeline?.statusChanges?.find(change => change.created === issue._currentBoardColumnSince) || null;
+        const byText = matchingChange?.changedBy ? ` by ${matchingChange.changedBy}` : '';
+        const statusName = issue.fields?.status?.name || '?';
+
+        timeInStateByIssue.set(issue.key, {
+            text: formatAge(diffMs),
+            className: getColorClass(diffMs),
+            tooltip: `Moved to: ${statusName}${byText} ${formatTooltipDate(issue._currentBoardColumnSince)}`,
+        });
     });
 
     const visibleBuckets = buckets.filter(bucket => bucket.count > 0 || bucket.column.isDone);
 
     function issueChip(issue) {
         const trackingMarkup = buildIssueTrackingMarkup(issue.key, tracking, now.getTime());
-        const overdueAge = overdueCounts.get(issue.key);
+        const timeInState = timeInStateByIssue.get(issue.key);
         const issueType = getIssueTypeMeta(issue);
         const issueTypeHtml = issueType.iconUrl
             ? `<img class="issue-chip-type-icon" src="${escapeHtml(issueType.iconUrl)}" alt="${escapeHtml(issueType.name || 'Issue type')}" title="${escapeHtml(issueType.name || 'Issue type')}">`
             : '';
         return `
-            <div class="issue-chip ${getIssueToneClass(issue, boardFlow)}${overdueAge ? ' issue-chip-overdue' : ''}" data-gh-key="${issue.key}" data-status="${escapeHtml(issue.fields?.status?.name || '?')}">
+            <div class="issue-chip ${getIssueToneClass(issue, boardFlow)}" data-gh-key="${issue.key}" data-status="${escapeHtml(issue.fields?.status?.name || '?')}">
                 <div class="issue-chip-main">
                     <div class="issue-chip-header">
                         <div class="issue-chip-top">
@@ -164,7 +173,7 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
                             <a class="issue-chip-key" href="https://${jiraHost}/browse/${issue.key}" target="_blank">${issue.key}</a>
                             <span class="issue-chip-status">${escapeHtml(issue.fields?.status?.name || '?')}</span>
                             <span class="issue-chip-sp">${issue._sp ?? '?'} SP</span>
-                            ${overdueAge ? `<span class="overdue-time-badge">⏰ ${escapeHtml(formatHours(overdueAge))} in column</span>` : ''}
+                            ${timeInState ? `<span class="et-age-badge ${timeInState.className}" data-tooltip="${escapeHtml(timeInState.tooltip)}">${escapeHtml(timeInState.text)}</span>` : ''}
                         </div>
                         <div class="issue-chip-actions">
                             <button class="${trackingMarkup.notesButtonClassName}" data-issue-key="${issue.key}" data-summary="${escapeHtml(issue.fields?.summary || '')}" title="Notes">📝</button>
@@ -244,7 +253,6 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
                     <div class="dev-section-title">
                         ${bucket.column.icon} ${escapeHtml(bucket.column.name)}
                         <span class="section-count">(${bucket.count})</span>
-                        ${bucket.column.isDone ? '' : Array.from(bucket.issues).filter(issue => overdueCounts.has(issue.key)).length > 0 ? `<span class="overdue-count-badge">${Array.from(bucket.issues).filter(issue => overdueCounts.has(issue.key)).length} overdue</span>` : ''}
                     </div>
                     <div class="issue-list">
                         ${bucket.count === 0 ? `<div class="no-issues">No tickets in ${escapeHtml(bucket.column.name)}</div>` : bucket.issues.map(issueChip).join('')}
