@@ -16,5 +16,3 @@ export const DEFAULT_SP_HOURS = {
 export const DEFAULT_HOURS_PER_DAY = 9;
 
 export const SP_KEYS = [0, 1, 2, 3, 5, 8, 13];
-
-export const LAST_PROJECT_KEY = 'sdk_last_project';

@@ -110,6 +110,29 @@ body {
     letter-spacing: 0.05em;
 }
 
+.sidebar-site-switcher {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--sidebar-border);
+}
+
+.sidebar-site-switcher label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 10px;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.48);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.sidebar-site-switcher .combo-wrapper {
+    width: 100%;
+}
+
+.sidebar-site-switcher .combo-arrow {
+    color: rgba(255, 255, 255, 0.55);
+}
+
 .sidebar-nav {
     flex: 1;
     padding: 12px 10px;
@@ -302,6 +325,7 @@ body {
 }
 
 #project-search,
+#analytics-site-select,
 #perf-project-search,
 #fu-project-search,
 #sprint-search,
@@ -320,6 +344,7 @@ body {
 }
 
 #project-search:focus,
+#analytics-site-select:focus,
 #perf-project-search:focus,
 #fu-project-search:focus,
 #sprint-search:focus,
@@ -331,6 +356,19 @@ body {
 #sprint-tag-filter {
     appearance: none;
     cursor: pointer;
+}
+
+#analytics-site-select {
+    appearance: none;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--sidebar-text-active);
+}
+
+#analytics-site-select:focus {
+    border-color: rgba(88, 159, 255, 0.85);
+    box-shadow: 0 0 0 3px rgba(0, 119, 255, 0.22);
 }
 
 #sprint-tag-filter:disabled {

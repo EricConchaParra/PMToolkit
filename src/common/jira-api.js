@@ -2,26 +2,24 @@ import { storage, syncStorage } from './storage';
 import { getIssueTypeMeta } from './issueType.js';
 import { getDemoMode } from './demoMode.js';
 import { DEMO_HOST, getDemoIssueDetails } from './demoData.js';
+import { resolveActiveJiraHost } from './jiraSiteContext.js';
+import { getJiraIssueKey } from './jiraIdentity.js';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 export const jiraApi = {
     async getHost() {
         if (await getDemoMode()) return DEMO_HOST;
-        const settings = await storage.get(['et_jira_host']);
-        if (settings.et_jira_host) return settings.et_jira_host;
-        if (window.location.hostname && window.location.hostname.endsWith('.atlassian.net')) {
-            return window.location.hostname;
-        }
-        return 'jira.atlassian.net';
+        return resolveActiveJiraHost({ preferStoredActive: true });
     },
 
-    async fetchIssueDetails(issueKey) {
+    async fetchIssueDetails(issueKey, hostOverride = '') {
         if (await getDemoMode()) {
-            return getDemoIssueDetails(issueKey);
+            return getDemoIssueDetails(getJiraIssueKey(issueKey) || issueKey);
         }
-        const host = await this.getHost();
-        const id = issueKey.split(':').pop();
+        const host = hostOverride || await this.getHost();
+        const id = getJiraIssueKey(issueKey) || issueKey;
+        if (!host || !id) return null;
 
         try {
             const resp = await fetch(

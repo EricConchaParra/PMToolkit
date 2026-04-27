@@ -5,7 +5,8 @@
 
 import {
     fetchBoardId, fetchBoardSprints, fetchSprintDoneIssues,
-    fetchSprintIssues, fetchSpFieldId,
+    fetchProjectSprintDoneIssues, fetchProjectSprintIssues, fetchProjectSprints,
+    fetchSprintFieldId, fetchSprintIssues, fetchSpFieldId,
 } from '../jiraApi.js';
 import { escapeHtml } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
@@ -200,14 +201,15 @@ async function loadCapacityExportData(projectKey, host, onProgress = () => {}) {
     if (!projectKey || !host) throw new Error('Select a project first.');
 
     const boardId = perfState.boardId || await fetchBoardId(host, projectKey);
-    if (!boardId) throw new Error(`No Scrum board found for "${projectKey}".`);
     perfState.boardId = boardId;
 
     const spFieldId = perfState.spFieldId || await fetchSpFieldId(host);
     perfState.spFieldId = spFieldId;
 
     onProgress('Fetching active and closed sprints...', 10);
-    const allSprints = await fetchBoardSprints(host, boardId, ['active', 'closed']);
+    const allSprints = boardId
+        ? await fetchBoardSprints(host, boardId, ['active', 'closed'])
+        : await fetchProjectSprints(host, projectKey, await fetchSprintFieldId(host), ['active', 'closed']);
     const scopedSprints = allSprints
         .filter(sprint => sprint.state !== 'future')
         .sort((a, b) => getSprintSortValue(a) - getSprintSortValue(b) || String(a.name || '').localeCompare(String(b.name || '')));
@@ -220,7 +222,9 @@ async function loadCapacityExportData(projectKey, host, onProgress = () => {}) {
         const batch = scopedSprints.slice(i, i + concurrency);
         const results = await Promise.all(batch.map(async sprint => ({
             ...sprint,
-            issues: await fetchSprintIssues(host, sprint.id, spFieldId).catch(() => []),
+            issues: boardId
+                ? await fetchSprintIssues(host, sprint.id, spFieldId).catch(() => [])
+                : await fetchProjectSprintIssues(host, projectKey, sprint.id, spFieldId).catch(() => []),
         })));
         sprintData.push(...results);
         const completed = Math.min(i + concurrency, scopedSprints.length);
@@ -302,10 +306,11 @@ export async function loadPerfDashboard(projectKey, host) {
         const boardId = await fetchBoardId(host, projectKey);
         if (requestId !== perfState.loadRequestId) return;
         perfState.boardId = boardId;
-        if (!boardId) { showState('error', `No Scrum board found for "${projectKey}".`); return; }
 
-        showState('loading', 'Fetching all closed sprints...');
-        const closedSprints = (await fetchBoardSprints(host, boardId, ['closed']))
+        showState('loading', boardId ? 'Fetching all closed sprints...' : 'No Scrum board found. Falling back to project sprint data...');
+        const closedSprints = (boardId
+            ? await fetchBoardSprints(host, boardId, ['closed'])
+            : await fetchProjectSprints(host, projectKey, await fetchSprintFieldId(host), ['closed']))
             .sort((a, b) => getSprintSortValue(a) - getSprintSortValue(b) || String(a.name || '').localeCompare(String(b.name || '')));
         if (requestId !== perfState.loadRequestId) return;
         if (closedSprints.length === 0) { showState('error', 'No closed sprints found. Complete at least one sprint first.'); return; }
@@ -321,7 +326,9 @@ export async function loadPerfDashboard(projectKey, host) {
         for (let i = 0; i < closedSprints.length; i += sprintConcurrency) {
             const batch = closedSprints.slice(i, i + sprintConcurrency);
             const results = await Promise.all(batch.map(async cs => {
-                const issues = await fetchSprintDoneIssues(host, cs.id, spFId).catch(() => []);
+                const issues = boardId
+                    ? await fetchSprintDoneIssues(host, cs.id, spFId).catch(() => [])
+                    : await fetchProjectSprintDoneIssues(host, projectKey, cs.id, spFId).catch(() => []);
                 return {
                     id: cs.id,
                     name: cs.name,

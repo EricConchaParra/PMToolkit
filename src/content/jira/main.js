@@ -1,4 +1,6 @@
 import { storage, syncStorage, isContextValid } from '../../common/storage';
+import { getCurrentPageJiraHost } from '../../common/jiraIdentity.js';
+import { ensureJiraMultiSiteMigration, registerJiraHost } from '../../common/jiraSiteContext.js';
 import { MetricsFeature } from './features/metrics';
 import { InjectionFeature } from './features/injections';
 import { CustomizationFeature } from './features/customization';
@@ -106,7 +108,10 @@ function stopAll() {
 
 // Initial Run
 if (window.top === window.self) {
-    storage.set({ et_jira_host: window.location.hostname });
+    const pageHost = getCurrentPageJiraHost();
+    if (pageHost) {
+        void ensureJiraMultiSiteMigration().then(() => registerJiraHost(pageHost));
+    }
 }
 initTooltips();
 initSettings().then(() => {

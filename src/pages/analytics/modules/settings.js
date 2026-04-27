@@ -3,29 +3,34 @@
  * Chrome storage helpers for settings (per-project and last-used project)
  */
 
-import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, LAST_PROJECT_KEY } from './constants.js';
+import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS } from './constants.js';
+import {
+    getJiraProjectSettingsStorageKey,
+    getLastProjectStorageKey,
+} from '../../../common/jiraStorageKeys.js';
 
 // ============================================================
 // SETTINGS STORAGE
 // ============================================================
 
-export function settingsStorageKey(projectKey) {
-    return `sdk_settings_${projectKey}`;
+export function settingsStorageKey(host, projectKey) {
+    return getJiraProjectSettingsStorageKey(host, projectKey);
 }
 
-export function loadSettings(projectKey) {
+export function loadSettings(host, projectKey) {
     return new Promise(resolve => {
         const defaults = {
             hoursPerDay: DEFAULT_HOURS_PER_DAY,
             spHours: { ...DEFAULT_SP_HOURS },
             githubRepos: [],
         };
-        if (!projectKey || !(typeof chrome !== 'undefined' && chrome.storage)) {
+        const storageKey = settingsStorageKey(host, projectKey);
+        if (!storageKey || !(typeof chrome !== 'undefined' && chrome.storage)) {
             resolve(defaults);
             return;
         }
-        chrome.storage.local.get([settingsStorageKey(projectKey)], result => {
-            const saved = result[settingsStorageKey(projectKey)] || {};
+        chrome.storage.local.get([storageKey], result => {
+            const saved = result[storageKey] || {};
             resolve({
                 hoursPerDay: saved.hoursPerDay || DEFAULT_HOURS_PER_DAY,
                 spHours: { ...DEFAULT_SP_HOURS, ...(saved.spHours || {}) },
@@ -37,22 +42,25 @@ export function loadSettings(projectKey) {
     });
 }
 
-export function saveSettings(projectKey, settings) {
+export function saveSettings(host, projectKey, settings) {
     return new Promise(resolve => {
-        if (!projectKey || !(typeof chrome !== 'undefined' && chrome.storage)) { resolve(); return; }
-        chrome.storage.local.set({ [settingsStorageKey(projectKey)]: settings }, resolve);
+        const storageKey = settingsStorageKey(host, projectKey);
+        if (!storageKey || !(typeof chrome !== 'undefined' && chrome.storage)) { resolve(); return; }
+        chrome.storage.local.set({ [storageKey]: settings }, resolve);
     });
 }
 
-export function getLastProject() {
+export function getLastProject(host) {
     return new Promise(resolve => {
+        const storageKey = getLastProjectStorageKey(host);
         if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.get([LAST_PROJECT_KEY], r => resolve(r[LAST_PROJECT_KEY] || null));
+            chrome.storage.local.get([storageKey], r => resolve(r[storageKey] || null));
         } else resolve(null);
     });
 }
 
-export function setLastProject(key) {
+export function setLastProject(host, key) {
+    const storageKey = getLastProjectStorageKey(host);
     if (typeof chrome !== 'undefined' && chrome.storage)
-        chrome.storage.local.set({ [LAST_PROJECT_KEY]: key });
+        chrome.storage.local.set({ [storageKey]: key });
 }

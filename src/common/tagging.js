@@ -1,7 +1,16 @@
 import { storage } from './storage.js';
 import { getTrackingItems, setTrackingItems } from './trackingRepository.js';
+import { DEMO_HOST } from './demoData.js';
+import {
+    LEGACY_TAG_DEFS_STORAGE_KEY,
+    getTagDefsStorageKey,
+    getTagsStorageKey,
+    getNotesStorageKey,
+    getReminderStorageKey,
+    getMetaStorageKey,
+    parseJiraTrackingStorageKey,
+} from './jiraStorageKeys.js';
 
-export const TAG_DEFS_STORAGE_KEY = 'tag_defs_jira';
 export const TRACKING_UPDATED_EVENT = 'pmtoolkit:tracking-updated';
 
 export const TAG_COLOR_OPTIONS = {
@@ -146,26 +155,6 @@ export function getAllTagObjects(tagDefs = {}) {
         .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function buildScopedStorageKey(prefix, issueKey) {
-    return issueKey.includes(':') ? `${prefix}_${issueKey}` : `${prefix}_jira:${issueKey}`;
-}
-
-export function getNotesStorageKey(issueKey) {
-    return buildScopedStorageKey('notes', issueKey);
-}
-
-export function getReminderStorageKey(issueKey) {
-    return buildScopedStorageKey('reminder', issueKey);
-}
-
-export function getTagsStorageKey(issueKey) {
-    return buildScopedStorageKey('tags', issueKey);
-}
-
-export function getMetaStorageKey(issueKey) {
-    return buildScopedStorageKey('meta', issueKey);
-}
-
 export function hasTrackedContent(noteText, reminderTs, tagLabels = []) {
     return Boolean((noteText || '').trim() || reminderTs || (tagLabels || []).length);
 }
@@ -174,45 +163,51 @@ export function parseTrackingStorage(items = {}, opts = {}) {
     const {
         activeRemindersOnly = false,
         now = Date.now(),
+        host = '',
     } = opts;
 
     const notesMap = {};
     const remindersMap = {};
     const metaMap = {};
     const tagsMap = {};
-    const tagDefs = normalizeTagDefs(items[TAG_DEFS_STORAGE_KEY] || {});
+    const tagDefsKey = getTagDefsStorageKey(host);
+    const tagDefs = normalizeTagDefs(
+        items[tagDefsKey]
+        || items[LEGACY_TAG_DEFS_STORAGE_KEY]
+        || {}
+    );
     const allKeys = new Set();
 
     Object.entries(items).forEach(([key, value]) => {
-        if (key.startsWith('notes_jira:')) {
-            const issueKey = key.replace('notes_jira:', '');
+        const parsedKey = parseJiraTrackingStorageKey(key, host);
+        if (!parsedKey?.issueKey) return;
+        if (host && parsedKey.host && parsedKey.host !== host) return;
+
+        if (parsedKey.prefix === 'notes') {
             if (!value) return;
-            notesMap[issueKey] = value;
-            allKeys.add(issueKey);
+            notesMap[parsedKey.issueKey] = value;
+            allKeys.add(parsedKey.issueKey);
             return;
         }
 
-        if (key.startsWith('reminder_jira:')) {
-            const issueKey = key.replace('reminder_jira:', '');
+        if (parsedKey.prefix === 'reminder') {
             if (!value) return;
             if (activeRemindersOnly && value <= now) return;
-            remindersMap[issueKey] = value;
-            allKeys.add(issueKey);
+            remindersMap[parsedKey.issueKey] = value;
+            allKeys.add(parsedKey.issueKey);
             return;
         }
 
-        if (key.startsWith('meta_jira:')) {
-            const issueKey = key.replace('meta_jira:', '');
-            metaMap[issueKey] = value;
+        if (parsedKey.prefix === 'meta') {
+            metaMap[parsedKey.issueKey] = value;
             return;
         }
 
-        if (key.startsWith('tags_jira:')) {
-            const issueKey = key.replace('tags_jira:', '');
+        if (parsedKey.prefix === 'tags') {
             const normalizedTags = normalizeTagList(value, tagDefs);
             if (normalizedTags.length === 0) return;
-            tagsMap[issueKey] = normalizedTags;
-            allKeys.add(issueKey);
+            tagsMap[parsedKey.issueKey] = normalizedTags;
+            allKeys.add(parsedKey.issueKey);
         }
     });
 
@@ -248,18 +243,20 @@ export function matchesSearchTerm(item, term) {
 export function hasTrackingStorageChange(changes = {}, opts = {}) {
     const { includeMeta = false } = opts;
     return Object.keys(changes).some(key => {
-        if (key === TAG_DEFS_STORAGE_KEY) return true;
-        if (key.startsWith('notes_jira:')) return true;
-        if (key.startsWith('reminder_jira:')) return true;
-        if (key.startsWith('tags_jira:')) return true;
-        if (includeMeta && key.startsWith('meta_jira:')) return true;
-        return false;
+        if (key === LEGACY_TAG_DEFS_STORAGE_KEY || key.startsWith('tag_defs_jira@')) return true;
+        const parsedKey = parseJiraTrackingStorageKey(key);
+        if (!parsedKey) return false;
+        if (parsedKey.prefix === 'meta') return includeMeta;
+        return parsedKey.prefix === 'notes'
+            || parsedKey.prefix === 'reminder'
+            || parsedKey.prefix === 'tags';
     });
 }
 
-export async function loadTagDefs() {
-    const result = await storage.get(TAG_DEFS_STORAGE_KEY);
-    return normalizeTagDefs(result[TAG_DEFS_STORAGE_KEY] || {});
+export async function loadTagDefs(host = '') {
+    const storageKey = getTagDefsStorageKey(host);
+    const result = await storage.get(storageKey);
+    return normalizeTagDefs(result[storageKey] || {});
 }
 
 export async function ensureTagDefinition(label, color, opts = {}) {
@@ -268,9 +265,11 @@ export async function ensureTagDefinition(label, color, opts = {}) {
     if (!normalized) return null;
 
     const demoMode = opts.demoMode === true;
+    const host = demoMode ? DEMO_HOST : String(opts.host || '').trim();
+    const storageKey = getTagDefsStorageKey(host);
     const currentDefs = demoMode
-        ? normalizeTagDefs((await getTrackingItems({ [TAG_DEFS_STORAGE_KEY]: {} }, { demoMode: true }))[TAG_DEFS_STORAGE_KEY] || {})
-        : await loadTagDefs();
+        ? normalizeTagDefs((await getTrackingItems({ [storageKey]: {} }, { demoMode: true }))[storageKey] || {})
+        : await loadTagDefs(host);
     if (currentDefs[normalized]) {
         return {
             normalized,
@@ -286,9 +285,9 @@ export async function ensureTagDefinition(label, color, opts = {}) {
         },
     };
     if (demoMode) {
-        await setTrackingItems({ [TAG_DEFS_STORAGE_KEY]: nextDefs }, { demoMode: true });
+        await setTrackingItems({ [storageKey]: nextDefs }, { demoMode: true });
     } else {
-        await storage.set({ [TAG_DEFS_STORAGE_KEY]: nextDefs });
+        await storage.set({ [storageKey]: nextDefs });
     }
 
     return {
@@ -297,9 +296,9 @@ export async function ensureTagDefinition(label, color, opts = {}) {
     };
 }
 
-export async function saveIssueTags(issueKey, tagLabels) {
+export async function saveIssueTags(issueKey, tagLabels, host = '') {
     const normalizedTags = normalizeTagList(tagLabels);
-    const storageKey = getTagsStorageKey(issueKey);
+    const storageKey = getTagsStorageKey(issueKey, host);
 
     if (normalizedTags.length) {
         await storage.set({ [storageKey]: normalizedTags });

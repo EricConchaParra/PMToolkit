@@ -7,6 +7,8 @@
     <title>PMsToolKit — Jira History Exporter</title>
   <script type="module" crossorigin src="/exporter.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
+  <link rel="modulepreload" crossorigin href="/assets/storage.js">
+  <link rel="modulepreload" crossorigin href="/assets/jiraSiteContext.js">
   <link rel="stylesheet" crossorigin href="/assets/exporter.css">
 </head>
 
@@ -16,6 +18,12 @@
         <div class="header-text">
             <h1>Jira History Exporter</h1>
             <p>PMsToolKit v0.9.0 · Export issue field changes to CSV</p>
+        </div>
+        <div class="exporter-site-switcher hidden" id="exporter-site-switcher">
+            <label for="exporter-site-select">Jira Site</label>
+            <div class="exporter-site-select-wrap">
+                <select id="exporter-site-select"></select>
+            </div>
         </div>
     </header>
 

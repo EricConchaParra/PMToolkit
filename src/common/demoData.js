@@ -1,3 +1,11 @@
+import {
+    getMetaStorageKey,
+    getNotesStorageKey,
+    getReminderStorageKey,
+    getTagDefsStorageKey,
+    getTagsStorageKey,
+} from './jiraStorageKeys.js';
+
 export const DEMO_HOST = 'demo.pmtoolkit.invalid';
 export const DEMO_SP_FIELD_ID = 'customfield_10016';
 export const DEMO_SPRINT_FIELD_ID = 'customfield_10020';
@@ -364,7 +372,7 @@ function buildDemoDataset() {
     };
 
     const baseTrackingItems = {
-        tag_defs_jira: {
+        [getTagDefsStorageKey(DEMO_HOST)]: {
             launch: { label: 'Launch', color: 'orange' },
             risk: { label: 'Risk', color: 'red' },
             unblock: { label: 'Unblock', color: 'blue' },
@@ -374,11 +382,11 @@ function buildDemoDataset() {
     };
 
     Object.entries(trackedIssues).forEach(([issueKey, entry]) => {
-        if (entry.notes) baseTrackingItems[`notes_jira:${issueKey}`] = entry.notes;
-        if (entry.tags) baseTrackingItems[`tags_jira:${issueKey}`] = entry.tags;
-        if (entry.reminder) baseTrackingItems[`reminder_jira:${issueKey}`] = entry.reminder;
+        if (entry.notes) baseTrackingItems[getNotesStorageKey(issueKey, DEMO_HOST)] = entry.notes;
+        if (entry.tags) baseTrackingItems[getTagsStorageKey(issueKey, DEMO_HOST)] = entry.tags;
+        if (entry.reminder) baseTrackingItems[getReminderStorageKey(issueKey, DEMO_HOST)] = entry.reminder;
         const issue = Object.values(demoIssuesBySprint).flat().find(item => item.key === issueKey);
-        if (issue) baseTrackingItems[`meta_jira:${issueKey}`] = getIssueMeta(issue);
+        if (issue) baseTrackingItems[getMetaStorageKey(issueKey, DEMO_HOST)] = getIssueMeta(issue);
     });
 
     const demoChangelogsByIssue = {
@@ -517,7 +525,7 @@ export function getDemoTrackingItems() {
 
 export function getDemoIssueDetails(issueKey) {
     const { baseTrackingItems, demoIssuesBySprint } = getDemoDataset();
-    const meta = baseTrackingItems[`meta_jira:${issueKey}`];
+    const meta = baseTrackingItems[getMetaStorageKey(issueKey, DEMO_HOST)];
     if (meta) {
         return clone(meta);
     }

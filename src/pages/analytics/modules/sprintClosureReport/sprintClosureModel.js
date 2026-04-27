@@ -1,4 +1,5 @@
 import { escapeHtml } from '../utils.js';
+import { getSprintClosureStorageKey as getScopedSprintClosureStorageKey } from '../../../../common/jiraStorageKeys.js';
 
 const REPORT_STATE_DEFAULTS = {
     observationsByIssue: {},
@@ -8,8 +9,8 @@ const REPORT_STATE_DEFAULTS = {
     updatedAt: 0,
 };
 
-export function getSprintClosureStorageKey(projectKey, sprintId) {
-    return `sprint_report_${projectKey}_${sprintId}`;
+export function getSprintClosureStorageKey(host, projectKey, sprintId) {
+    return getScopedSprintClosureStorageKey(host, projectKey, sprintId);
 }
 
 export function normalizeSprintClosureState(raw = {}) {

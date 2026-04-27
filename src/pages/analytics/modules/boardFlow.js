@@ -50,7 +50,7 @@ function buildColumnMeta(rawColumn = {}, index = 0, isDone = false) {
                 name: String(status?.name || ''),
             }))
             : [],
-        isDone,
+        isDone: rawColumn?.isDone === true || isDone,
         isTodoLike,
         isBlocked: /blocked|hold|imped/.test(normalized),
         isReviewLike: /review|qa|test|approve/.test(normalized),
@@ -92,6 +92,66 @@ export function createBoardFlow(boardConfig = {}) {
         statusToColumn,
         columnsById,
         columnByName,
+    };
+}
+
+function getFallbackStatusGroup(status = {}) {
+    const normalized = normalizeStatusName(status?.name);
+    const categoryKey = String(status?.categoryKey || '').toLowerCase();
+
+    if (categoryKey === 'done') {
+        return { id: 'done', order: 40, name: 'Done', isDone: true };
+    }
+    if (normalized.includes('blocked') || normalized.includes('hold') || normalized.includes('imped') || normalized.includes('fix')) {
+        return { id: 'blocked', order: 30, name: 'Need Fixes', isDone: false };
+    }
+    if (normalized.includes('review') || normalized.includes('qa') || normalized.includes('test') || normalized.includes('approve')) {
+        return { id: 'review', order: 20, name: 'In Review', isDone: false };
+    }
+    if (normalized.includes('progress') || normalized.includes('build') || normalized.includes('develop') || normalized.includes('doing')) {
+        return { id: 'progress', order: 10, name: 'In Progress', isDone: false };
+    }
+    if (categoryKey === 'new' || normalized.includes('todo') || normalized.includes('to do') || normalized.includes('backlog')) {
+        return { id: 'todo', order: 0, name: 'To Do', isDone: false };
+    }
+
+    return {
+        id: `status-${slugify(status?.name || 'status')}`,
+        order: categoryKey === 'done' ? 40 : 15,
+        name: String(status?.name || 'In Progress'),
+        isDone: categoryKey === 'done',
+    };
+}
+
+export function buildFallbackBoardConfig(statuses = []) {
+    const groups = new Map();
+
+    (Array.isArray(statuses) ? statuses : []).forEach(status => {
+        const group = getFallbackStatusGroup(status);
+        if (!groups.has(group.id)) {
+            groups.set(group.id, {
+                id: `fallback-${group.id}`,
+                name: group.name,
+                isDone: group.isDone,
+                order: group.order,
+                statuses: [],
+            });
+        }
+
+        groups.get(group.id).statuses.push({
+            id: status?.id != null && status.id !== '' ? String(status.id) : null,
+            name: String(status?.name || ''),
+        });
+    });
+
+    const columns = Array.from(groups.values())
+        .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
+        .map(({ order, ...column }) => column);
+
+    return {
+        columnConfig: {
+            columns,
+        },
     };
 }
 

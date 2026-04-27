@@ -26,6 +26,7 @@ import {
     getDemoSprintIssues,
 } from '../../../common/demoData.js';
 import { getDemoMode } from '../../../common/demoMode.js';
+import { resolveActiveJiraHost } from '../../../common/jiraSiteContext.js';
 
 // ============================================================
 // JIRA HOST
@@ -34,15 +35,7 @@ import { getDemoMode } from '../../../common/demoMode.js';
 export function getJiraHost() {
     return (async () => {
         if (await getDemoMode()) return DEMO_HOST;
-        return new Promise(resolve => {
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-                chrome.storage.local.get(['et_jira_host'], result => {
-                    resolve(result.et_jira_host || null);
-                });
-            } else {
-                resolve(null);
-            }
-        });
+        return resolveActiveJiraHost({ preferStoredActive: true });
     })();
 }
 
@@ -145,6 +138,134 @@ export async function fetchBoardId(host, projectKey) {
     });
 }
 
+function escapeJqlString(value = '') {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildProjectScopedSprintJql(projectKey, sprintClause, { doneOnly = false } = {}) {
+    return [
+        `project = "${escapeJqlString(projectKey)}"`,
+        sprintClause,
+        doneOnly ? 'statusCategory = Done' : '',
+        'issuetype not in (Epic, subtask)',
+    ].filter(Boolean).join(' AND ');
+}
+
+async function searchIssuesByJql(host, jql, fields = []) {
+    let all = [];
+    let nextPageToken;
+
+    while (true) {
+        const body = {
+            jql,
+            fields,
+            maxResults: 100,
+        };
+        if (nextPageToken) body.nextPageToken = nextPageToken;
+
+        const data = await jiraFetch(host, '/rest/api/3/search/jql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+            body: JSON.stringify(body),
+        });
+
+        all = all.concat(data.issues || []);
+        if (!data.nextPageToken || (data.issues || []).length === 0) break;
+        nextPageToken = data.nextPageToken;
+    }
+
+    return all;
+}
+
+function parseSprintFieldEntry(entry) {
+    if (!entry) return null;
+
+    if (typeof entry === 'object') {
+        const id = Number(entry.id);
+        if (!Number.isFinite(id)) return null;
+        return {
+            id,
+            name: String(entry.name || `Sprint ${id}`),
+            state: String(entry.state || '').toLowerCase(),
+            startDate: entry.startDate || '',
+            endDate: entry.endDate || '',
+            completeDate: entry.completeDate || '',
+        };
+    }
+
+    if (typeof entry === 'string') {
+        const idMatch = entry.match(/(?:^|,)id=(\d+)/i);
+        const nameMatch = entry.match(/(?:^|,)name=([^,\]]+)/i);
+        const stateMatch = entry.match(/(?:^|,)state=([^,\]]+)/i);
+        const startMatch = entry.match(/(?:^|,)startDate=([^,\]]+)/i);
+        const endMatch = entry.match(/(?:^|,)endDate=([^,\]]+)/i);
+        const completeMatch = entry.match(/(?:^|,)completeDate=([^,\]]+)/i);
+        const id = Number(idMatch?.[1]);
+        if (!Number.isFinite(id)) return null;
+
+        return {
+            id,
+            name: nameMatch?.[1] || `Sprint ${id}`,
+            state: String(stateMatch?.[1] || '').toLowerCase(),
+            startDate: startMatch?.[1] || '',
+            endDate: endMatch?.[1] || '',
+            completeDate: completeMatch?.[1] || '',
+        };
+    }
+
+    return null;
+}
+
+function extractSprintsFromIssues(issues = [], sprintFieldId = '') {
+    const byId = new Map();
+
+    (Array.isArray(issues) ? issues : []).forEach(issue => {
+        const sprintValue = issue?.fields?.[sprintFieldId];
+        const entries = Array.isArray(sprintValue) ? sprintValue : (sprintValue ? [sprintValue] : []);
+        entries.forEach(entry => {
+            const sprint = parseSprintFieldEntry(entry);
+            if (!sprint?.id) return;
+
+            const previous = byId.get(sprint.id);
+            byId.set(sprint.id, previous ? {
+                ...previous,
+                ...Object.fromEntries(Object.entries(sprint).filter(([, value]) => value)),
+            } : sprint);
+        });
+    });
+
+    return Array.from(byId.values());
+}
+
+export async function fetchProjectSprints(host, projectKey, sprintFieldId, states = ['active', 'closed']) {
+    if (!sprintFieldId) return [];
+
+    const stateToJql = {
+        active: 'sprint in openSprints()',
+        future: 'sprint in futureSprints()',
+        closed: 'sprint in closedSprints()',
+    };
+
+    const requestedStates = Array.isArray(states) ? states : [states];
+    const sprintsById = new Map();
+
+    for (const state of requestedStates) {
+        const sprintClause = stateToJql[state];
+        if (!sprintClause) continue;
+        const issues = await searchIssuesByJql(host, buildProjectScopedSprintJql(projectKey, sprintClause), [sprintFieldId]);
+        extractSprintsFromIssues(issues, sprintFieldId).forEach(sprint => {
+            if (!sprint?.id) return;
+            sprintsById.set(sprint.id, {
+                ...(sprintsById.get(sprint.id) || {}),
+                ...sprint,
+                state: sprint.state || state,
+            });
+        });
+    }
+
+    return Array.from(sprintsById.values());
+}
+
 export async function fetchActiveSprint(host, boardId) {
     const data = await jiraFetch(host, `/rest/agile/1.0/board/${boardId}/sprint?state=active&maxResults=1`);
     return data.values?.[0] || null;
@@ -183,6 +304,18 @@ export async function fetchSprintIssues(host, sprintId, spFieldId, extraFields =
         nextPageToken = data.nextPageToken;
     }
     return all;
+}
+
+export async function fetchProjectSprintIssues(host, projectKey, sprintId, spFieldId, extraFields = []) {
+    if (await getDemoMode()) {
+        return getDemoSprintIssues(sprintId);
+    }
+    const fields = ['summary', 'status', 'assignee', 'updated', 'issuetype', spFieldId, ...extraFields].filter(Boolean);
+    return searchIssuesByJql(
+        host,
+        buildProjectScopedSprintJql(projectKey, `sprint = ${Number(sprintId)}`),
+        fields,
+    );
 }
 
 export async function fetchIssueInProgressSince(host, issueKey) {
@@ -276,6 +409,18 @@ export async function fetchSprintDoneIssues(host, sprintId, spFieldId) {
     return all;
 }
 
+export async function fetchProjectSprintDoneIssues(host, projectKey, sprintId, spFieldId) {
+    if (await getDemoMode()) {
+        return getDemoSprintDoneIssues(sprintId);
+    }
+    const fields = [spFieldId, 'assignee', 'summary', 'status', 'issuetype', 'updated'].filter(Boolean);
+    return searchIssuesByJql(
+        host,
+        buildProjectScopedSprintJql(projectKey, `sprint = ${Number(sprintId)}`, { doneOnly: true }),
+        fields,
+    );
+}
+
 export async function fetchSpFieldId(host) {
     if (await getDemoMode()) {
         return DEMO_SP_FIELD_ID;
@@ -314,7 +459,11 @@ export async function fetchProjectStatuses(host, projectKey) {
             for (const s of (issueType.statuses || [])) {
                 if (!seen.has(s.name)) {
                     seen.add(s.name);
-                    result.push({ name: s.name, categoryKey: s.statusCategory?.key || '' });
+                    result.push({
+                        id: s.id != null && s.id !== '' ? String(s.id) : '',
+                        name: s.name,
+                        categoryKey: s.statusCategory?.key || '',
+                    });
                 }
             }
         }

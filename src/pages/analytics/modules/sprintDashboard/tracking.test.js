@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getTagDefsStorageKey, getNotesStorageKey, getReminderStorageKey, getTagsStorageKey } from '../../../../common/jiraStorageKeys.js';
 import { createBoardFlow } from '../boardFlow.js';
 import { buildIssueTrackingMarkup, renderDevCard } from './devCard.js';
 import {
@@ -9,6 +10,7 @@ import {
     filterSprintIssuesByTag,
     getSprintTrackingUpdatePlan,
     getTrackingStorageChangeIssueKeys,
+    setHost,
     hasSprintTrackingStorageChange,
     normalizeTrackingEventDetail,
     shouldSuppressTrackingStorageRefresh,
@@ -23,6 +25,8 @@ const BOARD_FLOW = createBoardFlow({
         ],
     },
 });
+
+const HOST = 'jira.example.atlassian.net';
 
 const ORIGINAL_DOCUMENT = global.document;
 
@@ -47,6 +51,7 @@ function makeIssue() {
 }
 
 beforeEach(() => {
+    setHost(HOST);
     global.document = {
         createElement(tagName) {
             return {
@@ -66,12 +71,12 @@ afterEach(() => {
 describe('sprint tracking state', () => {
     it('loads notes, reminders, tags and tag definitions from storage', () => {
         const tracking = buildSprintTrackingState({
-            tag_defs_jira: {
+            [getTagDefsStorageKey(HOST)]: {
                 urgent: { label: 'Urgent', color: 'red' },
             },
-            'notes_jira:PM-1': 'Call out release risk',
-            'reminder_jira:PM-1': 1_900_000_000_000,
-            'tags_jira:PM-1': ['Urgent'],
+            [getNotesStorageKey('PM-1', HOST)]: 'Call out release risk',
+            [getReminderStorageKey('PM-1', HOST)]: 1_900_000_000_000,
+            [getTagsStorageKey('PM-1', HOST)]: ['Urgent'],
         });
 
         expect(tracking.notesMap['PM-1']).toBe('Call out release risk');
@@ -82,11 +87,11 @@ describe('sprint tracking state', () => {
 
     it('treats reminder and tag definition changes as sprint tracking updates', () => {
         expect(hasSprintTrackingStorageChange({
-            'reminder_jira:PM-1': { oldValue: null, newValue: 1_900_000_000_000 },
+            [getReminderStorageKey('PM-1', HOST)]: { oldValue: null, newValue: 1_900_000_000_000 },
         })).toBe(true);
 
         expect(hasSprintTrackingStorageChange({
-            tag_defs_jira: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
+            [getTagDefsStorageKey(HOST)]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
         })).toBe(true);
 
         expect(hasSprintTrackingStorageChange({
@@ -116,7 +121,7 @@ describe('sprint tracking state', () => {
             tagDefs: {},
         };
 
-        applyTrackingEventToState('jira:PM-1', {
+        applyTrackingEventToState(`jira@${HOST}:PM-1`, {
             noteText: 'Updated note',
             reminderTs: 1_900_000_000_000,
             tagLabels: ['Urgent'],
@@ -222,9 +227,9 @@ describe('incremental sprint tracking updates', () => {
 
     it('extracts changed tracking issue keys from storage changes', () => {
         expect(Array.from(getTrackingStorageChangeIssueKeys({
-            'notes_jira:PM-1': { oldValue: '', newValue: 'Note' },
-            'reminder_jira:PM-2': { oldValue: null, newValue: 1_900_000_000_000 },
-            tag_defs_jira: { oldValue: {}, newValue: {} },
+            [getNotesStorageKey('PM-1', HOST)]: { oldValue: '', newValue: 'Note' },
+            [getReminderStorageKey('PM-2', HOST)]: { oldValue: null, newValue: 1_900_000_000_000 },
+            [getTagDefsStorageKey(HOST)]: { oldValue: {}, newValue: {} },
         }))).toEqual(['PM-1', 'PM-2']);
     });
 
@@ -234,15 +239,15 @@ describe('incremental sprint tracking updates', () => {
         ]);
 
         expect(shouldSuppressTrackingStorageRefresh({
-            'notes_jira:PM-1': { oldValue: '', newValue: 'Note' },
+            [getNotesStorageKey('PM-1', HOST)]: { oldValue: '', newValue: 'Note' },
         }, recentUpdates, 1_500)).toBe(true);
 
         expect(shouldSuppressTrackingStorageRefresh({
-            'notes_jira:PM-1': { oldValue: '', newValue: 'Note' },
+            [getNotesStorageKey('PM-1', HOST)]: { oldValue: '', newValue: 'Note' },
         }, recentUpdates, 2_500)).toBe(false);
 
         expect(shouldSuppressTrackingStorageRefresh({
-            'notes_jira:PM-2': { oldValue: '', newValue: 'Other note' },
+            [getNotesStorageKey('PM-2', HOST)]: { oldValue: '', newValue: 'Other note' },
         }, recentUpdates, 1_500)).toBe(false);
     });
 });

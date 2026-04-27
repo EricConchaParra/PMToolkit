@@ -8,6 +8,7 @@
   <script type="module" crossorigin src="/analytics.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
+  <link rel="modulepreload" crossorigin href="/assets/jiraSiteContext.js">
   <link rel="modulepreload" crossorigin href="/assets/tagEditor.js">
   <link rel="modulepreload" crossorigin href="/assets/jira-styles.js">
   <link rel="modulepreload" crossorigin href="/assets/demoMode.js">
@@ -28,6 +29,13 @@
                 <span class="brand-sub">Analytics Hub</span>
             </div>
             <span class="analytics-demo-badge hidden" id="analytics-demo-badge">Demo</span>
+        </div>
+        <div class="sidebar-site-switcher hidden" id="analytics-site-switcher">
+            <label for="analytics-site-select">Jira Site</label>
+            <div class="combo-wrapper">
+                <select id="analytics-site-select"></select>
+                <span class="combo-arrow">▾</span>
+            </div>
         </div>
 
         <nav class="sidebar-nav">

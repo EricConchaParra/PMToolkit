@@ -22,6 +22,11 @@ import { initPerfCombo } from './modules/performanceDashboard/performanceDashboa
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
 import { initAnalyticsAgeTooltips } from './modules/tooltips.js';
 import { getDemoMode, subscribeDemoMode } from '../../common/demoMode.js';
+import {
+    ensureJiraMultiSiteMigration,
+    getKnownJiraHosts,
+    setActiveJiraHost,
+} from '../../common/jiraSiteContext.js';
 
 // ============================================================
 // BOOTSTRAP
@@ -30,6 +35,7 @@ import { getDemoMode, subscribeDemoMode } from '../../common/demoMode.js';
 document.addEventListener('DOMContentLoaded', async () => {
     markAnalyticsPerf('bootstrap:start');
     initAnalyticsAgeTooltips();
+    await ensureJiraMultiSiteMigration();
     const demoMode = await getDemoMode();
     setSprintDashboardDemoMode(demoMode);
     document.body.classList.toggle('demo-mode-active', demoMode);
@@ -39,14 +45,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ---- Nav ----
     initNav();
 
-    // ---- Initial settings (no project yet) ----
-    let currentSettings = await loadSettings(null);
-    setSettings(currentSettings);
-    populateSettingsUI(currentSettings);
-
     // ---- Jira host ----
     const currentHost = await getJiraHost();
     setHost(currentHost);
+    const knownHosts = demoMode ? [currentHost] : await getKnownJiraHosts();
+
+    // ---- Initial settings (no project yet) ----
+    let currentSettings = await loadSettings(currentHost, null);
+    setSettings(currentSettings);
+    populateSettingsUI(currentSettings);
+
+    const analyticsSiteWrap = document.getElementById('analytics-site-switcher');
+    const analyticsSiteSelect = document.getElementById('analytics-site-select');
+    if (analyticsSiteWrap && analyticsSiteSelect) {
+        const shouldShow = !demoMode && knownHosts.length > 1;
+        analyticsSiteWrap.classList.toggle('hidden', !shouldShow);
+        if (shouldShow) {
+            analyticsSiteSelect.innerHTML = knownHosts.map(host => `
+                <option value="${escapeHtml(host)}">${escapeHtml(host)}</option>
+            `).join('');
+            analyticsSiteSelect.value = currentHost;
+            analyticsSiteSelect.addEventListener('change', async event => {
+                const nextHost = String(event.target.value || '').trim();
+                if (!nextHost || nextHost === currentHost) return;
+                await setActiveJiraHost(nextHost);
+                window.location.reload();
+            });
+        }
+    }
 
     // ---- Settings panel toggle ----
     const settingsPanel = document.getElementById('settings-panel');
@@ -67,7 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const githubRepos = readGithubReposFromUI();
         currentSettings = { hoursPerDay, spHours, githubRepos };
         setSettings(currentSettings);
-        await saveSettings(selectedProjectKey, currentSettings);
+        await saveSettings(currentHost, selectedProjectKey, currentSettings);
         const msg = document.getElementById('settings-saved-msg');
         msg.classList.remove('hidden');
         setTimeout(() => msg.classList.add('hidden'), 2000);
@@ -77,7 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('reset-settings-btn').addEventListener('click', async () => {
         currentSettings = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, githubRepos: [] };
         setSettings(currentSettings);
-        await saveSettings(selectedProjectKey, currentSettings);
+        await saveSettings(currentHost, selectedProjectKey, currentSettings);
         populateSettingsUI(currentSettings);
         const msg = document.getElementById('settings-saved-msg');
         msg.classList.remove('hidden');
@@ -122,9 +148,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ---- Select project ----
     async function selectProject(projectKey) {
         selectedProjectKey = projectKey;
-        setLastProject(projectKey);
+        setLastProject(currentHost, projectKey);
 
-        currentSettings = await loadSettings(projectKey);
+        currentSettings = await loadSettings(currentHost, projectKey);
         setSettings(currentSettings);
         populateSettingsUI(currentSettings);
         logAnalyticsPerf('project:selected', { projectKey });
@@ -166,7 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // ---- Auto-restore last project ----
-    const lastProject = await getLastProject();
+    const lastProject = await getLastProject(currentHost);
     if (lastProject && allProjects.find(p => p.key === lastProject)) {
         const p = allProjects.find(pr => pr.key === lastProject);
         projectSearch.value = `${p.name} (${p.key})`;

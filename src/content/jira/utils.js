@@ -2,27 +2,17 @@
  * Concurrency queue and formatting utilities for Jira features.
  */
 import { storage, syncStorage } from '../../common/storage';
+import { getCurrentPageJiraHost } from '../../common/jiraIdentity.js';
+import { resolveActiveJiraHost } from '../../common/jiraSiteContext.js';
 
 let _etQueue = [];
 let _etRunningCount = 0;
 const MAX_CONCURRENT = 3;
 
-let _etStoryPointsFieldId = null;
-let _etSprintFieldId = null;
-let _etFieldIdFetched = false;
+const _etCustomFieldsByHost = new Map();
 
 export async function getJiraHost() {
-    // 1. Try to get from storage (set by top frame)
-    const settings = await storage.get(['et_jira_host']);
-    if (settings.et_jira_host) return settings.et_jira_host;
-
-    // 2. Fallback to current hostname if it looks like Jira
-    if (window.location.hostname.endsWith('.atlassian.net')) {
-        return window.location.hostname;
-    }
-
-    // 3. Default fallback
-    return 'jira.atlassian.net';
+    return getCurrentPageJiraHost() || resolveActiveJiraHost();
 }
 
 export async function invokeBackgroundFetch(urlOrPath, options = {}) {
@@ -53,27 +43,30 @@ export async function invokeBackgroundFetch(urlOrPath, options = {}) {
 }
 
 export async function etEnsureCustomFields() {
-    if (_etFieldIdFetched) return { sp: _etStoryPointsFieldId, sprint: _etSprintFieldId };
-
     const host = await getJiraHost();
+    const cached = _etCustomFieldsByHost.get(host);
+    if (cached?.fetched) return { sp: cached.sp, sprint: cached.sprint };
+
     try {
         const res = await invokeBackgroundFetch(`/rest/api/3/field`, {
             headers: { 'Accept': 'application/json' }
         });
-        if (!res.ok) return { sp: null, sprint: null };
+        if (!res.ok) return cached ? { sp: cached.sp, sprint: cached.sprint } : { sp: null, sprint: null };
         const fields = await res.json();
 
         const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
-        _etStoryPointsFieldId = spField ? spField.id : null;
-
         const sprintField = fields.find(f => f.name && f.name.toLowerCase() === 'sprint');
-        _etSprintFieldId = sprintField ? sprintField.id : null;
-
-        _etFieldIdFetched = true;
+        _etCustomFieldsByHost.set(host, {
+            sp: spField ? spField.id : null,
+            sprint: sprintField ? sprintField.id : null,
+            fetched: true,
+        });
     } catch (e) {
         console.warn('PMsToolKit: Could not detect custom fields', e);
     }
-    return { sp: _etStoryPointsFieldId, sprint: _etSprintFieldId };
+
+    const resolved = _etCustomFieldsByHost.get(host);
+    return resolved ? { sp: resolved.sp, sprint: resolved.sprint } : { sp: null, sprint: null };
 }
 
 export function etParseSprintData(sprintValue) {

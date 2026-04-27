@@ -1,4 +1,10 @@
 import { storage } from '../../../common/storage';
+import { getCurrentPageJiraHost } from '../../../common/jiraIdentity.js';
+import {
+    LEGACY_MANUAL_MENU_STORAGE_KEY,
+    LEGACY_STARRED_ITEMS_STORAGE_KEY,
+    getManualMenuStorageKey,
+} from '../../../common/jiraStorageKeys.js';
 
 export const CustomizationFeature = {
     hideHeaderElements() {
@@ -51,29 +57,34 @@ export const CustomizationFeature = {
     },
 
     async injectManualMenu() {
-        if (_etCachedStarredItems) {
-            renderStarredItemsMenu(_etCachedStarredItems);
+        const host = getCurrentPageJiraHost();
+        if (!host) return;
+
+        if (_etCachedStarredItemsByHost.has(host)) {
+            renderStarredItemsMenu(_etCachedStarredItemsByHost.get(host), host);
             return;
         }
 
-        // Try to load manual items first
-        const res = await storage.get(['et_manual_menu_items', 'et_starred_items']);
-        if (res.et_manual_menu_items) {
-            _etCachedStarredItems = res.et_manual_menu_items;
-        } else if (res.et_starred_items) {
-            // Migration
-            _etCachedStarredItems = res.et_starred_items;
-            await storage.set({ et_manual_menu_items: res.et_starred_items });
+        const scopedStorageKey = getManualMenuStorageKey(host);
+        const res = await storage.get([scopedStorageKey, LEGACY_MANUAL_MENU_STORAGE_KEY, LEGACY_STARRED_ITEMS_STORAGE_KEY]);
+        if (Array.isArray(res[scopedStorageKey])) {
+            _etCachedStarredItemsByHost.set(host, res[scopedStorageKey]);
+        } else if (Array.isArray(res[LEGACY_MANUAL_MENU_STORAGE_KEY])) {
+            _etCachedStarredItemsByHost.set(host, res[LEGACY_MANUAL_MENU_STORAGE_KEY]);
+            await storage.set({ [scopedStorageKey]: res[LEGACY_MANUAL_MENU_STORAGE_KEY] });
+        } else if (Array.isArray(res[LEGACY_STARRED_ITEMS_STORAGE_KEY])) {
+            _etCachedStarredItemsByHost.set(host, res[LEGACY_STARRED_ITEMS_STORAGE_KEY]);
+            await storage.set({ [scopedStorageKey]: res[LEGACY_STARRED_ITEMS_STORAGE_KEY] });
         } else {
-            _etCachedStarredItems = [];
+            _etCachedStarredItemsByHost.set(host, []);
         }
-        renderStarredItemsMenu(_etCachedStarredItems);
+        renderStarredItemsMenu(_etCachedStarredItemsByHost.get(host), host);
     }
 };
 
-let _etCachedStarredItems = null;
+const _etCachedStarredItemsByHost = new Map();
 
-function renderStarredItemsMenu(items) {
+function renderStarredItemsMenu(items, host) {
     const topNav = document.querySelector('[data-testid="page-layout.top-nav"]');
     if (!topNav) return;
 
@@ -116,6 +127,7 @@ function renderStarredItemsMenu(items) {
 
     // Edit Button (⋮)
     let editBtn = menuWrapper.querySelector('.et-menu-edit-btn');
+    let popup = menuWrapper.querySelector('.et-menu-manager-popup');
     if (!editBtn) {
         editBtn = document.createElement('button');
         editBtn.className = 'et-menu-edit-btn';
@@ -124,7 +136,7 @@ function renderStarredItemsMenu(items) {
         menuWrapper.appendChild(editBtn);
 
         // Menu Manager Popup
-        const popup = document.createElement('div');
+        popup = document.createElement('div');
         popup.className = 'et-menu-manager-popup';
         popup.innerHTML = `
             <h4>Manage Jira Menu</h4>
@@ -137,33 +149,20 @@ function renderStarredItemsMenu(items) {
         `;
         menuWrapper.appendChild(popup);
 
-        editBtn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const isVisible = popup.classList.toggle('visible');
-            if (isVisible) {
-                const titleInput = popup.querySelector('#et-menu-new-title');
-                const urlInput = popup.querySelector('#et-menu-new-url');
-                titleInput.value = document.title.replace(' - Jira', '');
-                urlInput.value = window.location.pathname + window.location.search;
-                renderManagerList(popup, items);
-            }
-        };
-
         const saveBtn = popup.querySelector('#et-menu-add-save');
         saveBtn.onclick = () => {
             const title = popup.querySelector('#et-menu-new-title').value.trim();
             const url = popup.querySelector('#et-menu-new-url').value.trim();
             if (title && url) {
                 // Use the latest _etCachedStarredItems instead of the captured 'items' param
-                const currentItems = _etCachedStarredItems || [];
+                const currentItems = _etCachedStarredItemsByHost.get(host) || [];
                 const newItems = [...currentItems, { title, href: url }];
-                saveMenuItems(newItems);
+                saveMenuItems(newItems, host);
 
                 // Keep the popup visible but reset the inputs and re-render the list
                 popup.querySelector('#et-menu-new-title').value = '';
                 popup.querySelector('#et-menu-new-url').value = '';
-                renderManagerList(popup, newItems);
+                renderManagerList(popup, newItems, host);
             }
         };
 
@@ -174,9 +173,22 @@ function renderStarredItemsMenu(items) {
             }
         });
     }
+
+    editBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isVisible = popup.classList.toggle('visible');
+        if (isVisible) {
+            const titleInput = popup.querySelector('#et-menu-new-title');
+            const urlInput = popup.querySelector('#et-menu-new-url');
+            titleInput.value = document.title.replace(' - Jira', '');
+            urlInput.value = window.location.pathname + window.location.search;
+            renderManagerList(popup, _etCachedStarredItemsByHost.get(host) || [], host);
+        }
+    };
 }
 
-function renderManagerList(popup, items) {
+function renderManagerList(popup, items, host) {
     const list = popup.querySelector('.et-menu-manager-list');
     list.innerHTML = '';
 
@@ -199,8 +211,8 @@ function renderManagerList(popup, items) {
         // Delete action
         div.querySelector('.et-menu-manager-delete').onclick = () => {
             const newItems = items.filter((_, i) => i !== index);
-            saveMenuItems(newItems);
-            renderManagerList(popup, newItems);
+            saveMenuItems(newItems, host);
+            renderManagerList(popup, newItems, host);
         };
 
         // Drag and Drop Events
@@ -239,8 +251,8 @@ function renderManagerList(popup, items) {
                 const [movedItem] = newItems.splice(draggedItemIndex, 1);
                 newItems.splice(index, 0, movedItem);
 
-                saveMenuItems(newItems);
-                renderManagerList(popup, newItems);
+                saveMenuItems(newItems, host);
+                renderManagerList(popup, newItems, host);
             }
         });
 
@@ -248,8 +260,8 @@ function renderManagerList(popup, items) {
     });
 }
 
-function saveMenuItems(items) {
-    _etCachedStarredItems = items;
-    storage.set({ et_manual_menu_items: items });
-    renderStarredItemsMenu(items);
+function saveMenuItems(items, host) {
+    _etCachedStarredItemsByHost.set(host, items);
+    storage.set({ [getManualMenuStorageKey(host)]: items });
+    renderStarredItemsMenu(items, host);
 }

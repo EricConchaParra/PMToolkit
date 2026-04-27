@@ -4,13 +4,17 @@
  */
 
 import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
-import { getTrackingItems } from '../../../../common/trackingRepository.js';
+import { getJiraIssueKey } from '../../../../common/jiraIdentity.js';
 import {
-    TAG_DEFS_STORAGE_KEY,
-    TRACKING_UPDATED_EVENT,
     getNotesStorageKey,
     getReminderStorageKey,
+    getTagDefsStorageKey,
     getTagsStorageKey,
+    parseJiraTrackingStorageKey,
+} from '../../../../common/jiraStorageKeys.js';
+import { getTrackingItems } from '../../../../common/trackingRepository.js';
+import {
+    TRACKING_UPDATED_EVENT,
     getTagObjects,
     hasTrackingStorageChange,
     matchesTagFilter,
@@ -21,10 +25,15 @@ import {
     fetchBoardConfiguration,
     fetchBoardId,
     fetchClosedSprints, fetchSprintDoneIssues, fetchSpFieldId,
+    fetchProjectSprintDoneIssues,
+    fetchProjectSprintIssues,
+    fetchProjectSprints,
+    fetchProjectStatuses,
+    fetchSprintFieldId,
     fetchSprintIssues,
     jiraFetch,
 } from '../jiraApi.js';
-import { createBoardFlow, resolveCurrentBoardColumnSince, resolveIssueBoardColumn } from '../boardFlow.js';
+import { createBoardFlow, buildFallbackBoardConfig, resolveCurrentBoardColumnSince, resolveIssueBoardColumn } from '../boardFlow.js';
 import { fetchIssueTimeline } from '../issueTimeline.js';
 import { workingHoursBetween, formatDate, escapeHtml } from '../utils.js';
 import { buildIssueTrackingViewModel, renderDevCard, renderReadOnlyTags } from './devCard.js';
@@ -70,6 +79,7 @@ let _trackingState = {
     tagsMap: {},
     tagDefs: {},
 };
+let _projectSprintFallback = false;
 
 const ANY_TAG_FILTER_VALUE = '__any_tag__';
 const TRACKING_STORAGE_REFRESH_DELAY_MS = 120;
@@ -220,11 +230,11 @@ async function loadSprintTrackingState(issues = []) {
         return _trackingState;
     }
 
-    const storageKeys = [TAG_DEFS_STORAGE_KEY];
+    const storageKeys = [getTagDefsStorageKey(_host)];
     issues.forEach(issue => {
-        storageKeys.push(getNotesStorageKey(issue.key));
-        storageKeys.push(getReminderStorageKey(issue.key));
-        storageKeys.push(getTagsStorageKey(issue.key));
+        storageKeys.push(getNotesStorageKey(issue.key, _host));
+        storageKeys.push(getReminderStorageKey(issue.key, _host));
+        storageKeys.push(getTagsStorageKey(issue.key, _host));
     });
 
     const stored = await getTrackingItems(storageKeys, { demoMode: _demoMode });
@@ -233,7 +243,10 @@ async function loadSprintTrackingState(issues = []) {
 }
 
 export function buildSprintTrackingState(stored = {}) {
-    const parsed = parseTrackingStorage(stored, { activeRemindersOnly: false });
+    const parsed = parseTrackingStorage(stored, {
+        activeRemindersOnly: false,
+        host: _host,
+    });
     return {
         notesMap: parsed.notesMap,
         remindersMap: parsed.remindersMap,
@@ -298,7 +311,7 @@ export function normalizeTrackingEventDetail(detail = {}) {
 }
 
 export function applyTrackingEventToState(issueKey, detail = {}, trackingState = _trackingState) {
-    const normalizedIssueKey = String(issueKey || '').split(':').pop();
+    const normalizedIssueKey = getJiraIssueKey(issueKey) || String(issueKey || '').trim();
     if (!normalizedIssueKey || !trackingState) return trackingState;
 
     const { noteText, tagLabels, tagDefs, reminderTs } = normalizeTrackingEventDetail(detail);
@@ -346,7 +359,7 @@ export function getSprintTrackingUpdatePlan({
     previousTracking = {},
     nextTracking = {},
 } = {}) {
-    const normalizedIssueKey = String(issueKey || '').split(':').pop();
+    const normalizedIssueKey = getJiraIssueKey(issueKey) || String(issueKey || '').trim();
     const previousOptions = buildSprintTagFilterOptions(issues, previousTracking);
     const nextOptions = buildSprintTagFilterOptions(issues, nextTracking);
     const previousVisible = new Set(
@@ -379,12 +392,16 @@ export function getSprintTrackingUpdatePlan({
     };
 }
 
-export function getTrackingStorageChangeIssueKeys(changes = {}) {
+export function getTrackingStorageChangeIssueKeys(changes = {}, host = _host) {
     const issueKeys = new Set();
 
     Object.keys(changes || {}).forEach(key => {
-        const match = key.match(/^(?:notes|reminder|tags)_jira:(.+)$/);
-        if (match?.[1]) issueKeys.add(match[1]);
+        const parsedKey = parseJiraTrackingStorageKey(key, host);
+        if (!parsedKey?.issueKey) return;
+        if (host && parsedKey.host && parsedKey.host !== host) return;
+        if (parsedKey.prefix === 'notes' || parsedKey.prefix === 'reminder' || parsedKey.prefix === 'tags') {
+            issueKeys.add(parsedKey.issueKey);
+        }
     });
 
     return issueKeys;
@@ -438,7 +455,7 @@ function renderSprintTagFilter(issues = _currentIssues, tracking = _trackingStat
 function applyIncrementalTrackingUpdate(issueKey, detail = {}) {
     if (!_currentIssues.length) return;
 
-    const normalizedIssueKey = String(issueKey || '').split(':').pop();
+    const normalizedIssueKey = getJiraIssueKey(issueKey) || String(issueKey || '').trim();
     if (!normalizedIssueKey) return;
 
     clearTimeout(_trackingReloadTimer);
@@ -589,7 +606,7 @@ function bindTrackingEventListener() {
     if (_trackingEventListenerBound) return;
 
     document.addEventListener(TRACKING_UPDATED_EVENT, event => {
-        const issueKey = String(event.detail?.issueKey || '').split(':').pop();
+        const issueKey = getJiraIssueKey(event.detail?.ticketRef) || String(event.detail?.issueKey || '').trim();
         if (!issueKey) return;
         if (!_currentIssues.some(issue => issue.key === issueKey)) return;
 
@@ -759,6 +776,7 @@ export async function loadDashboard(projectKey) {
     const requestId = ++_loadRequestId;
     _currentProjectKey = projectKey;
     _boardFlow = null;
+    _projectSprintFallback = false;
     _velocityByAssignee = {};
     renderSprintTagFilter([], { notesMap: {}, remindersMap: {}, tagsMap: {}, tagDefs: {} });
     bindSprintViewListener();
@@ -784,8 +802,43 @@ export async function loadDashboard(projectKey) {
         if (requestId !== _loadRequestId) return;
         _currentBoardId = boardId;
         if (!boardId) {
-            showDashState('error', `No Scrum board found for project "${projectKey}". Make sure it has a Scrum board.`);
-            document.getElementById('sprint-select-container').classList.add('hidden');
+            showDashState('loading', 'No Scrum board found. Falling back to project sprint data...');
+            const [projectStatuses, sprintFieldId] = await Promise.all([
+                fetchProjectStatuses(host, projectKey).catch(() => []),
+                fetchSprintFieldId(host).catch(() => null),
+            ]);
+            if (requestId !== _loadRequestId) return;
+
+            const fallbackBoardConfig = buildFallbackBoardConfig(projectStatuses);
+            _boardFlow = createBoardFlow(fallbackBoardConfig);
+            _projectSprintFallback = true;
+
+            showDashState('loading', 'Fetching project sprints...');
+            const projectSprints = await fetchProjectSprints(host, projectKey, sprintFieldId, ['active', 'future', 'closed']);
+            if (requestId !== _loadRequestId) return;
+
+            _currentSprints = projectSprints
+                .slice()
+                .sort((left, right) =>
+                    new Date(right.startDate || right.endDate || 0) - new Date(left.startDate || left.endDate || 0)
+                    || String(right.name || '').localeCompare(String(left.name || ''))
+                );
+
+            const sprintContainer = document.getElementById('sprint-select-container');
+            if (_currentSprints.length === 0) {
+                sprintContainer.classList.add('hidden');
+                showDashState('error', `No Scrum board was found for "${projectKey}", and no project sprint data could be resolved.`);
+                return;
+            }
+
+            sprintContainer.classList.remove('hidden');
+            let activeSprint = _currentSprints.find(s => s.state === 'active');
+            if (!activeSprint) activeSprint = _currentSprints[0];
+
+            _selectedSprintId = activeSprint.id;
+            const sprintSearch = document.getElementById('sprint-search');
+            sprintSearch.value = `${activeSprint.state === 'active' ? '🟢 ' : ''}${activeSprint.name}`;
+            loadDashboardForSprint(activeSprint, { requestId, projectKey });
             return;
         }
 
@@ -891,7 +944,9 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
         document.getElementById('sprint-hours-left').textContent = hoursLeft !== null ? `${hoursLeft.toFixed(1)}h` : '—';
 
         showDashState('loading', 'Fetching sprint issues...');
-        const issues = await fetchSprintIssues(host, sprint.id, _spFieldId);
+        const issues = _projectSprintFallback
+            ? await fetchProjectSprintIssues(host, _currentProjectKey, sprint.id, _spFieldId)
+            : await fetchSprintIssues(host, sprint.id, _spFieldId);
         if (requestId !== _loadRequestId) return;
         _currentIssues = issues;
 
@@ -929,11 +984,15 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
 
         // Fetch velocity: last 3 closed sprints
         showDashState('loading', 'Calculating velocity...');
-        const closedSprints = await fetchClosedSprints(host, boardId, 3).catch(() => []);
+        const closedSprints = _projectSprintFallback
+            ? _currentSprints.filter(item => item.state === 'closed').slice(0, 3)
+            : await fetchClosedSprints(host, boardId, 3).catch(() => []);
 
         const velocityByDev = {};
         for (const cs of closedSprints) {
-            const doneIssues = await fetchSprintDoneIssues(host, cs.id, _spFieldId).catch(() => []);
+            const doneIssues = _projectSprintFallback
+                ? await fetchProjectSprintDoneIssues(host, _currentProjectKey, cs.id, _spFieldId).catch(() => [])
+                : await fetchSprintDoneIssues(host, cs.id, _spFieldId).catch(() => []);
             if (requestId !== _loadRequestId) return;
             doneIssues.forEach(i => {
                 const key = i.fields?.assignee?.accountId || 'unassigned';

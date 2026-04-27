@@ -5,6 +5,8 @@ import {
     fetchBoardId,
     fetchBoardSprints,
     fetchIssueChangelog,
+    fetchProjectSprints,
+    fetchProjectSprintIssues,
     fetchProjectStatuses,
     fetchSpFieldId,
     fetchSprintFieldId,
@@ -140,7 +142,7 @@ function bindUiEvents() {
             if (!closureState.projectKey || !closureState.selectedSprintId) return;
             if (!window.confirm('Reset this sprint report to the original auto-detected state?')) return;
 
-            const storageKey = getSprintClosureStorageKey(closureState.projectKey, closureState.selectedSprintId);
+            const storageKey = getSprintClosureStorageKey(closureState.host, closureState.projectKey, closureState.selectedSprintId);
             closureState.reportState = getDefaultSprintClosureState();
             closureState.captureMode = false;
             clearTimeout(closureState.saveTimer);
@@ -255,13 +257,10 @@ async function selectClosureProject(projectKey) {
 
         if (requestId !== closureState.loadRequestId) return;
 
-        if (!closureState.boardId) {
-            showClosureState('error', `No Scrum board found for project "${projectKey}".`);
-            return;
-        }
-
         const [allSprints, statuses] = await Promise.all([
-            fetchBoardSprints(closureState.host, closureState.boardId, ['closed', 'active', 'future']),
+            closureState.boardId
+                ? fetchBoardSprints(closureState.host, closureState.boardId, ['closed', 'active', 'future'])
+                : fetchProjectSprints(closureState.host, projectKey, closureState.sprintFieldId, ['closed', 'active', 'future']),
             fetchProjectStatuses(closureState.host, projectKey).catch(() => []),
         ]);
         if (requestId !== closureState.loadRequestId) return;
@@ -308,12 +307,20 @@ async function selectClosureSprint(sprintId, opts = {}) {
     showClosureState('loading', 'Loading sprint report...');
 
     try {
-        const issues = await fetchSprintIssues(
-            closureState.host,
-            sprint.id,
-            closureState.spFieldId,
-            closureState.sprintFieldId ? [closureState.sprintFieldId] : [],
-        );
+        const issues = closureState.boardId
+            ? await fetchSprintIssues(
+                closureState.host,
+                sprint.id,
+                closureState.spFieldId,
+                closureState.sprintFieldId ? [closureState.sprintFieldId] : [],
+            )
+            : await fetchProjectSprintIssues(
+                closureState.host,
+                closureState.projectKey,
+                sprint.id,
+                closureState.spFieldId,
+                closureState.sprintFieldId ? [closureState.sprintFieldId] : [],
+            );
         if (requestId !== closureState.loadRequestId) return;
 
         issues.forEach(issue => {
@@ -330,7 +337,7 @@ async function selectClosureSprint(sprintId, opts = {}) {
             });
         }
 
-        const storageKey = getSprintClosureStorageKey(closureState.projectKey, sprint.id);
+        const storageKey = getSprintClosureStorageKey(closureState.host, closureState.projectKey, sprint.id);
         const saved = await readClosurePersistedState(storageKey);
         if (requestId !== closureState.loadRequestId) return;
 
@@ -612,7 +619,7 @@ function scheduleStateSave() {
 
 async function persistCurrentState() {
     if (!closureState.projectKey || !closureState.selectedSprintId) return;
-    const storageKey = getSprintClosureStorageKey(closureState.projectKey, closureState.selectedSprintId);
+    const storageKey = getSprintClosureStorageKey(closureState.host, closureState.projectKey, closureState.selectedSprintId);
     closureState.reportState.updatedAt = Date.now();
     await writeClosurePersistedState(storageKey, normalizeSprintClosureState(closureState.reportState));
 }

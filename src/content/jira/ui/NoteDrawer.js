@@ -1,21 +1,28 @@
 import { createTagEditor } from '../../../common/tagEditor.js';
+import { DEMO_HOST } from '../../../common/demoData.js';
 import { getTrackingItems, removeTrackingItems, setTrackingItems } from '../../../common/trackingRepository.js';
 import {
-    TAG_DEFS_STORAGE_KEY,
     TRACKING_UPDATED_EVENT,
     ensureTagDefinition,
-    getNotesStorageKey,
-    getReminderStorageKey,
-    getTagsStorageKey,
     hasTrackedContent,
     normalizeTagDefs,
     normalizeTagList,
 } from '../../../common/tagging.js';
+import { buildJiraTicketRef, getCurrentPageJiraHost, getJiraIssueKey } from '../../../common/jiraIdentity.js';
+import {
+    getIgnoredStorageKey,
+    getNotesStorageKey,
+    getReminderStorageKey,
+    getTagDefsStorageKey,
+    getTagsStorageKey,
+} from '../../../common/jiraStorageKeys.js';
 
 export const NoteDrawer = {
     el: null,
     backdrop: null,
     currentKey: null,
+    currentHost: '',
+    currentTicketRef: '',
     saveTimeout: null,
     tagEditor: null,
     currentTagDefs: {},
@@ -32,6 +39,8 @@ export const NoteDrawer = {
     },
 
     async initIndicators() {
+        const host = this.getCurrentHost();
+        if (!host) return;
         const buttons = document.querySelectorAll('.et-notes-btn:not(.et-indicator-checked), .et-ticket-notes-toggle:not(.et-indicator-checked)');
         if (buttons.length === 0) return;
 
@@ -46,25 +55,26 @@ export const NoteDrawer = {
 
         const storageKeys = [];
         keys.forEach(k => {
-            const cleanKey = k.includes(':') ? k : `jira:${k}`;
-            storageKeys.push(`notes_${cleanKey}`, `reminder_${cleanKey}`, `tags_${cleanKey}`);
+            storageKeys.push(getNotesStorageKey(k, host), getReminderStorageKey(k, host), getTagsStorageKey(k, host));
         });
 
         const result = await getTrackingItems(storageKeys, { demoMode: this.demoMode });
 
         keys.forEach(k => {
-            const cleanKey = k.includes(':') ? k : `jira:${k}`;
-            const hasNote = !!result[`notes_${cleanKey}`];
-            const hasReminder = !!result[`reminder_${cleanKey}`];
-            const tags = Array.isArray(result[`tags_${cleanKey}`]) ? result[`tags_${cleanKey}`] : [];
+            const notesKey = getNotesStorageKey(k, host);
+            const reminderKey = getReminderStorageKey(k, host);
+            const tagsKey = getTagsStorageKey(k, host);
+            const hasNote = !!result[notesKey];
+            const hasReminder = !!result[reminderKey];
+            const tags = Array.isArray(result[tagsKey]) ? result[tagsKey] : [];
             const hasActiveItem = this.hasTrackedItem({
-                noteText: hasNote ? result[`notes_${cleanKey}`] : '',
-                reminderValue: hasReminder ? result[`reminder_${cleanKey}`] : '',
+                noteText: hasNote ? result[notesKey] : '',
+                reminderValue: hasReminder ? result[reminderKey] : '',
                 tagLabels: tags,
             });
 
             if (hasActiveItem) {
-                const cleanSuffix = k.split(':').pop();
+                const cleanSuffix = getJiraIssueKey(k) || k;
                 document.querySelectorAll(`[data-issue-key="${cleanSuffix}"], [data-issue-key="jira:${cleanSuffix}"]`).forEach(btn => {
                     if (btn.classList.contains('et-ticket-notes-toggle')) {
                         const span = btn.querySelector('span');
@@ -143,7 +153,10 @@ export const NoteDrawer = {
             tagDefs: {},
             placeholder: 'Type a tag or create one...',
             onCreateTag: async (label, color) => {
-                const created = await ensureTagDefinition(label, color, { demoMode: this.demoMode });
+                const created = await ensureTagDefinition(label, color, {
+                    demoMode: this.demoMode,
+                    host: this.currentHost,
+                });
                 if (!created) return false;
                 this.currentTagDefs = {
                     ...this.currentTagDefs,
@@ -201,6 +214,10 @@ export const NoteDrawer = {
         this.updateDirtyState();
     },
 
+    getCurrentHost() {
+        return this.demoMode ? DEMO_HOST : getCurrentPageJiraHost();
+    },
+
     getFormSnapshot() {
         if (!this.el) {
             return {
@@ -241,8 +258,10 @@ export const NoteDrawer = {
 
     async open(issueKey, summary) {
         this.init();
-        this.currentKey = issueKey;
-        this.el.querySelector('#et-drawer-key').textContent = issueKey;
+        this.currentHost = this.getCurrentHost();
+        this.currentKey = getJiraIssueKey(issueKey) || issueKey;
+        this.currentTicketRef = buildJiraTicketRef(this.currentHost, this.currentKey);
+        this.el.querySelector('#et-drawer-key').textContent = this.currentKey;
         this.el.querySelector('#et-drawer-summary').textContent = summary || '';
 
         const textarea = this.el.querySelector('.et-drawer-textarea');
@@ -254,14 +273,15 @@ export const NoteDrawer = {
         this.tagEditor?.setTagDefs({});
         this.tagEditor?.setValue([]);
 
-        const storageKey = getNotesStorageKey(issueKey);
-        const reminderKey = getReminderStorageKey(issueKey);
-        const tagsKey = getTagsStorageKey(issueKey);
+        const storageKey = getNotesStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const reminderKey = getReminderStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const tagsKey = getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const tagDefsKey = getTagDefsStorageKey(this.currentHost);
 
-        const result = await getTrackingItems([storageKey, reminderKey, tagsKey, TAG_DEFS_STORAGE_KEY], { demoMode: this.demoMode });
-        if (this.currentKey !== issueKey) return;
+        const result = await getTrackingItems([storageKey, reminderKey, tagsKey, tagDefsKey], { demoMode: this.demoMode });
+        if (this.currentKey !== (getJiraIssueKey(issueKey) || issueKey)) return;
 
-        this.currentTagDefs = normalizeTagDefs(result[TAG_DEFS_STORAGE_KEY] || {});
+        this.currentTagDefs = normalizeTagDefs(result[tagDefsKey] || {});
         if (result[storageKey]) textarea.value = result[storageKey];
         if (result[reminderKey]) {
             const date = new Date(result[reminderKey]);
@@ -296,13 +316,14 @@ export const NoteDrawer = {
 
     emitTrackingUpdated(detail = {}) {
         if (typeof document === 'undefined') return;
-        const issueKey = String(detail.issueKey || this.currentKey || '').split(':').pop();
+        const issueKey = getJiraIssueKey(detail.issueKey) || this.currentKey || '';
         if (!issueKey) return;
 
         document.dispatchEvent(new CustomEvent(TRACKING_UPDATED_EVENT, {
             detail: {
                 ...detail,
                 issueKey,
+                ticketRef: this.currentTicketRef || buildJiraTicketRef(this.currentHost, issueKey),
             },
         }));
     },
@@ -314,11 +335,10 @@ export const NoteDrawer = {
             return;
         }
 
-        const prefixedKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
-        const storageKey = getNotesStorageKey(this.currentKey);
-        const reminderKey = getReminderStorageKey(this.currentKey);
-        const tagsKey = getTagsStorageKey(this.currentKey);
-        const ignoredKey = `ignored_${prefixedKey}`;
+        const storageKey = getNotesStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const reminderKey = getReminderStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const tagsKey = getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const ignoredKey = getIgnoredStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
 
         this.emitTrackingUpdated({
             issueKey: this.currentKey,
@@ -352,9 +372,9 @@ export const NoteDrawer = {
         const reminderTs = reminderValue ? new Date(reminderValue).getTime() : null;
         const tagsValue = normalizeTagList(this.tagEditor?.getValue() || [], this.currentTagDefs);
 
-        const storageKey = getNotesStorageKey(this.currentKey);
-        const reminderKey = getReminderStorageKey(this.currentKey);
-        const finalKey = this.currentKey.includes(':') ? this.currentKey : `jira:${this.currentKey}`;
+        const storageKey = getNotesStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const reminderKey = getReminderStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const ignoredKey = getIgnoredStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
 
         this.emitTrackingUpdated({
             issueKey: this.currentKey,
@@ -373,15 +393,15 @@ export const NoteDrawer = {
 
         if (reminderValue) {
             await setTrackingItems({ [reminderKey]: reminderTs }, { demoMode: this.demoMode });
-            await removeTrackingItems(`ignored_${finalKey}`, { demoMode: this.demoMode });
+            await removeTrackingItems(ignoredKey, { demoMode: this.demoMode });
         } else {
             await removeTrackingItems(reminderKey, { demoMode: this.demoMode });
-            await removeTrackingItems(`ignored_${finalKey}`, { demoMode: this.demoMode });
+            await removeTrackingItems(ignoredKey, { demoMode: this.demoMode });
         }
 
-        await removeTrackingItems(getTagsStorageKey(this.currentKey), { demoMode: this.demoMode });
+        await removeTrackingItems(getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost), { demoMode: this.demoMode });
         if (tagsValue.length) {
-            await setTrackingItems({ [getTagsStorageKey(this.currentKey)]: tagsValue }, { demoMode: this.demoMode });
+            await setTrackingItems({ [getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost)]: tagsValue }, { demoMode: this.demoMode });
         }
 
         status.classList.add('show');
@@ -396,7 +416,7 @@ export const NoteDrawer = {
     },
 
     updateIndicators(hasActiveItem) {
-        const cleanKey = this.currentKey.split(':').pop();
+        const cleanKey = this.currentKey;
         document.querySelectorAll(`[data-issue-key="${cleanKey}"], [data-issue-key="jira:${cleanKey}"]`).forEach(btn => {
             if (btn.classList.contains('et-ticket-notes-toggle')) {
                 btn.querySelector('span').textContent = hasActiveItem ? 'Personal notes ●' : 'Personal notes';

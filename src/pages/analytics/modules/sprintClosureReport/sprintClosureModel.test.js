@@ -104,7 +104,7 @@ function buildModel(overrides = {}) {
 
 describe('sprintClosureModel', () => {
     it('normalizes storage keys and state', () => {
-        expect(getSprintClosureStorageKey('PM', 42)).toBe('sprint_report_PM_42');
+        expect(getSprintClosureStorageKey('jira.example.atlassian.net', 'PM', 42)).toBe('sprint_report_jira.example.atlassian.net_PM_42');
         expect(normalizeSprintClosureState({ carryoverOverridesByIssue: { 'PM-1': 'included', 'PM-2': 'foo' } }))
             .toEqual({
                 observationsByIssue: {},

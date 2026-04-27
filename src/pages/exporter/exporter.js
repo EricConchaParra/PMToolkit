@@ -10,6 +10,13 @@
  *   - Sprint
  */
 
+import {
+    ensureJiraMultiSiteMigration,
+    getKnownJiraHosts,
+    resolveActiveJiraHost,
+    setActiveJiraHost,
+} from '../../common/jiraSiteContext.js';
+
 // Fields we care about (Jira internal field names can vary — we match case-insensitively)
 const TRACKED_FIELDS = [
     'story points',
@@ -62,17 +69,7 @@ function showError(msg) {
 
 // ---- Jira API ----
 function getJiraHost() {
-    // In a new tab the hostname won't be Jira, so we need another way.
-    // Try to read from chrome.storage (set by content script on Jira pages).
-    return new Promise(resolve => {
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.get(['et_jira_host'], result => {
-                resolve(result.et_jira_host || null);
-            });
-        } else {
-            resolve(null);
-        }
-    });
+    return resolveActiveJiraHost({ preferStoredActive: true });
 }
 
 // ---- Phase 1: Search for issue keys using new /search/jql endpoint ----
@@ -322,3 +319,26 @@ document.querySelectorAll('.jql-example-chip').forEach(chip => {
         document.getElementById('jql-input').focus();
     });
 });
+
+async function initSiteSelector() {
+    await ensureJiraMultiSiteMigration();
+    const currentHost = await resolveActiveJiraHost();
+    const knownHosts = await getKnownJiraHosts();
+    const switcher = document.getElementById('exporter-site-switcher');
+    const select = document.getElementById('exporter-site-select');
+    if (!switcher || !select || knownHosts.length <= 1) return;
+
+    switcher.classList.remove('hidden');
+    select.innerHTML = knownHosts.map(host => `
+        <option value="${host}">${host}</option>
+    `).join('');
+    select.value = currentHost;
+    select.addEventListener('change', async event => {
+        const nextHost = String(event.target.value || '').trim();
+        if (!nextHost || nextHost === currentHost) return;
+        await setActiveJiraHost(nextHost);
+        window.location.reload();
+    });
+}
+
+void initSiteSelector();

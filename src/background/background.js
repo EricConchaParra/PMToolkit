@@ -13,19 +13,35 @@ import {
     makePrSnapshotStorageKey,
     normalizeTicketKey,
 } from '../common/githubPrStorage.js';
+import {
+    buildJiraTicketRef,
+    getJiraDisplayKey,
+    getJiraIssueKey,
+    getJiraTicketHost,
+} from '../common/jiraIdentity.js';
+import { ensureJiraMultiSiteMigration, resolveActiveJiraHost } from '../common/jiraSiteContext.js';
+import {
+    PENDING_ALERTS_STORAGE_KEY,
+    getIgnoredStorageKey,
+    getNotesStorageKey,
+    getTicketCacheStorageKey,
+} from '../common/jiraStorageKeys.js';
 
-async function getTicketSummary(issueKey) {
-    const cleanKey = issueKey.includes(':') ? issueKey.split(':')[1] : issueKey;
-    const result = await new Promise(resolve => chrome.storage.local.get(['et_jira_host', `ticket_cache_${cleanKey}`], resolve));
+async function getTicketSummary(ticketRef) {
+    const host = getJiraTicketHost(ticketRef) || await resolveActiveJiraHost();
+    const issueKey = getJiraIssueKey(ticketRef);
+    if (!host || !issueKey) return '';
 
-    const cached = result[`ticket_cache_${cleanKey}`];
+    const storageKey = getTicketCacheStorageKey(ticketRef, host);
+    const result = await new Promise(resolve => chrome.storage.local.get([storageKey], resolve));
+
+    const cached = result[storageKey];
     if (cached && (Date.now() - cached.timestamp < 3600000)) {
         return cached.details.summary;
     }
 
-    const host = result.et_jira_host || 'jira.atlassian.net';
     try {
-        const resp = await fetch(`https://${host}/rest/api/2/issue/${cleanKey}?fields=summary`);
+        const resp = await fetch(`https://${host}/rest/api/2/issue/${issueKey}?fields=summary`);
         if (resp.ok) {
             const data = await resp.json();
             return data.fields?.summary || '';
@@ -36,33 +52,34 @@ async function getTicketSummary(issueKey) {
     return '';
 }
 
-async function handleReminder(issueKey) {
-    const summary = await getTicketSummary(issueKey);
-    const finalKey = issueKey.includes(':') ? issueKey : `jira:${issueKey}`;
+async function handleReminder(ticketRef) {
+    const summary = await getTicketSummary(ticketRef);
+    const host = getJiraTicketHost(ticketRef) || await resolveActiveJiraHost();
+    const issueKey = getJiraIssueKey(ticketRef);
+    if (!host || !issueKey) return;
 
-    chrome.storage.local.get([`notes_${finalKey}`, 'pending_alerts', `ignored_${finalKey}`], (result) => {
-        if (result[`ignored_${finalKey}`]) return;
+    chrome.storage.local.get([
+        getNotesStorageKey(ticketRef, host),
+        PENDING_ALERTS_STORAGE_KEY,
+        getIgnoredStorageKey(ticketRef, host),
+    ], (result) => {
+        const notesKey = getNotesStorageKey(ticketRef, host);
+        const ignoredKey = getIgnoredStorageKey(ticketRef, host);
+        if (result[ignoredKey]) return;
 
-        const noteText = result[`notes_${finalKey}`] || '';
-        const pendingAlerts = result.pending_alerts || [];
+        const noteText = result[notesKey] || '';
+        const pendingAlerts = result[PENDING_ALERTS_STORAGE_KEY] || [];
 
-        if (!pendingAlerts.includes(issueKey)) {
-            pendingAlerts.push(issueKey);
-            chrome.storage.local.set({ pending_alerts: pendingAlerts });
+        if (!pendingAlerts.includes(ticketRef)) {
+            pendingAlerts.push(ticketRef);
+            chrome.storage.local.set({ [PENDING_ALERTS_STORAGE_KEY]: pendingAlerts });
         }
 
-        let notificationTitle = `Reminder: ${issueKey}`;
-        if (issueKey.includes(':')) {
-            const [source, id] = issueKey.split(':');
-            const sourceCapitalized = source.charAt(0).toUpperCase() + source.slice(1);
-            notificationTitle = `Reminder on ${sourceCapitalized}: ${id}${summary ? ` (${summary})` : ''}`;
-        } else {
-            notificationTitle = `Reminder on Jira: ${issueKey}${summary ? ` (${summary})` : ''}`;
-        }
+        const notificationTitle = `Reminder on Jira: ${issueKey}${summary ? ` (${summary})` : ''}`;
 
         const notificationMessage = noteText.trim() || 'Reminder set for this ticket';
 
-        chrome.notifications.create(`reminder_${issueKey}`, {
+        chrome.notifications.create(`reminder_${ticketRef}`, {
             type: 'basic',
             iconUrl: '/assets/icon.png',
             title: notificationTitle,
@@ -78,7 +95,7 @@ async function handleReminder(issueKey) {
 
                 chrome.tabs.sendMessage(tab.id, {
                     type: 'REMINDER_FIRED',
-                    issueKey: issueKey,
+                    issueKey: ticketRef,
                     noteText: noteText,
                     summary: summary
                 }).catch(() => { });
@@ -95,14 +112,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.notifications.onClicked.addListener((notificationId) => {
     if (notificationId.startsWith('reminder_')) {
-        const issueKey = notificationId.replace('reminder_', '');
-        chrome.storage.local.get(['pending_alerts', 'et_jira_host'], (result) => {
-            const pending = (result.pending_alerts || []).filter(k => k !== issueKey);
-            chrome.storage.local.set({ pending_alerts: pending });
+        const ticketRef = notificationId.replace('reminder_', '');
+        chrome.storage.local.get([PENDING_ALERTS_STORAGE_KEY], async result => {
+            const pending = (result[PENDING_ALERTS_STORAGE_KEY] || []).filter(k => k !== ticketRef);
+            chrome.storage.local.set({ [PENDING_ALERTS_STORAGE_KEY]: pending });
 
-            const host = result.et_jira_host || 'jira.atlassian.net';
-            const cleanKey = issueKey.includes(':') ? issueKey.split(':')[1] : issueKey;
-            chrome.tabs.create({ url: `https://${host}/browse/${cleanKey}` });
+            const host = getJiraTicketHost(ticketRef) || await resolveActiveJiraHost();
+            const issueKey = getJiraIssueKey(ticketRef);
+            if (host && issueKey) {
+                chrome.tabs.create({ url: `https://${host}/browse/${issueKey}` });
+            }
             chrome.notifications.clear(notificationId);
         });
     }
@@ -120,6 +139,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 function initialize() {
+    void ensureJiraMultiSiteMigration();
     chrome.storage.local.get(null, (items) => {
         const now = Date.now();
         for (const [key, value] of Object.entries(items)) {

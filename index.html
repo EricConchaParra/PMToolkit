@@ -26,6 +26,12 @@
         </div>
     </div>
     <div id="notes-view">
+        <div class="popup-site-row hidden" id="popup-site-switcher-row">
+            <label for="popup-site-select">Jira Site</label>
+            <div class="popup-site-select-wrap">
+                <select id="popup-site-select"></select>
+            </div>
+        </div>
         <div class="search-bar">
             <input type="text" id="search" placeholder="Search by ticket, content or tags...">
             <div class="demo-mode-hint hidden" id="demo-mode-hint">Demo Mode active. No real data and no writes to your Jira tracking.</div>
@@ -176,6 +182,23 @@
                     <button id="test-notification-btn" class="et-notes-save-btn" style="width: 100%; margin: 0;">Test
                         System Notification</button>
                     <div id="notif-status" style="font-size: 11px; margin-top: 4px; display: none;"></div>
+                </div>
+            </div>
+
+            <div class="settings-group" id="jira-site-management-group" style="display: none;">
+                <h3>Jira Sites</h3>
+                <div class="setting-item popup-manage-site-item">
+                    <div class="setting-info">
+                        <span>Forget Stored Site</span>
+                        <p>Remove one Jira site from PMsToolKit local storage, including its notes, reminders, tags, analytics settings, and manual menu.</p>
+                    </div>
+                    <div class="popup-manage-site-controls">
+                        <div class="popup-site-select-wrap">
+                            <select id="settings-site-remove-select"></select>
+                        </div>
+                        <button id="settings-site-remove-btn" class="danger-btn">Forget Site</button>
+                    </div>
+                    <div id="settings-site-remove-status" class="popup-inline-status" style="display: none;"></div>
                 </div>
             </div>
 

@@ -1,4 +1,10 @@
 import { storage } from '../../../common/storage';
+import { getJiraDisplayKey } from '../../../common/jiraIdentity.js';
+import {
+    PENDING_ALERTS_STORAGE_KEY,
+    getIgnoredStorageKey,
+    getReminderStorageKey,
+} from '../../../common/jiraStorageKeys.js';
 import { NoteDrawer } from './NoteDrawer';
 
 export const ReminderModal = {
@@ -79,8 +85,7 @@ export const ReminderModal = {
 
         this.resetView();
         this.currentKey = issueKey;
-        const cleanKey = issueKey.split(':').pop();
-        this.el.querySelector('#et-alert-key').textContent = cleanKey;
+        this.el.querySelector('#et-alert-key').textContent = getJiraDisplayKey(issueKey);
         this.el.querySelector('#et-alert-summary').textContent = summary || '';
 
         const textEl = this.el.querySelector('#et-alert-text');
@@ -128,12 +133,11 @@ export const ReminderModal = {
         if (!keyToIgnore) return;
 
         this.handledKeys.add(keyToIgnore);
-        const finalKey = keyToIgnore.includes(':') ? keyToIgnore : `jira:${keyToIgnore}`;
-        await storage.set({ [`ignored_${finalKey}`]: true });
+        await storage.set({ [getIgnoredStorageKey(keyToIgnore)]: true });
 
-        const result = await storage.get('pending_alerts');
-        const pending = (result.pending_alerts || []).filter(k => k !== keyToIgnore);
-        await storage.set({ pending_alerts: pending });
+        const result = await storage.get(PENDING_ALERTS_STORAGE_KEY);
+        const pending = (result[PENDING_ALERTS_STORAGE_KEY] || []).filter(k => k !== keyToIgnore);
+        await storage.set({ [PENDING_ALERTS_STORAGE_KEY]: pending });
 
         this.hide();
     },
@@ -143,12 +147,11 @@ export const ReminderModal = {
         if (!keyDone) return;
 
         this.handledKeys.add(keyDone);
-        const storageKey = keyDone.includes(':') ? `reminder_${keyDone}` : `reminder_jira:${keyDone}`;
-        await storage.remove(storageKey);
+        await storage.remove(getReminderStorageKey(keyDone));
 
-        const result = await storage.get('pending_alerts');
-        const pending = (result.pending_alerts || []).filter(k => k !== keyDone);
-        await storage.set({ pending_alerts: pending });
+        const result = await storage.get(PENDING_ALERTS_STORAGE_KEY);
+        const pending = (result[PENDING_ALERTS_STORAGE_KEY] || []).filter(k => k !== keyDone);
+        await storage.set({ [PENDING_ALERTS_STORAGE_KEY]: pending });
 
         this.hide();
     },
@@ -178,12 +181,11 @@ export const ReminderModal = {
             target.setHours(9, 0, 0, 0);
         }
 
-        const storageKey = keyToSnooze.includes(':') ? `reminder_${keyToSnooze}` : `reminder_jira:${keyToSnooze}`;
-        await storage.set({ [storageKey]: target.getTime() });
+        await storage.set({ [getReminderStorageKey(keyToSnooze)]: target.getTime() });
 
-        const result = await storage.get('pending_alerts');
-        const pending = (result.pending_alerts || []).filter(k => k !== keyToSnooze);
-        await storage.set({ pending_alerts: pending });
+        const result = await storage.get(PENDING_ALERTS_STORAGE_KEY);
+        const pending = (result[PENDING_ALERTS_STORAGE_KEY] || []).filter(k => k !== keyToSnooze);
+        await storage.set({ [PENDING_ALERTS_STORAGE_KEY]: pending });
 
         this.hide();
     }

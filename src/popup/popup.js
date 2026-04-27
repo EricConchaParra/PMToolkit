@@ -1,16 +1,27 @@
 import { syncStorage } from '../common/storage.js';
 import { jiraApi } from '../common/jira-api.js';
+import { DEMO_HOST } from '../common/demoData.js';
 import { getIssueTypeMeta } from '../common/issueType.js';
 import { createTagEditor } from '../common/tagEditor.js';
 import { subscribeDemoMode } from '../common/demoMode.js';
-import { resetDemoTrackingItems, getAllTrackingItems, removeTrackingItems, setTrackingItems } from '../common/trackingRepository.js';
 import {
-    TAG_DEFS_STORAGE_KEY,
-    ensureTagDefinition,
-    escapeHtml,
+    ensureJiraMultiSiteMigration,
+    forgetJiraHost,
+    getKnownJiraHosts,
+    resolveActiveJiraHost,
+    setActiveJiraHost,
+} from '../common/jiraSiteContext.js';
+import {
+    getMetaStorageKey,
     getNotesStorageKey,
     getReminderStorageKey,
+    getTagDefsStorageKey,
     getTagsStorageKey,
+} from '../common/jiraStorageKeys.js';
+import { resetDemoTrackingItems, getAllTrackingItems, removeTrackingItems, setTrackingItems } from '../common/trackingRepository.js';
+import {
+    ensureTagDefinition,
+    escapeHtml,
     getTagInlineStyle,
     getTagObjects,
     hasTrackingStorageChange,
@@ -54,12 +65,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const githubPatStatus = document.getElementById('github-pat-status');
     const demoBadge = document.getElementById('demo-mode-badge');
     const demoHint = document.getElementById('demo-mode-hint');
+    const siteSwitcherRow = document.getElementById('popup-site-switcher-row');
+    const siteSelect = document.getElementById('popup-site-select');
     const resetDemoBtn = document.getElementById('reset-demo-data-btn');
     const demoModeToggle = document.querySelector('input[data-setting="demo_mode"]');
+    const siteManagementGroup = document.getElementById('jira-site-management-group');
+    const removeSiteSelect = document.getElementById('settings-site-remove-select');
+    const removeSiteBtn = document.getElementById('settings-site-remove-btn');
+    const removeSiteStatus = document.getElementById('settings-site-remove-status');
 
     let allNotes = [];
     let isSettingsOpen = false;
-    let currentJiraHost = 'jira.atlassian.net';
+    let currentJiraHost = '';
+    let knownJiraHosts = [];
+    let storedJiraHosts = [];
     let popupTagDefs = {};
     let storageReloadTimer = null;
     let demoModeEnabled = false;
@@ -101,9 +120,82 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderNotes(filtered);
     }
 
+    function renderSiteSwitcher() {
+        const shouldShow = !demoModeEnabled && knownJiraHosts.length > 1;
+        siteSwitcherRow?.classList.toggle('hidden', !shouldShow);
+        if (!siteSelect) return;
+
+        if (!shouldShow) {
+            siteSelect.innerHTML = '';
+            return;
+        }
+
+        siteSelect.innerHTML = knownJiraHosts.map(host => `
+            <option value="${escapeHtml(host)}">${escapeHtml(host)}</option>
+        `).join('');
+        siteSelect.value = currentJiraHost;
+    }
+
+    function renderSiteManagementStatus(message = '', tone = '') {
+        if (!removeSiteStatus) return;
+        removeSiteStatus.textContent = message;
+        removeSiteStatus.className = 'popup-inline-status';
+        if (tone) removeSiteStatus.classList.add(tone);
+        removeSiteStatus.style.display = message ? 'block' : 'none';
+    }
+
+    function renderSiteManagement() {
+        const hasSites = storedJiraHosts.length > 0;
+        if (siteManagementGroup) {
+            siteManagementGroup.style.display = hasSites ? 'block' : 'none';
+        }
+        if (!removeSiteSelect || !removeSiteBtn) return;
+
+        if (!hasSites) {
+            removeSiteSelect.innerHTML = '';
+            removeSiteBtn.disabled = true;
+            return;
+        }
+
+        const selectedValue = removeSiteSelect.value;
+        removeSiteSelect.innerHTML = storedJiraHosts.map(host => `
+            <option value="${escapeHtml(host)}">${escapeHtml(host)}</option>
+        `).join('');
+        removeSiteSelect.value = storedJiraHosts.includes(selectedValue) ? selectedValue : (currentJiraHost && storedJiraHosts.includes(currentJiraHost) ? currentJiraHost : storedJiraHosts[0]);
+        removeSiteBtn.disabled = !removeSiteSelect.value;
+    }
+
+    async function refreshSiteManagement() {
+        storedJiraHosts = await getKnownJiraHosts();
+        renderSiteManagement();
+    }
+
+    async function refreshHostContext() {
+        if (demoModeEnabled) {
+            currentJiraHost = DEMO_HOST;
+            knownJiraHosts = [DEMO_HOST];
+            renderSiteSwitcher();
+            await refreshSiteManagement();
+            return;
+        }
+
+        currentJiraHost = await resolveActiveJiraHost({ preferStoredActive: true });
+        knownJiraHosts = await getKnownJiraHosts();
+        renderSiteSwitcher();
+        await refreshSiteManagement();
+    }
+
     async function loadNotes() {
+        await refreshHostContext();
+        if (!currentJiraHost) {
+            popupTagDefs = {};
+            allNotes = [];
+            applyFiltersAndRender();
+            return;
+        }
+
         const data = await getAllTrackingItems({ demoMode: demoModeEnabled });
-        const parsed = parseTrackingStorage(data);
+        const parsed = parseTrackingStorage(data, { host: currentJiraHost });
         const metaMap = { ...parsed.metaMap };
         popupTagDefs = parsed.tagDefs;
 
@@ -114,7 +206,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (missingMetaKeys.length > 0) {
             setPrimaryTitle('⏳ Loading info...');
             for (const key of missingMetaKeys) {
-                const details = await jiraApi.fetchIssueDetails(key);
+                const details = await jiraApi.fetchIssueDetails(key, currentJiraHost);
                 if (details) {
                     metaMap[key] = {
                         summary: details.summary,
@@ -122,7 +214,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         status: details.status,
                         issueType: details.issueType,
                     };
-                    await setTrackingItems({ [`meta_jira:${key}`]: metaMap[key] }, { demoMode: false });
+                    await setTrackingItems({ [getMetaStorageKey(key, currentJiraHost)]: metaMap[key] }, { demoMode: false });
                 }
             }
             setPrimaryTitle('📝 My Notes');
@@ -148,7 +240,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             notesList.innerHTML = `
                 <div class="empty-state">
                     <div class="emoji">${hasSearch ? '🔎' : '📝'}</div>
-                    <p>${hasSearch ? 'No notes, reminders or tags match your search.' : 'No notes, reminders or tags found.'}</p>
+                    <p>${hasSearch
+            ? 'No notes, reminders or tags match your search.'
+            : (!demoModeEnabled && !currentJiraHost
+                ? 'Open Jira first so PMsToolKit can detect your site.'
+                : 'No notes, reminders or tags found.')
+        }</p>
                 </div>
             `;
             return;
@@ -251,9 +348,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 el.querySelector('.delete-btn').onclick = async () => {
                     if (!confirm(`Delete note, reminder, and tags for ${item.key}?`)) return;
                     await removeTrackingItems([
-                        getNotesStorageKey(item.key),
-                        getReminderStorageKey(item.key),
-                        getTagsStorageKey(item.key),
+                        getNotesStorageKey(item.key, currentJiraHost),
+                        getReminderStorageKey(item.key, currentJiraHost),
+                        getTagsStorageKey(item.key, currentJiraHost),
                     ], { demoMode: demoModeEnabled });
                     await loadNotes();
                 };
@@ -308,7 +405,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     color: color || 'gray',
                                 };
                             })()
-                            : await ensureTagDefinition(label, color);
+                            : await ensureTagDefinition(label, color, { host: currentJiraHost });
                         if (!created) return false;
                         popupTagDefs = {
                             ...popupTagDefs,
@@ -319,7 +416,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         };
                         if (demoModeEnabled) {
                             await setTrackingItems({
-                                [TAG_DEFS_STORAGE_KEY]: popupTagDefs,
+                                [getTagDefsStorageKey(currentJiraHost)]: popupTagDefs,
                             }, { demoMode: true });
                         }
                         tagEditor.setTagDefs(popupTagDefs);
@@ -340,18 +437,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const newReminder = el.querySelector('.edit-reminder-input').value;
                     const finalTags = normalizeTagList(editedTags, popupTagDefs);
 
-                    if (newText) await setTrackingItems({ [getNotesStorageKey(item.key)]: newText }, { demoMode: demoModeEnabled });
-                    else await removeTrackingItems(getNotesStorageKey(item.key), { demoMode: demoModeEnabled });
+                    if (newText) await setTrackingItems({ [getNotesStorageKey(item.key, currentJiraHost)]: newText }, { demoMode: demoModeEnabled });
+                    else await removeTrackingItems(getNotesStorageKey(item.key, currentJiraHost), { demoMode: demoModeEnabled });
 
                     if (newReminder) {
                         const reminderTimestamp = new Date(newReminder).getTime();
-                        await setTrackingItems({ [getReminderStorageKey(item.key)]: reminderTimestamp }, { demoMode: demoModeEnabled });
+                        await setTrackingItems({ [getReminderStorageKey(item.key, currentJiraHost)]: reminderTimestamp }, { demoMode: demoModeEnabled });
                     } else {
-                        await removeTrackingItems(getReminderStorageKey(item.key), { demoMode: demoModeEnabled });
+                        await removeTrackingItems(getReminderStorageKey(item.key, currentJiraHost), { demoMode: demoModeEnabled });
                     }
 
-                    if (finalTags.length) await setTrackingItems({ [getTagsStorageKey(item.key)]: finalTags }, { demoMode: demoModeEnabled });
-                    else await removeTrackingItems(getTagsStorageKey(item.key), { demoMode: demoModeEnabled });
+                    if (finalTags.length) await setTrackingItems({ [getTagsStorageKey(item.key, currentJiraHost)]: finalTags }, { demoMode: demoModeEnabled });
+                    else await removeTrackingItems(getTagsStorageKey(item.key, currentJiraHost), { demoMode: demoModeEnabled });
 
                     item.text = newText;
                     item.reminder = newReminder ? new Date(newReminder).getTime() : null;
@@ -387,6 +484,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         chrome.tabs.create({ url: analyticsUrl });
     });
 
+    siteSelect?.addEventListener('change', async event => {
+        const nextHost = String(event.target.value || '').trim();
+        if (!nextHost || nextHost === currentJiraHost) return;
+        currentJiraHost = await setActiveJiraHost(nextHost);
+        await loadNotes();
+    });
+
+    removeSiteSelect?.addEventListener('change', () => {
+        renderSiteManagementStatus('', '');
+        if (removeSiteBtn) removeSiteBtn.disabled = !String(removeSiteSelect.value || '').trim();
+    });
+
+    removeSiteBtn?.addEventListener('click', async () => {
+        const hostToRemove = String(removeSiteSelect?.value || '').trim();
+        if (!hostToRemove) return;
+
+        const confirmation = confirm(`Forget ${hostToRemove} and delete its local PMsToolKit data for that Jira site?`);
+        if (!confirmation) return;
+
+        removeSiteBtn.disabled = true;
+        renderSiteManagementStatus(`Removing ${hostToRemove}...`);
+
+        try {
+            await forgetJiraHost(hostToRemove);
+            await refreshHostContext();
+            await loadNotes();
+            renderSiteManagementStatus(`Forgot ${hostToRemove}.`, 'success');
+        } catch (error) {
+            console.error('Failed to forget Jira site', error);
+            renderSiteManagementStatus(`Could not remove ${hostToRemove}.`, 'error');
+        } finally {
+            renderSiteManagement();
+        }
+    });
+
     syncNotesBtn.addEventListener('click', async () => {
         if (demoModeEnabled) return;
         if (syncNotesBtn.classList.contains('syncing-spin')) return;
@@ -395,14 +527,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         setPrimaryTitle('⏳ Syncing statuses...');
 
         const data = await getAllTrackingItems({ demoMode: false });
-        const parsed = parseTrackingStorage(data);
+        const parsed = parseTrackingStorage(data, { host: currentJiraHost });
 
         for (const key of parsed.allKeys) {
             try {
-                const details = await jiraApi.fetchIssueDetails(key);
+                const details = await jiraApi.fetchIssueDetails(key, currentJiraHost);
                 if (!details) continue;
                 await setTrackingItems({
-                    [`meta_jira:${key}`]: {
+                    [getMetaStorageKey(key, currentJiraHost)]: {
                         summary: details.summary,
                         assignee: details.assignee,
                         status: details.status,
@@ -447,7 +579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (key === 'demo_mode') {
                 demoModeEnabled = input.checked;
                 applyDemoModeUi();
-                currentJiraHost = await jiraApi.getHost();
+                await refreshHostContext();
                 await loadNotes();
             }
         });
@@ -509,12 +641,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         demoModeEnabled = enabled;
         if (demoModeToggle) demoModeToggle.checked = enabled;
         applyDemoModeUi();
-        currentJiraHost = await jiraApi.getHost();
+        await refreshHostContext();
         await loadNotes();
     });
 
     try {
-        currentJiraHost = await jiraApi.getHost();
+        await ensureJiraMultiSiteMigration();
+        await refreshHostContext();
     } catch (e) {
         console.error(e);
     }
