@@ -29,6 +29,15 @@ Chrome extension focused on improving day-to-day work in Jira Cloud. It adds lig
 
 ![Popup view for browsing tracked issues and reminders](assets/PopUp%20with%20Notes.png)
 
+### Multi-site Jira support
+
+- Works with any number of Jira Cloud sites under `*.atlassian.net`.
+- Detects and registers a site automatically when you open a Jira tab from that host.
+- Keeps tracked data isolated per site, including notes, reminders, tags, analytics settings, sprint closure state, and manual menu shortcuts.
+- Remains transparent in the single-site case: if only one Jira site is known, no extra selector is shown in the popup or Analytics Hub.
+- When multiple Jira sites are known, the popup and Analytics Hub show a lightweight site selector so you can switch context explicitly.
+- Settings also let you forget a stored site and remove its local PMsToolKit data for that Jira host only.
+
 ### Analytics Hub
 
 The popup opens a dedicated analytics page with four working areas:
@@ -85,6 +94,11 @@ The popup currently exposes toggles for:
 - Zoom transcript copy
 - GitHub PR linking
 
+When more than one Jira site is known, the popup also exposes:
+
+- A Jira site selector for tracked notes context
+- A `Forget Site` control under Settings to remove a stored site and its local data
+
 When GitHub linking is enabled, the popup also stores a Personal Access Token in sync storage.
 
 ## Data And Permissions
@@ -102,6 +116,8 @@ Main Chrome permissions used by the extension:
 - `clipboardWrite`
 
 Personal notes, reminders, tags, and cached issue metadata stay in browser storage. The extension uses Jira REST APIs from the logged-in browser session and GitHub API requests only when GitHub support is enabled. Demo mode keeps its mock tracking state separate from real Jira tracking data.
+
+For Jira, browser storage is host-scoped. Two sites can have the same issue key or project key without colliding, because PMsToolKit stores tracking and analytics state per Jira hostname.
 
 ## Project Structure
 
