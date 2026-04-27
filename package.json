@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "zip:website": "node scripts/package-website-zip.mjs",
+    "package:website": "npm run build && npm run zip:website",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview"
