@@ -39,6 +39,7 @@ import {
     JIRA_MULTISITE_MIGRATION_KEY,
     JIRA_SITES_STORAGE_KEY,
     PENDING_ALERTS_STORAGE_KEY,
+    getJiraFieldOverridesStorageKey,
     getJiraProjectSettingsStorageKey,
     getLastProjectStorageKey,
     getManualMenuStorageKey,
@@ -72,6 +73,7 @@ describe('forgetJiraHost', () => {
                 `jira@${betaHost}:PM-2`,
             ],
             [getTagDefsStorageKey(alphaHost)]: { launch: { label: 'Launch', color: 'orange' } },
+            [getJiraFieldOverridesStorageKey(alphaHost)]: { storyPointsFieldId: 'customfield_10016' },
             [getManualMenuStorageKey(alphaHost)]: [{ name: 'Alpha only' }],
             [getLastProjectStorageKey(alphaHost)]: 'PM',
             [getJiraProjectSettingsStorageKey(alphaHost, 'PM')]: { board: 'alpha' },
@@ -95,6 +97,7 @@ describe('forgetJiraHost', () => {
         expect(storageData[PENDING_ALERTS_STORAGE_KEY]).toEqual([`jira@${betaHost}:PM-2`]);
         expect(storageData[getNotesStorageKey('PM-2', betaHost)]).toBe('Beta note');
         expect(storageData[getTagDefsStorageKey(alphaHost)]).toBeUndefined();
+        expect(storageData[getJiraFieldOverridesStorageKey(alphaHost)]).toBeUndefined();
         expect(storageData[getManualMenuStorageKey(alphaHost)]).toBeUndefined();
         expect(storageData[getLastProjectStorageKey(alphaHost)]).toBeUndefined();
         expect(storageData[getJiraProjectSettingsStorageKey(alphaHost, 'PM')]).toBeUndefined();

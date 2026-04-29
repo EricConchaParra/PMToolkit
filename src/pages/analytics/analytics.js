@@ -7,7 +7,7 @@
 // ---- Modules ----
 import { initNav } from './modules/nav.js';
 import { loadSettings, saveSettings, getLastProject, setLastProject } from './modules/settings.js';
-import { getJiraHost, fetchProjects } from './modules/jiraApi.js';
+import { getJiraHost, fetchProjects, fetchSpFieldResolution } from './modules/jiraApi.js';
 import { escapeHtml } from './modules/utils.js';
 import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, SP_KEYS } from './modules/constants.js';
 import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from './modules/analyticsPerf.js';
@@ -57,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const analyticsSiteWrap = document.getElementById('analytics-site-switcher');
     const analyticsSiteSelect = document.getElementById('analytics-site-select');
+    const analyticsSpWarning = document.getElementById('analytics-sp-warning');
     if (analyticsSiteWrap && analyticsSiteSelect) {
         const shouldShow = !demoMode && knownHosts.length > 1;
         analyticsSiteWrap.classList.toggle('hidden', !shouldShow);
@@ -72,6 +73,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.location.reload();
             });
         }
+    }
+
+    if (analyticsSpWarning) {
+        const spResolution = await fetchSpFieldResolution(currentHost);
+        const shouldWarn = !demoMode && !spResolution.fieldId && spResolution.warning;
+        analyticsSpWarning.classList.toggle('hidden', !shouldWarn);
+        analyticsSpWarning.textContent = shouldWarn
+            ? `${spResolution.warning} Analytics will stay visible and use 0 SP until you set a site override in the popup.`
+            : '';
     }
 
     // ---- Settings panel toggle ----

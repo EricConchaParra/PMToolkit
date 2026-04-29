@@ -223,6 +223,21 @@ body {
     background: var(--bg);
 }
 
+.analytics-inline-warning {
+    margin: 20px 36px 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 153, 31, 0.3);
+    background: rgba(255, 248, 230, 0.92);
+    color: #7a4b00;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.analytics-inline-warning.hidden {
+    display: none;
+}
+
 /* ==============================
    VIEWS
 ============================== */

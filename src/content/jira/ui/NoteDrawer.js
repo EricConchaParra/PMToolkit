@@ -29,9 +29,14 @@ export const NoteDrawer = {
     baselineSnapshot: null,
     isDirty: false,
     demoMode: false,
+    hostOverride: '',
 
     setDemoMode(enabled) {
         this.demoMode = enabled === true;
+    },
+
+    setHostOverride(host) {
+        this.hostOverride = String(host || '').trim();
     },
 
     hasTrackedItem({ noteText = '', reminderValue = '', tagLabels = [] } = {}) {
@@ -215,7 +220,34 @@ export const NoteDrawer = {
     },
 
     getCurrentHost() {
-        return this.demoMode ? DEMO_HOST : getCurrentPageJiraHost();
+        return this.demoMode ? DEMO_HOST : (this.hostOverride || getCurrentPageJiraHost());
+    },
+
+    buildStorageKeys(issueKey = this.currentKey, host = this.currentHost) {
+        const ticketRef = buildJiraTicketRef(host, issueKey);
+        const primaryRef = ticketRef || issueKey;
+        const notesKey = getNotesStorageKey(primaryRef, host);
+        const reminderKey = getReminderStorageKey(primaryRef, host);
+        const tagsKey = getTagsStorageKey(primaryRef, host);
+        const ignoredKey = getIgnoredStorageKey(primaryRef, host);
+        const tagDefsKey = getTagDefsStorageKey(host);
+
+        const legacy = host ? {
+            notesKey: getNotesStorageKey(issueKey),
+            reminderKey: getReminderStorageKey(issueKey),
+            tagsKey: getTagsStorageKey(issueKey),
+            ignoredKey: getIgnoredStorageKey(issueKey),
+            tagDefsKey: getTagDefsStorageKey(''),
+        } : null;
+
+        return {
+            notesKey,
+            reminderKey,
+            tagsKey,
+            ignoredKey,
+            tagDefsKey,
+            legacy,
+        };
     },
 
     getFormSnapshot() {
@@ -273,24 +305,42 @@ export const NoteDrawer = {
         this.tagEditor?.setTagDefs({});
         this.tagEditor?.setValue([]);
 
-        const storageKey = getNotesStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const reminderKey = getReminderStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const tagsKey = getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const tagDefsKey = getTagDefsStorageKey(this.currentHost);
+        const storageKeys = this.buildStorageKeys(this.currentKey, this.currentHost);
+        const requestedKeys = [
+            storageKeys.notesKey,
+            storageKeys.reminderKey,
+            storageKeys.tagsKey,
+            storageKeys.tagDefsKey,
+        ];
+        if (storageKeys.legacy) {
+            requestedKeys.push(
+                storageKeys.legacy.notesKey,
+                storageKeys.legacy.reminderKey,
+                storageKeys.legacy.tagsKey,
+                storageKeys.legacy.tagDefsKey,
+            );
+        }
 
-        const result = await getTrackingItems([storageKey, reminderKey, tagsKey, tagDefsKey], { demoMode: this.demoMode });
+        const result = await getTrackingItems(Array.from(new Set(requestedKeys.filter(Boolean))), { demoMode: this.demoMode });
         if (this.currentKey !== (getJiraIssueKey(issueKey) || issueKey)) return;
 
-        this.currentTagDefs = normalizeTagDefs(result[tagDefsKey] || {});
-        if (result[storageKey]) textarea.value = result[storageKey];
-        if (result[reminderKey]) {
-            const date = new Date(result[reminderKey]);
+        const noteValue = result[storageKeys.notesKey] ?? result[storageKeys.legacy?.notesKey] ?? '';
+        const reminderValue = result[storageKeys.reminderKey] ?? result[storageKeys.legacy?.reminderKey] ?? '';
+        const tagsValue = result[storageKeys.tagsKey] ?? result[storageKeys.legacy?.tagsKey] ?? [];
+        this.currentTagDefs = normalizeTagDefs(
+            result[storageKeys.tagDefsKey]
+            || result[storageKeys.legacy?.tagDefsKey]
+            || {}
+        );
+        if (noteValue) textarea.value = noteValue;
+        if (reminderValue) {
+            const date = new Date(reminderValue);
             const offset = date.getTimezoneOffset() * 60000;
             const localISODate = new Date(date.getTime() - offset).toISOString().slice(0, 16);
             reminderInput.value = localISODate;
         }
         this.tagEditor?.setTagDefs(this.currentTagDefs);
-        this.tagEditor?.setValue(normalizeTagList(result[tagsKey], this.currentTagDefs));
+        this.tagEditor?.setValue(normalizeTagList(tagsValue, this.currentTagDefs));
         this.setBaselineFromCurrentForm();
 
         this.backdrop.classList.add('visible');
@@ -335,10 +385,17 @@ export const NoteDrawer = {
             return;
         }
 
-        const storageKey = getNotesStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const reminderKey = getReminderStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const tagsKey = getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const ignoredKey = getIgnoredStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const storageKeys = this.buildStorageKeys(this.currentKey, this.currentHost);
+        const keysToRemove = Array.from(new Set([
+            storageKeys.notesKey,
+            storageKeys.reminderKey,
+            storageKeys.tagsKey,
+            storageKeys.ignoredKey,
+            storageKeys.legacy?.notesKey,
+            storageKeys.legacy?.reminderKey,
+            storageKeys.legacy?.tagsKey,
+            storageKeys.legacy?.ignoredKey,
+        ].filter(Boolean)));
 
         this.emitTrackingUpdated({
             issueKey: this.currentKey,
@@ -349,7 +406,7 @@ export const NoteDrawer = {
             tagDefs: this.currentTagDefs,
         });
 
-        await removeTrackingItems([storageKey, reminderKey, tagsKey, ignoredKey], { demoMode: this.demoMode });
+        await removeTrackingItems(keysToRemove, { demoMode: this.demoMode });
 
         // Reset fields
         this.el.querySelector('.et-drawer-textarea').value = '';
@@ -372,9 +429,7 @@ export const NoteDrawer = {
         const reminderTs = reminderValue ? new Date(reminderValue).getTime() : null;
         const tagsValue = normalizeTagList(this.tagEditor?.getValue() || [], this.currentTagDefs);
 
-        const storageKey = getNotesStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const reminderKey = getReminderStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
-        const ignoredKey = getIgnoredStorageKey(this.currentTicketRef || this.currentKey, this.currentHost);
+        const storageKeys = this.buildStorageKeys(this.currentKey, this.currentHost);
 
         this.emitTrackingUpdated({
             issueKey: this.currentKey,
@@ -386,22 +441,34 @@ export const NoteDrawer = {
         });
 
         if (value) {
-            await setTrackingItems({ [storageKey]: value }, { demoMode: this.demoMode });
+            await setTrackingItems({ [storageKeys.notesKey]: value }, { demoMode: this.demoMode });
         } else {
-            await removeTrackingItems(storageKey, { demoMode: this.demoMode });
+            await removeTrackingItems(storageKeys.notesKey, { demoMode: this.demoMode });
+        }
+        if (storageKeys.legacy?.notesKey && storageKeys.legacy.notesKey !== storageKeys.notesKey) {
+            await removeTrackingItems(storageKeys.legacy.notesKey, { demoMode: this.demoMode });
         }
 
         if (reminderValue) {
-            await setTrackingItems({ [reminderKey]: reminderTs }, { demoMode: this.demoMode });
-            await removeTrackingItems(ignoredKey, { demoMode: this.demoMode });
+            await setTrackingItems({ [storageKeys.reminderKey]: reminderTs }, { demoMode: this.demoMode });
+            await removeTrackingItems(storageKeys.ignoredKey, { demoMode: this.demoMode });
         } else {
-            await removeTrackingItems(reminderKey, { demoMode: this.demoMode });
-            await removeTrackingItems(ignoredKey, { demoMode: this.demoMode });
+            await removeTrackingItems(storageKeys.reminderKey, { demoMode: this.demoMode });
+            await removeTrackingItems(storageKeys.ignoredKey, { demoMode: this.demoMode });
+        }
+        if (storageKeys.legacy?.reminderKey && storageKeys.legacy.reminderKey !== storageKeys.reminderKey) {
+            await removeTrackingItems(storageKeys.legacy.reminderKey, { demoMode: this.demoMode });
+        }
+        if (storageKeys.legacy?.ignoredKey && storageKeys.legacy.ignoredKey !== storageKeys.ignoredKey) {
+            await removeTrackingItems(storageKeys.legacy.ignoredKey, { demoMode: this.demoMode });
         }
 
-        await removeTrackingItems(getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost), { demoMode: this.demoMode });
+        await removeTrackingItems(storageKeys.tagsKey, { demoMode: this.demoMode });
         if (tagsValue.length) {
-            await setTrackingItems({ [getTagsStorageKey(this.currentTicketRef || this.currentKey, this.currentHost)]: tagsValue }, { demoMode: this.demoMode });
+            await setTrackingItems({ [storageKeys.tagsKey]: tagsValue }, { demoMode: this.demoMode });
+        }
+        if (storageKeys.legacy?.tagsKey && storageKeys.legacy.tagsKey !== storageKeys.tagsKey) {
+            await removeTrackingItems(storageKeys.legacy.tagsKey, { demoMode: this.demoMode });
         }
 
         status.classList.add('show');

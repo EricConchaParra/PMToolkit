@@ -8,7 +8,8 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'dist');
 const websiteDir = path.resolve(repoRoot, '..', 'eric-Website');
-const outputZipPath = path.join(websiteDir, 'PMToolKit.zip');
+const installDir = path.join(websiteDir, 'pmtoolkit', 'install');
+const outputZipPath = path.join(installDir, 'PMToolKit.zip');
 const stagingRoot = path.join(repoRoot, '.tmp', 'pmtoolkit-website-package');
 const packageFolderName = 'PMToolKit';
 const stagedPackageDir = path.join(stagingRoot, packageFolderName);
@@ -30,6 +31,7 @@ async function ensureDirectoryExists(targetPath, label) {
 async function main() {
     await ensureDirectoryExists(distDir, 'dist folder');
     await ensureDirectoryExists(websiteDir, 'Website project folder');
+    await ensureDirectoryExists(installDir, 'Website install folder');
 
     await fs.rm(stagingRoot, { recursive: true, force: true });
     await fs.mkdir(stagedPackageDir, { recursive: true });

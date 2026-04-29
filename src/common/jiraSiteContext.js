@@ -8,6 +8,7 @@ import {
     LEGACY_TAG_DEFS_STORAGE_KEY,
     PENDING_ALERTS_STORAGE_KEY,
     getIgnoredStorageKey,
+    getJiraFieldOverridesStorageKey,
     getJiraProjectSettingsStorageKey,
     getLastProjectStorageKey,
     getLegacyJiraProjectSettingsStorageKey,
@@ -96,6 +97,7 @@ function isScopedStorageKeyForHost(key, host) {
     if (!normalizedHost) return false;
 
     return key === getTagDefsStorageKey(normalizedHost)
+        || key === getJiraFieldOverridesStorageKey(normalizedHost)
         || key === getLastProjectStorageKey(normalizedHost)
         || key === getManualMenuStorageKey(normalizedHost)
         || key.startsWith(`sdk_settings_${normalizedHost}_`)

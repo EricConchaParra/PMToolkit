@@ -85,6 +85,44 @@ describe('sprint tracking state', () => {
         expect(tracking.tagDefs.urgent).toEqual({ label: 'Urgent', color: 'red' });
     });
 
+    it('loads legacy notes, reminders and tags into the current host view', () => {
+        const tracking = buildSprintTrackingState({
+            [getTagDefsStorageKey('')]: {
+                urgent: { label: 'Urgent', color: 'red' },
+            },
+            [getNotesStorageKey('PM-1')]: 'Legacy note',
+            [getReminderStorageKey('PM-1')]: 1_900_000_000_000,
+            [getTagsStorageKey('PM-1')]: ['Urgent'],
+        });
+
+        expect(tracking.notesMap['PM-1']).toBe('Legacy note');
+        expect(tracking.remindersMap['PM-1']).toBe(1_900_000_000_000);
+        expect(tracking.tagsMap['PM-1']).toEqual(['Urgent']);
+        expect(tracking.tagDefs.urgent).toEqual({ label: 'Urgent', color: 'red' });
+    });
+
+    it('prefers host-scoped tracking data over legacy values for the same issue', () => {
+        const tracking = buildSprintTrackingState({
+            [getTagDefsStorageKey('')]: {
+                urgent: { label: 'Urgent', color: 'gray' },
+            },
+            [getTagDefsStorageKey(HOST)]: {
+                urgent: { label: 'Urgent', color: 'red' },
+            },
+            [getNotesStorageKey('PM-1')]: 'Legacy note',
+            [getNotesStorageKey('PM-1', HOST)]: 'Scoped note',
+            [getReminderStorageKey('PM-1')]: 1_800_000_000_000,
+            [getReminderStorageKey('PM-1', HOST)]: 1_900_000_000_000,
+            [getTagsStorageKey('PM-1')]: ['Legacy'],
+            [getTagsStorageKey('PM-1', HOST)]: ['Urgent'],
+        });
+
+        expect(tracking.notesMap['PM-1']).toBe('Scoped note');
+        expect(tracking.remindersMap['PM-1']).toBe(1_900_000_000_000);
+        expect(tracking.tagsMap['PM-1']).toEqual(['Urgent']);
+        expect(tracking.tagDefs.urgent).toEqual({ label: 'Urgent', color: 'red' });
+    });
+
     it('treats reminder and tag definition changes as sprint tracking updates', () => {
         expect(hasSprintTrackingStorageChange({
             [getReminderStorageKey('PM-1', HOST)]: { oldValue: null, newValue: 1_900_000_000_000 },

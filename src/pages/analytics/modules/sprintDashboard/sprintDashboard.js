@@ -88,7 +88,10 @@ const DIRECT_TRACKING_STORAGE_SUPPRESS_MS = 1500;
 export function getCurrentSprints() { return _currentSprints; }
 export function getSelectedSprintId() { return _selectedSprintId; }
 export function setSelectedSprintId(id) { _selectedSprintId = id; }
-export function setHost(h) { _host = h; }
+export function setHost(h) {
+    _host = h;
+    NoteDrawer.setHostOverride(h);
+}
 export function setSpFieldId(id) { _spFieldId = id; }
 export function setSettings(s) { _settings = s; }
 export function getSpFieldId() { return _spFieldId; }
@@ -230,28 +233,77 @@ async function loadSprintTrackingState(issues = []) {
         return _trackingState;
     }
 
-    const storageKeys = [getTagDefsStorageKey(_host)];
+    const storageKeys = [getTagDefsStorageKey('')];
+    if (_host) storageKeys.push(getTagDefsStorageKey(_host));
     issues.forEach(issue => {
-        storageKeys.push(getNotesStorageKey(issue.key, _host));
-        storageKeys.push(getReminderStorageKey(issue.key, _host));
-        storageKeys.push(getTagsStorageKey(issue.key, _host));
+        const issueKey = getJiraIssueKey(issue.key) || String(issue.key || '').trim();
+        if (!issueKey) return;
+
+        storageKeys.push(getNotesStorageKey(issueKey));
+        storageKeys.push(getReminderStorageKey(issueKey));
+        storageKeys.push(getTagsStorageKey(issueKey));
+
+        if (_host) {
+            storageKeys.push(getNotesStorageKey(issueKey, _host));
+            storageKeys.push(getReminderStorageKey(issueKey, _host));
+            storageKeys.push(getTagsStorageKey(issueKey, _host));
+        }
     });
 
-    const stored = await getTrackingItems(storageKeys, { demoMode: _demoMode });
+    const stored = await getTrackingItems(Array.from(new Set(storageKeys.filter(Boolean))), { demoMode: _demoMode });
     _trackingState = buildSprintTrackingState(stored);
     return _trackingState;
 }
 
 export function buildSprintTrackingState(stored = {}) {
-    const parsed = parseTrackingStorage(stored, {
+    const scopedEntries = {};
+    const legacyEntries = {};
+
+    Object.entries(stored || {}).forEach(([key, value]) => {
+        if (key === getTagDefsStorageKey('')) {
+            legacyEntries[key] = value;
+            return;
+        }
+
+        if (_host && key === getTagDefsStorageKey(_host)) {
+            scopedEntries[key] = value;
+            return;
+        }
+
+        const parsedKey = parseJiraTrackingStorageKey(key, _host);
+        if (!parsedKey?.issueKey) return;
+        if (_host && parsedKey.host && parsedKey.host !== _host) return;
+
+        if (parsedKey.isLegacy) legacyEntries[key] = value;
+        else scopedEntries[key] = value;
+    });
+
+    const legacyParsed = parseTrackingStorage(legacyEntries, {
         activeRemindersOnly: false,
         host: _host,
     });
+    const scopedParsed = parseTrackingStorage(scopedEntries, {
+        activeRemindersOnly: false,
+        host: _host,
+    });
+
     return {
-        notesMap: parsed.notesMap,
-        remindersMap: parsed.remindersMap,
-        tagsMap: parsed.tagsMap,
-        tagDefs: parsed.tagDefs,
+        notesMap: {
+            ...legacyParsed.notesMap,
+            ...scopedParsed.notesMap,
+        },
+        remindersMap: {
+            ...legacyParsed.remindersMap,
+            ...scopedParsed.remindersMap,
+        },
+        tagsMap: {
+            ...legacyParsed.tagsMap,
+            ...scopedParsed.tagsMap,
+        },
+        tagDefs: {
+            ...legacyParsed.tagDefs,
+            ...scopedParsed.tagDefs,
+        },
     };
 }
 

@@ -4,6 +4,7 @@
 import { storage, syncStorage } from '../../common/storage';
 import { getCurrentPageJiraHost } from '../../common/jiraIdentity.js';
 import { resolveActiveJiraHost } from '../../common/jiraSiteContext.js';
+import { resolveStoryPointsField } from '../../common/jiraStoryPointsField.js';
 
 let _etQueue = [];
 let _etRunningCount = 0;
@@ -45,20 +46,25 @@ export async function invokeBackgroundFetch(urlOrPath, options = {}) {
 export async function etEnsureCustomFields() {
     const host = await getJiraHost();
     const cached = _etCustomFieldsByHost.get(host);
-    if (cached?.fetched) return { sp: cached.sp, sprint: cached.sprint };
+    if (cached?.fetched) return { sp: cached.sp, sprint: cached.sprint, spResolution: cached.spResolution || null };
 
     try {
         const res = await invokeBackgroundFetch(`/rest/api/3/field`, {
             headers: { 'Accept': 'application/json' }
         });
-        if (!res.ok) return cached ? { sp: cached.sp, sprint: cached.sprint } : { sp: null, sprint: null };
+        if (!res.ok) {
+            return cached
+                ? { sp: cached.sp, sprint: cached.sprint, spResolution: cached.spResolution || null }
+                : { sp: null, sprint: null, spResolution: null };
+        }
         const fields = await res.json();
 
-        const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
+        const spResolution = await resolveStoryPointsField(host, { fields });
         const sprintField = fields.find(f => f.name && f.name.toLowerCase() === 'sprint');
         _etCustomFieldsByHost.set(host, {
-            sp: spField ? spField.id : null,
+            sp: spResolution.fieldId || null,
             sprint: sprintField ? sprintField.id : null,
+            spResolution,
             fetched: true,
         });
     } catch (e) {
@@ -66,7 +72,9 @@ export async function etEnsureCustomFields() {
     }
 
     const resolved = _etCustomFieldsByHost.get(host);
-    return resolved ? { sp: resolved.sp, sprint: resolved.sprint } : { sp: null, sprint: null };
+    return resolved
+        ? { sp: resolved.sp, sprint: resolved.sprint, spResolution: resolved.spResolution || null }
+        : { sp: null, sprint: null, spResolution: null };
 }
 
 export function etParseSprintData(sprintValue) {

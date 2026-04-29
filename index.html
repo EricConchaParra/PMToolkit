@@ -189,6 +189,27 @@
                 <h3>Jira Sites</h3>
                 <div class="setting-item popup-manage-site-item">
                     <div class="setting-info">
+                        <span>Story Points Field Override</span>
+                        <p>Review the detected Story Points field for a Jira site and override it manually when that site uses a custom field name.</p>
+                    </div>
+                    <div class="popup-manage-site-controls">
+                        <div class="popup-site-select-wrap">
+                            <select id="settings-site-field-select"></select>
+                        </div>
+                        <div class="popup-field-resolution-card">
+                            <div id="settings-sp-resolution-summary" class="popup-field-resolution-summary">No site selected.</div>
+                            <label class="popup-field-resolution-label" for="settings-sp-override-input">Override field ID</label>
+                            <input id="settings-sp-override-input" class="popup-field-resolution-input" type="text" placeholder="customfield_10016">
+                            <div class="popup-field-resolution-actions">
+                                <button id="settings-sp-override-save-btn" class="et-notes-save-btn" style="width: 100%; margin: 0;">Save Override</button>
+                                <button id="settings-sp-override-clear-btn" class="btn-secondary-inline">Clear Override</button>
+                            </div>
+                            <div id="settings-sp-resolution-status" class="popup-inline-status" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-item popup-manage-site-item">
+                    <div class="setting-info">
                         <span>Forget Stored Site</span>
                         <p>Remove one Jira site from PMsToolKit local storage, including its notes, reminders, tags, analytics settings, and manual menu.</p>
                     </div>
@@ -219,7 +240,7 @@
         </div>
     </div>
     <div class="about-footer">
-        <strong>PMsToolKit v0.10.0</strong> — Created by EricConcha
+        <strong>PMsToolKit v0.11.0</strong> — Created by EricConcha
     </div>
     <script type="module" src="src/popup/popup.js"></script>
 </body>

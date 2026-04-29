@@ -9,11 +9,11 @@
   <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
   <link rel="modulepreload" crossorigin href="/assets/jiraSiteContext.js">
-  <link rel="modulepreload" crossorigin href="/assets/tagEditor.js">
+  <link rel="modulepreload" crossorigin href="/assets/jiraStoryPointsField.js">
   <link rel="modulepreload" crossorigin href="/assets/jira-styles.js">
   <link rel="modulepreload" crossorigin href="/assets/demoMode.js">
   <link rel="modulepreload" crossorigin href="/assets/githubPrStorage.js">
-  <link rel="stylesheet" crossorigin href="/assets/tagEditor.css">
+  <link rel="stylesheet" crossorigin href="/assets/jiraStoryPointsField.css">
   <link rel="stylesheet" crossorigin href="/assets/jira-styles.css">
   <link rel="stylesheet" crossorigin href="/assets/analytics.css">
 </head>
@@ -59,12 +59,13 @@
 
         <div class="sidebar-footer">
             <a class="sidebar-feedback-link" href="https://tally.so/r/yPxMax" target="_blank" rel="noreferrer">Share feedback</a>
-            <span>v0.10.0 · PMsToolKit</span>
+            <span>v0.11.0 · PMsToolKit</span>
         </div>
     </aside>
 
     <!-- ====== MAIN CONTENT ====== -->
     <main class="main-content">
+        <div id="analytics-sp-warning" class="analytics-inline-warning hidden"></div>
 
         <!-- ========== SPRINT DASHBOARD VIEW ========== -->
         <div id="view-sprint-dashboard" class="view active">

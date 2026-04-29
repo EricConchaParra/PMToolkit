@@ -4,6 +4,34 @@ import { etEnsureCustomFields, formatAge, getColorClass, getGadgetTitle, getJira
 const PROCESSED_BADGES = new Set();
 const PROCESSED_GADGETS = new Set();
 
+function injectSpColumn(table, totalRow, spByGroup = {}, grandTotal = 0, warning = '') {
+    const headerRow = table.querySelector('tr.stats-gadget-table-header');
+    if (headerRow && !headerRow.querySelector('.et-sp-header')) {
+        const th = document.createElement('th');
+        th.className = 'stats-gadget-numeric et-sp-header';
+        th.textContent = 'SP';
+        if (warning) th.title = warning;
+        headerRow.querySelector('[id$="-stats-count"]')?.insertAdjacentElement('afterend', th);
+    }
+
+    table.querySelectorAll('tbody tr:not(.stats-gadget-final-row)').forEach(row => {
+        if (row.querySelector('.et-sp-cell')) return;
+        const groupValue = row.querySelector('[headers$="-stats-category"]')?.textContent?.trim() || '';
+        const td = document.createElement('td');
+        td.className = 'stats-gadget-numeric et-sp-cell';
+        if (warning) td.title = warning;
+        td.innerHTML = `<strong class="et-sp-value">${spByGroup[groupValue] || 0}</strong>`;
+        row.querySelector('[headers$="-stats-count"]')?.insertAdjacentElement('afterend', td);
+    });
+
+    if (totalRow && !totalRow.querySelector('.et-sp-cell')) {
+        const td = document.createElement('td');
+        td.className = 'stats-gadget-numeric stats-gadget-final-row-cell et-sp-cell';
+        if (warning) td.title = warning;
+        td.innerHTML = `<strong class="et-sp-total">${grandTotal}</strong>`;
+        totalRow.querySelector('[headers$="-stats-count"]')?.insertAdjacentElement('afterend', td);
+    }
+}
 
 export const MetricsFeature = {
     async injectAgeIndicators() {
@@ -180,12 +208,13 @@ export const MetricsFeature = {
         const tables = document.querySelectorAll('table.stats-gadget-table');
         if (tables.length === 0) return;
 
-        const { sp: fieldId } = await etEnsureCustomFields();
+        const { sp: fieldId, spResolution } = await etEnsureCustomFields();
+        const fallbackWarning = spResolution?.warning || 'Story Points could not be resolved for this Jira site. Showing 0 SP.';
         if (!fieldId) {
-            console.warn('PMsToolKit: Story Points field not found. Analytics disabled.');
-            return;
+            console.warn('PMsToolKit: Story Points field not resolved. Falling back to 0 SP.', spResolution);
+        } else {
+            console.log(`PMsToolKit: Found ${tables.length} tables, using SP Field: ${fieldId}`);
         }
-        console.log(`PMsToolKit: Found ${tables.length} tables, using SP Field: ${fieldId}`);
 
         for (const table of tables) {
             const container = table.closest('[id^="gadget-content-"]') || table.closest('[id^="gadget-"]');
@@ -229,56 +258,37 @@ export const MetricsFeature = {
                 const groupName = groupHeader?.textContent?.trim() || 'Assignee';
                 const isStatusGroup = groupName.toLowerCase() === 'status';
 
-                const res = await invokeBackgroundFetch(`/rest/api/3/search/jql`, {
-                    method: 'POST',
-                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
-                    body: JSON.stringify({ jql: jqlClean, fields: [fieldId, 'assignee', 'status'], maxResults: 200 })
-                });
-                if (!res.ok) continue;
-                const data = await res.json();
-
                 const spByGroup = {};
                 let grandTotal = 0;
+                let warning = '';
 
-                (data.issues || []).forEach(issue => {
-                    const sp = Number(issue.fields?.[fieldId] || 0);
-                    let groupValue;
+                if (fieldId) {
+                    const res = await invokeBackgroundFetch(`/rest/api/3/search/jql`, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+                        body: JSON.stringify({ jql: jqlClean, fields: [fieldId, 'assignee', 'status'], maxResults: 200 })
+                    });
+                    if (!res.ok) continue;
+                    const data = await res.json();
 
-                    if (isStatusGroup) {
-                        groupValue = issue.fields?.status?.name || 'Unknown';
-                    } else {
-                        // Default to assignee for other groupings (or add more logic here)
-                        groupValue = issue.fields?.assignee?.displayName || 'Unassigned';
-                    }
+                    (data.issues || []).forEach(issue => {
+                        const sp = Number(issue.fields?.[fieldId] || 0);
+                        let groupValue;
 
-                    spByGroup[groupValue] = (spByGroup[groupValue] || 0) + sp;
-                    grandTotal += sp;
-                });
+                        if (isStatusGroup) {
+                            groupValue = issue.fields?.status?.name || 'Unknown';
+                        } else {
+                            groupValue = issue.fields?.assignee?.displayName || 'Unassigned';
+                        }
 
-                // Modify UI
-                const headerRow = table.querySelector('tr.stats-gadget-table-header');
-                if (headerRow && !headerRow.querySelector('.et-sp-header')) {
-                    const th = document.createElement('th');
-                    th.className = 'stats-gadget-numeric et-sp-header';
-                    th.textContent = 'SP';
-                    headerRow.querySelector('[id$="-stats-count"]')?.insertAdjacentElement('afterend', th);
+                        spByGroup[groupValue] = (spByGroup[groupValue] || 0) + sp;
+                        grandTotal += sp;
+                    });
+                } else {
+                    warning = fallbackWarning;
                 }
 
-                table.querySelectorAll('tbody tr:not(.stats-gadget-final-row)').forEach(row => {
-                    if (row.querySelector('.et-sp-cell')) return;
-                    const groupValue = row.querySelector('[headers$="-stats-category"]')?.textContent?.trim() || '';
-                    const td = document.createElement('td');
-                    td.className = 'stats-gadget-numeric et-sp-cell';
-                    td.innerHTML = `<strong class="et-sp-value">${spByGroup[groupValue] || 0}</strong>`;
-                    row.querySelector('[headers$="-stats-count"]')?.insertAdjacentElement('afterend', td);
-                });
-
-                if (totalRow && !totalRow.querySelector('.et-sp-cell')) {
-                    const td = document.createElement('td');
-                    td.className = 'stats-gadget-numeric stats-gadget-final-row-cell et-sp-cell';
-                    td.innerHTML = `<strong class="et-sp-total">${grandTotal}</strong>`;
-                    totalRow.querySelector('[headers$="-stats-count"]')?.insertAdjacentElement('afterend', td);
-                }
+                injectSpColumn(table, totalRow, spByGroup, grandTotal, warning);
 
                 PROCESSED_GADGETS.add(gadgetId);
             } catch (e) {
@@ -290,4 +300,3 @@ export const MetricsFeature = {
     },
 
 };
-

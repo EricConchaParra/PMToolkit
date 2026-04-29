@@ -12,7 +12,7 @@ export const jiraClient = {
         return etEnqueue(async () => {
             try {
                 // 1. Get current status, creation date AND sprint info
-                const { sp: spId, sprint: sprintFieldId } = await etEnsureCustomFields();
+                const { sprint: sprintFieldId } = await etEnsureCustomFields();
                 const fields = ['status', 'created'];
                 if (sprintFieldId) fields.push(sprintFieldId);
 

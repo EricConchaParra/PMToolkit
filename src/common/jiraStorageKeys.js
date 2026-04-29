@@ -87,6 +87,11 @@ export function getJiraProjectSettingsStorageKey(host, projectKey) {
     return `sdk_settings_${normalizedHost}_${safeProjectKey}`;
 }
 
+export function getJiraFieldOverridesStorageKey(host) {
+    const normalizedHost = normalizeJiraHost(host);
+    return normalizedHost ? `jira_field_overrides_${normalizedHost}` : '';
+}
+
 export function getLegacyJiraProjectSettingsStorageKey(projectKey) {
     const safeProjectKey = normalizeIssueKey(projectKey);
     return safeProjectKey ? `sdk_settings_${safeProjectKey}` : '';

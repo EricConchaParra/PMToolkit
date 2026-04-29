@@ -8,7 +8,6 @@ import {
     getCachedBoardConfig,
     getCachedProjectStatuses,
     getCachedProjects,
-    getCachedSpFieldId,
     getCachedSprintFieldId,
 } from './analyticsDataCache.js';
 import {
@@ -27,6 +26,7 @@ import {
 } from '../../../common/demoData.js';
 import { getDemoMode } from '../../../common/demoMode.js';
 import { resolveActiveJiraHost } from '../../../common/jiraSiteContext.js';
+import { resolveStoryPointsField } from '../../../common/jiraStoryPointsField.js';
 
 // ============================================================
 // JIRA HOST
@@ -425,10 +425,24 @@ export async function fetchSpFieldId(host) {
     if (await getDemoMode()) {
         return DEMO_SP_FIELD_ID;
     }
-    return getCachedSpFieldId(host, async () => {
-        const fields = await jiraFetch(host, '/rest/api/3/field');
-        const spField = fields.find(f => f.name === 'Story Points' || f.name === 'Story points');
-        return spField?.id || null;
+    const resolution = await resolveStoryPointsField(host, {
+        fetchFields: () => jiraFetch(host, '/rest/api/3/field'),
+    });
+    return resolution.fieldId || null;
+}
+
+export async function fetchSpFieldResolution(host, opts = {}) {
+    if (await getDemoMode()) {
+        return {
+            fieldId: DEMO_SP_FIELD_ID,
+            fieldName: 'Story Points',
+            source: 'auto',
+            warning: '',
+        };
+    }
+    return resolveStoryPointsField(host, {
+        fetchFields: () => jiraFetch(host, '/rest/api/3/field'),
+        forceRefresh: opts.forceRefresh === true,
     });
 }
 

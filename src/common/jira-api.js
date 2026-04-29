@@ -43,6 +43,27 @@ export const jiraApi = {
         }
     },
 
+    async fetchJiraFields(hostOverride = '') {
+        if (await getDemoMode()) {
+            return [];
+        }
+        const host = hostOverride || await this.getHost();
+        if (!host) return [];
+
+        try {
+            const resp = await fetch(
+                `https://${host}/rest/api/3/field`,
+                { credentials: 'include', headers: { 'Accept': 'application/json' } }
+            );
+            if (!resp.ok) return [];
+            const data = await resp.json();
+            return Array.isArray(data) ? data : [];
+        } catch (e) {
+            console.error('PMsToolKit: Jira fields fetch error', e);
+            return [];
+        }
+    },
+
     async getBoardIdForProject(projectKey) {
         try {
             const res = await fetch(

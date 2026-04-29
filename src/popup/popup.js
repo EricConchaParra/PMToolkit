@@ -5,6 +5,11 @@ import { getIssueTypeMeta } from '../common/issueType.js';
 import { createTagEditor } from '../common/tagEditor.js';
 import { subscribeDemoMode } from '../common/demoMode.js';
 import {
+    loadJiraFieldOverrides,
+    resolveStoryPointsField,
+    saveJiraFieldOverride,
+} from '../common/jiraStoryPointsField.js';
+import {
     ensureJiraMultiSiteMigration,
     forgetJiraHost,
     getKnownJiraHosts,
@@ -70,6 +75,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const resetDemoBtn = document.getElementById('reset-demo-data-btn');
     const demoModeToggle = document.querySelector('input[data-setting="demo_mode"]');
     const siteManagementGroup = document.getElementById('jira-site-management-group');
+    const fieldSiteSelect = document.getElementById('settings-site-field-select');
+    const spResolutionSummary = document.getElementById('settings-sp-resolution-summary');
+    const spOverrideInput = document.getElementById('settings-sp-override-input');
+    const spOverrideSaveBtn = document.getElementById('settings-sp-override-save-btn');
+    const spOverrideClearBtn = document.getElementById('settings-sp-override-clear-btn');
+    const spResolutionStatus = document.getElementById('settings-sp-resolution-status');
     const removeSiteSelect = document.getElementById('settings-site-remove-select');
     const removeSiteBtn = document.getElementById('settings-site-remove-btn');
     const removeSiteStatus = document.getElementById('settings-site-remove-status');
@@ -144,18 +155,88 @@ document.addEventListener('DOMContentLoaded', async () => {
         removeSiteStatus.style.display = message ? 'block' : 'none';
     }
 
+    function renderStoryPointsResolutionStatus(message = '', tone = '') {
+        if (!spResolutionStatus) return;
+        spResolutionStatus.textContent = message;
+        spResolutionStatus.className = 'popup-inline-status';
+        if (tone) spResolutionStatus.classList.add(tone);
+        spResolutionStatus.style.display = message ? 'block' : 'none';
+    }
+
+    async function loadStoryPointsResolutionForHost(host, opts = {}) {
+        const selectedHost = String(host || '').trim();
+        if (!fieldSiteSelect || !spResolutionSummary || !spOverrideInput || !spOverrideSaveBtn || !spOverrideClearBtn) {
+            return null;
+        }
+
+        if (!selectedHost) {
+            spResolutionSummary.textContent = 'No site selected.';
+            spOverrideInput.value = '';
+            spOverrideInput.disabled = true;
+            spOverrideSaveBtn.disabled = true;
+            spOverrideClearBtn.disabled = true;
+            renderStoryPointsResolutionStatus(opts.statusMessage || '', opts.statusTone || '');
+            return null;
+        }
+
+        spResolutionSummary.textContent = 'Inspecting Jira fields...';
+        spOverrideInput.disabled = true;
+        spOverrideSaveBtn.disabled = true;
+        spOverrideClearBtn.disabled = true;
+        renderStoryPointsResolutionStatus(opts.statusMessage || '', opts.statusTone || '');
+
+        const overrides = await loadJiraFieldOverrides(selectedHost);
+        const overrideFieldId = String(overrides.storyPointsFieldId || '').trim();
+        spOverrideInput.value = overrideFieldId;
+
+        const resolution = await resolveStoryPointsField(selectedHost, {
+            forceRefresh: true,
+            fetchFields: () => jiraApi.fetchJiraFields(selectedHost),
+        });
+
+        const summaryBits = [];
+        if (resolution.fieldId) {
+            const fieldLabel = resolution.fieldName
+                ? `${escapeHtml(resolution.fieldName)} (${escapeHtml(resolution.fieldId)})`
+                : escapeHtml(resolution.fieldId);
+            summaryBits.push(`<strong>Resolved:</strong> ${fieldLabel}`);
+            summaryBits.push(`<strong>Source:</strong> ${escapeHtml(resolution.source)}`);
+        } else {
+            summaryBits.push('<strong>Resolved:</strong> none');
+        }
+
+        if (resolution.warning) {
+            summaryBits.push(`<span>${escapeHtml(resolution.warning)}</span>`);
+        } else if (!resolution.fieldId) {
+            summaryBits.push('<span>SP metrics will stay visible and use 0 SP until you set an override.</span>');
+        }
+
+        spResolutionSummary.innerHTML = summaryBits.join('<br>');
+        spOverrideInput.disabled = false;
+        spOverrideSaveBtn.disabled = false;
+        spOverrideClearBtn.disabled = !overrideFieldId;
+        return resolution;
+    }
+
     function renderSiteManagement() {
         const hasSites = storedJiraHosts.length > 0;
         if (siteManagementGroup) {
             siteManagementGroup.style.display = hasSites ? 'block' : 'none';
         }
-        if (!removeSiteSelect || !removeSiteBtn) return;
+        if (!removeSiteSelect || !removeSiteBtn || !fieldSiteSelect) return;
 
         if (!hasSites) {
+            fieldSiteSelect.innerHTML = '';
             removeSiteSelect.innerHTML = '';
             removeSiteBtn.disabled = true;
             return;
         }
+
+        const selectedFieldHost = fieldSiteSelect.value;
+        fieldSiteSelect.innerHTML = storedJiraHosts.map(host => `
+            <option value="${escapeHtml(host)}">${escapeHtml(host)}</option>
+        `).join('');
+        fieldSiteSelect.value = storedJiraHosts.includes(selectedFieldHost) ? selectedFieldHost : (currentJiraHost && storedJiraHosts.includes(currentJiraHost) ? currentJiraHost : storedJiraHosts[0]);
 
         const selectedValue = removeSiteSelect.value;
         removeSiteSelect.innerHTML = storedJiraHosts.map(host => `
@@ -165,9 +246,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         removeSiteBtn.disabled = !removeSiteSelect.value;
     }
 
-    async function refreshSiteManagement() {
+    async function refreshSiteManagement(opts = {}) {
         storedJiraHosts = await getKnownJiraHosts();
         renderSiteManagement();
+        await loadStoryPointsResolutionForHost(fieldSiteSelect?.value, opts);
     }
 
     async function refreshHostContext() {
@@ -489,6 +571,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!nextHost || nextHost === currentJiraHost) return;
         currentJiraHost = await setActiveJiraHost(nextHost);
         await loadNotes();
+    });
+
+    fieldSiteSelect?.addEventListener('change', async () => {
+        await loadStoryPointsResolutionForHost(fieldSiteSelect.value);
+    });
+
+    spOverrideSaveBtn?.addEventListener('click', async () => {
+        const hostToUpdate = String(fieldSiteSelect?.value || '').trim();
+        const overrideFieldId = String(spOverrideInput?.value || '').trim();
+        if (!hostToUpdate) return;
+        if (!overrideFieldId) {
+            renderStoryPointsResolutionStatus('Enter a Jira field ID such as customfield_10016.', 'error');
+            return;
+        }
+
+        spOverrideSaveBtn.disabled = true;
+        spOverrideClearBtn.disabled = true;
+        renderStoryPointsResolutionStatus(`Saving override for ${hostToUpdate}...`);
+
+        try {
+            await saveJiraFieldOverride(hostToUpdate, overrideFieldId);
+            const resolution = await loadStoryPointsResolutionForHost(hostToUpdate);
+            if (resolution?.source === 'override' && resolution.fieldId === overrideFieldId) {
+                renderStoryPointsResolutionStatus(`Override saved for ${hostToUpdate}.`, 'success');
+            } else {
+                renderStoryPointsResolutionStatus(resolution?.warning || `Override saved for ${hostToUpdate}, but Jira could not validate it yet.`, 'error');
+            }
+        } catch (error) {
+            console.error('Failed to save Story Points override', error);
+            renderStoryPointsResolutionStatus(`Could not save the override for ${hostToUpdate}.`, 'error');
+            await loadStoryPointsResolutionForHost(hostToUpdate);
+        }
+    });
+
+    spOverrideClearBtn?.addEventListener('click', async () => {
+        const hostToUpdate = String(fieldSiteSelect?.value || '').trim();
+        if (!hostToUpdate) return;
+
+        spOverrideSaveBtn.disabled = true;
+        spOverrideClearBtn.disabled = true;
+        renderStoryPointsResolutionStatus(`Clearing override for ${hostToUpdate}...`);
+
+        try {
+            await saveJiraFieldOverride(hostToUpdate, '');
+            await loadStoryPointsResolutionForHost(hostToUpdate);
+            renderStoryPointsResolutionStatus(`Override cleared for ${hostToUpdate}.`, 'success');
+        } catch (error) {
+            console.error('Failed to clear Story Points override', error);
+            renderStoryPointsResolutionStatus(`Could not clear the override for ${hostToUpdate}.`, 'error');
+            await loadStoryPointsResolutionForHost(hostToUpdate);
+        }
     });
 
     removeSiteSelect?.addEventListener('change', () => {
