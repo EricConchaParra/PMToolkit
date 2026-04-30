@@ -17,6 +17,7 @@ import {
     setActiveJiraHost,
 } from '../common/jiraSiteContext.js';
 import {
+    buildJiraTrackingStorageKeys,
     getMetaStorageKey,
     getNotesStorageKey,
     getReminderStorageKey,
@@ -429,11 +430,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 el.querySelector('.delete-btn').onclick = async () => {
                     if (!confirm(`Delete note, reminder, and tags for ${item.key}?`)) return;
-                    await removeTrackingItems([
-                        getNotesStorageKey(item.key, currentJiraHost),
-                        getReminderStorageKey(item.key, currentJiraHost),
-                        getTagsStorageKey(item.key, currentJiraHost),
-                    ], { demoMode: demoModeEnabled });
+                    const storageKeys = buildJiraTrackingStorageKeys(item.key, currentJiraHost);
+                    const keysToRemove = Array.from(new Set([
+                        storageKeys.notesKey,
+                        storageKeys.reminderKey,
+                        storageKeys.tagsKey,
+                        storageKeys.ignoredKey,
+                        storageKeys.legacy?.notesKey,
+                        storageKeys.legacy?.reminderKey,
+                        storageKeys.legacy?.tagsKey,
+                        storageKeys.legacy?.ignoredKey,
+                    ].filter(Boolean)));
+                    await removeTrackingItems(keysToRemove, { demoMode: demoModeEnabled });
                     await loadNotes();
                 };
             }
@@ -518,19 +526,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const newText = noteInput.value.trim();
                     const newReminder = el.querySelector('.edit-reminder-input').value;
                     const finalTags = normalizeTagList(editedTags, popupTagDefs);
+                    const storageKeys = buildJiraTrackingStorageKeys(item.key, currentJiraHost);
 
-                    if (newText) await setTrackingItems({ [getNotesStorageKey(item.key, currentJiraHost)]: newText }, { demoMode: demoModeEnabled });
-                    else await removeTrackingItems(getNotesStorageKey(item.key, currentJiraHost), { demoMode: demoModeEnabled });
+                    if (newText) {
+                        await setTrackingItems({ [storageKeys.notesKey]: newText }, { demoMode: demoModeEnabled });
+                    } else {
+                        await removeTrackingItems(storageKeys.notesKey, { demoMode: demoModeEnabled });
+                    }
+                    if (storageKeys.legacy?.notesKey && storageKeys.legacy.notesKey !== storageKeys.notesKey) {
+                        await removeTrackingItems(storageKeys.legacy.notesKey, { demoMode: demoModeEnabled });
+                    }
 
                     if (newReminder) {
                         const reminderTimestamp = new Date(newReminder).getTime();
-                        await setTrackingItems({ [getReminderStorageKey(item.key, currentJiraHost)]: reminderTimestamp }, { demoMode: demoModeEnabled });
+                        await setTrackingItems({ [storageKeys.reminderKey]: reminderTimestamp }, { demoMode: demoModeEnabled });
+                        await removeTrackingItems(storageKeys.ignoredKey, { demoMode: demoModeEnabled });
                     } else {
-                        await removeTrackingItems(getReminderStorageKey(item.key, currentJiraHost), { demoMode: demoModeEnabled });
+                        await removeTrackingItems(storageKeys.reminderKey, { demoMode: demoModeEnabled });
+                        await removeTrackingItems(storageKeys.ignoredKey, { demoMode: demoModeEnabled });
+                    }
+                    if (storageKeys.legacy?.reminderKey && storageKeys.legacy.reminderKey !== storageKeys.reminderKey) {
+                        await removeTrackingItems(storageKeys.legacy.reminderKey, { demoMode: demoModeEnabled });
+                    }
+                    if (storageKeys.legacy?.ignoredKey && storageKeys.legacy.ignoredKey !== storageKeys.ignoredKey) {
+                        await removeTrackingItems(storageKeys.legacy.ignoredKey, { demoMode: demoModeEnabled });
                     }
 
-                    if (finalTags.length) await setTrackingItems({ [getTagsStorageKey(item.key, currentJiraHost)]: finalTags }, { demoMode: demoModeEnabled });
-                    else await removeTrackingItems(getTagsStorageKey(item.key, currentJiraHost), { demoMode: demoModeEnabled });
+                    await removeTrackingItems(storageKeys.tagsKey, { demoMode: demoModeEnabled });
+                    if (finalTags.length) {
+                        await setTrackingItems({ [storageKeys.tagsKey]: finalTags }, { demoMode: demoModeEnabled });
+                    }
+                    if (storageKeys.legacy?.tagsKey && storageKeys.legacy.tagsKey !== storageKeys.tagsKey) {
+                        await removeTrackingItems(storageKeys.legacy.tagsKey, { demoMode: demoModeEnabled });
+                    }
 
                     item.text = newText;
                     item.reminder = newReminder ? new Date(newReminder).getTime() : null;

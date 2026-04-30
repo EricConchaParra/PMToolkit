@@ -9,6 +9,8 @@ import {
     getLastProjectStorageKey,
 } from '../../../common/jiraStorageKeys.js';
 
+const ANALYTICS_SIDEBAR_COLLAPSED_KEY = 'pmtk_analytics_sidebar_collapsed';
+
 // ============================================================
 // SETTINGS STORAGE
 // ============================================================
@@ -63,4 +65,37 @@ export function setLastProject(host, key) {
     const storageKey = getLastProjectStorageKey(host);
     if (typeof chrome !== 'undefined' && chrome.storage)
         chrome.storage.local.set({ [storageKey]: key });
+}
+
+export function loadSidebarCollapsed() {
+    return new Promise(resolve => {
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+            chrome.storage.local.get([ANALYTICS_SIDEBAR_COLLAPSED_KEY], result => {
+                resolve(result[ANALYTICS_SIDEBAR_COLLAPSED_KEY] === true);
+            });
+            return;
+        }
+
+        try {
+            resolve(localStorage.getItem(ANALYTICS_SIDEBAR_COLLAPSED_KEY) === '1');
+        } catch {
+            resolve(false);
+        }
+    });
+}
+
+export function saveSidebarCollapsed(collapsed) {
+    return new Promise(resolve => {
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+            chrome.storage.local.set({ [ANALYTICS_SIDEBAR_COLLAPSED_KEY]: collapsed === true }, resolve);
+            return;
+        }
+
+        try {
+            localStorage.setItem(ANALYTICS_SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
+        } catch {
+            // Ignore storage failures outside the extension runtime.
+        }
+        resolve();
+    });
 }

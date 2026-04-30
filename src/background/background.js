@@ -23,8 +23,12 @@ import { ensureJiraMultiSiteMigration, resolveActiveJiraHost } from '../common/j
 import {
     PENDING_ALERTS_STORAGE_KEY,
     getIgnoredStorageKey,
+    getMetaStorageKey,
     getNotesStorageKey,
+    getReminderStorageKey,
+    getTagDefsStorageKey,
     getTicketCacheStorageKey,
+    getTagsStorageKey,
 } from '../common/jiraStorageKeys.js';
 
 async function getTicketSummary(ticketRef) {
@@ -60,19 +64,46 @@ async function handleReminder(ticketRef) {
 
     chrome.storage.local.get([
         getNotesStorageKey(ticketRef, host),
+        getMetaStorageKey(ticketRef, host),
+        getReminderStorageKey(ticketRef, host),
+        getTagsStorageKey(ticketRef, host),
+        getTagDefsStorageKey(host),
         PENDING_ALERTS_STORAGE_KEY,
         getIgnoredStorageKey(ticketRef, host),
     ], (result) => {
         const notesKey = getNotesStorageKey(ticketRef, host);
+        const metaKey = getMetaStorageKey(ticketRef, host);
+        const reminderKey = getReminderStorageKey(ticketRef, host);
+        const tagsKey = getTagsStorageKey(ticketRef, host);
+        const tagDefsKey = getTagDefsStorageKey(host);
         const ignoredKey = getIgnoredStorageKey(ticketRef, host);
         if (result[ignoredKey]) return;
 
         const noteText = result[notesKey] || '';
+        const existingMeta = result[metaKey] && typeof result[metaKey] === 'object' ? result[metaKey] : {};
+        const reminderTs = typeof result[reminderKey] === 'number' ? result[reminderKey] : null;
+        const tags = Array.isArray(result[tagsKey]) ? result[tagsKey] : [];
+        const tagDefs = result[tagDefsKey] && typeof result[tagDefsKey] === 'object' ? result[tagDefsKey] : {};
         const pendingAlerts = result[PENDING_ALERTS_STORAGE_KEY] || [];
 
         if (!pendingAlerts.includes(ticketRef)) {
             pendingAlerts.push(ticketRef);
-            chrome.storage.local.set({ [PENDING_ALERTS_STORAGE_KEY]: pendingAlerts });
+            chrome.storage.local.set({
+                [PENDING_ALERTS_STORAGE_KEY]: pendingAlerts,
+                ...(summary ? {
+                    [metaKey]: {
+                        ...existingMeta,
+                        summary,
+                    },
+                } : {}),
+            });
+        } else if (summary && existingMeta.summary !== summary) {
+            chrome.storage.local.set({
+                [metaKey]: {
+                    ...existingMeta,
+                    summary,
+                },
+            });
         }
 
         const notificationTitle = `Reminder on Jira: ${issueKey}${summary ? ` (${summary})` : ''}`;
@@ -97,7 +128,10 @@ async function handleReminder(ticketRef) {
                     type: 'REMINDER_FIRED',
                     issueKey: ticketRef,
                     noteText: noteText,
-                    summary: summary
+                    summary: summary,
+                    reminderTs,
+                    tags,
+                    tagDefs,
                 }).catch(() => { });
             });
         });
@@ -131,8 +165,15 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local') {
         for (const [key, { newValue }] of Object.entries(changes)) {
             if (key.startsWith('reminder_')) {
-                if (newValue) chrome.alarms.create(key, { when: newValue });
-                else chrome.alarms.clear(key);
+                if (newValue) {
+                    const when = Number(newValue);
+                    if (Number.isFinite(when) && when <= Date.now()) {
+                        chrome.alarms.clear(key);
+                        handleReminder(key.replace('reminder_', ''));
+                    } else {
+                        chrome.alarms.create(key, { when: newValue });
+                    }
+                } else chrome.alarms.clear(key);
             }
         }
     }

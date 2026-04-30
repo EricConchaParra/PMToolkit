@@ -117,9 +117,21 @@ td.summary>.et-age-badge {
     font-size: 18px;
     font-weight: 700;
     color: #172b4d;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    line-height: 1.35;
+}
+
+.et-drawer-ticket-link {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0052cc;
+    text-decoration: none;
+}
+
+.et-drawer-ticket-link:hover {
+    color: #0065ff;
+    text-decoration: underline;
 }
 
 .et-drawer-close {
@@ -793,16 +805,30 @@ td.summary>.et-age-badge {
 
 .et-alert-modal-header {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 22px;
+}
+
+.et-alert-modal-header-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.et-alert-modal-key {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
 }
 
 .et-alert-modal-title {
     margin: 0;
-    font-size: 18px;
+    font-size: 28px;
     font-weight: 700;
     color: #172b4d;
+    line-height: 1.15;
 }
 
 .et-alert-clickable-key {
@@ -817,21 +843,67 @@ td.summary>.et-age-badge {
     text-decoration: underline;
 }
 
-.et-alert-modal-summary {
-    font-size: 13px;
-    color: #6b778c;
-    margin-top: 2px;
-    font-weight: 500;
+.et-alert-modal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.et-alert-modal-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: #f4f5f7;
+    border: 1px solid #dfe1e6;
+    font-size: 12px;
+    font-weight: 600;
+    color: #42526e;
+    line-height: 1;
+}
+
+.et-alert-modal-time::before {
+    content: "⏰";
+    margin-right: 8px;
+}
+
+.et-alert-modal-time {
+    background: #deebff;
+    border-color: #b3d4ff;
+    color: #0747a6;
+    font-weight: 700;
+}
+
+.et-alert-modal-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.et-alert-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--et-tag-border, #dfe1e6);
+    background: var(--et-tag-bg, #f4f5f7);
+    color: var(--et-tag-color, #42526e);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
 }
 
 .et-alert-modal-body {
     font-size: 14px;
     line-height: 1.5;
     color: #42526e;
-    margin-bottom: 24px;
+    margin-bottom: 28px;
     background: #f4f5f7;
-    padding: 12px;
-    border-radius: 4px;
+    padding: 16px 18px;
+    border-radius: 8px;
     border-left: 4px solid #ff991f;
 }
 

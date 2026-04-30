@@ -255,6 +255,15 @@ async function loadSprintTrackingState(issues = []) {
     return _trackingState;
 }
 
+async function loadSprintTagDefsState() {
+    const storageKeys = [getTagDefsStorageKey('')];
+    if (_host) storageKeys.push(getTagDefsStorageKey(_host));
+
+    const stored = await getTrackingItems(Array.from(new Set(storageKeys.filter(Boolean))), { demoMode: _demoMode });
+    _trackingState.tagDefs = buildSprintTrackingState(stored).tagDefs;
+    return _trackingState.tagDefs;
+}
+
 export function buildSprintTrackingState(stored = {}) {
     const scopedEntries = {};
     const legacyEntries = {};
@@ -459,6 +468,24 @@ export function getTrackingStorageChangeIssueKeys(changes = {}, host = _host) {
     return issueKeys;
 }
 
+export function hasRelevantSprintTagDefsStorageChange(changes = {}, host = _host) {
+    const relevantKeys = new Set([getTagDefsStorageKey('')]);
+    if (host) relevantKeys.add(getTagDefsStorageKey(host));
+
+    return Object.keys(changes || {}).some(key => relevantKeys.has(key));
+}
+
+export function classifySprintTrackingStorageChanges(changes = {}, host = _host) {
+    const hasIssueChanges = getTrackingStorageChangeIssueKeys(changes, host).size > 0;
+    const hasTagDefChanges = hasRelevantSprintTagDefsStorageChange(changes, host);
+
+    return {
+        hasIssueChanges,
+        hasTagDefChanges,
+        isPureTagDefsChange: hasTagDefChanges && !hasIssueChanges,
+    };
+}
+
 function pruneRecentDirectTrackingUpdates(now = Date.now()) {
     _recentDirectTrackingUpdates.forEach((expiresAt, issueKey) => {
         if (expiresAt <= now) _recentDirectTrackingUpdates.delete(issueKey);
@@ -502,6 +529,15 @@ function renderSprintTagFilter(issues = _currentIssues, tracking = _trackingStat
         : 'Filter sprint issues by tag';
 
     return options;
+}
+
+function refreshVisibleSprintTagDefs() {
+    if (!_currentIssues.length) return;
+
+    renderSprintTagFilter(_currentIssues, _trackingState);
+    document
+        .querySelectorAll('.issue-chip[data-gh-key]')
+        .forEach(updateSprintTrackingChip);
 }
 
 function applyIncrementalTrackingUpdate(issueKey, detail = {}) {
@@ -642,6 +678,23 @@ function bindTrackingStorageListener() {
         if (areaName !== 'local') return;
         if (!hasSprintTrackingStorageChange(changes)) return;
         if (!_currentIssues.length) return;
+
+        const changeSummary = classifySprintTrackingStorageChanges(changes);
+        if (!changeSummary.hasIssueChanges && !changeSummary.hasTagDefChanges) return;
+        if (changeSummary.isPureTagDefsChange) {
+            clearTimeout(_trackingReloadTimer);
+            _trackingReloadTimer = setTimeout(() => {
+                void loadSprintTagDefsState()
+                    .then(() => {
+                        refreshVisibleSprintTagDefs();
+                    })
+                    .catch(error => {
+                        console.warn('PMsToolKit: Failed to refresh sprint tag definitions', error);
+                    });
+            }, TRACKING_STORAGE_REFRESH_DELAY_MS);
+            return;
+        }
+
         pruneRecentDirectTrackingUpdates();
         if (shouldSuppressTrackingStorageRefresh(changes)) return;
 

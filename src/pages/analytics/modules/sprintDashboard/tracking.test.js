@@ -7,9 +7,11 @@ import {
     applyTrackingEventToState,
     buildSprintTagFilterOptions,
     buildSprintTrackingState,
+    classifySprintTrackingStorageChanges,
     filterSprintIssuesByTag,
     getSprintTrackingUpdatePlan,
     getTrackingStorageChangeIssueKeys,
+    hasRelevantSprintTagDefsStorageChange,
     setHost,
     hasSprintTrackingStorageChange,
     normalizeTrackingEventDetail,
@@ -121,6 +123,25 @@ describe('sprint tracking state', () => {
         expect(tracking.remindersMap['PM-1']).toBe(1_900_000_000_000);
         expect(tracking.tagsMap['PM-1']).toEqual(['Urgent']);
         expect(tracking.tagDefs.urgent).toEqual({ label: 'Urgent', color: 'red' });
+    });
+
+    it('merges legacy and host-scoped tag definitions with host precedence', () => {
+        const tracking = buildSprintTrackingState({
+            [getTagDefsStorageKey('')]: {
+                urgent: { label: 'Urgent', color: 'gray' },
+                customer: { label: 'Customer', color: 'blue' },
+            },
+            [getTagDefsStorageKey(HOST)]: {
+                urgent: { label: 'Urgent', color: 'red' },
+                launch: { label: 'Launch', color: 'orange' },
+            },
+        });
+
+        expect(tracking.tagDefs).toEqual({
+            urgent: { label: 'Urgent', color: 'red' },
+            customer: { label: 'Customer', color: 'blue' },
+            launch: { label: 'Launch', color: 'orange' },
+        });
     });
 
     it('treats reminder and tag definition changes as sprint tracking updates', () => {
@@ -271,6 +292,51 @@ describe('incremental sprint tracking updates', () => {
         }))).toEqual(['PM-1', 'PM-2']);
     });
 
+    it('detects host-scoped tag definition changes as relevant to the active sprint host', () => {
+        expect(hasRelevantSprintTagDefsStorageChange({
+            [getTagDefsStorageKey(HOST)]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
+        }, HOST)).toBe(true);
+    });
+
+    it('detects legacy tag definition changes as relevant to the active sprint host', () => {
+        expect(hasRelevantSprintTagDefsStorageChange({
+            [getTagDefsStorageKey('')]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
+        }, HOST)).toBe(true);
+    });
+
+    it('ignores tag definition changes for a different Jira host', () => {
+        expect(hasRelevantSprintTagDefsStorageChange({
+            [getTagDefsStorageKey('other.example.atlassian.net')]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
+        }, HOST)).toBe(false);
+
+        expect(classifySprintTrackingStorageChanges({
+            [getTagDefsStorageKey('other.example.atlassian.net')]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
+        }, HOST)).toEqual({
+            hasIssueChanges: false,
+            hasTagDefChanges: false,
+            isPureTagDefsChange: false,
+        });
+    });
+
+    it('classifies pure tag definition changes separately from issue tracking changes', () => {
+        expect(classifySprintTrackingStorageChanges({
+            [getTagDefsStorageKey(HOST)]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
+        }, HOST)).toEqual({
+            hasIssueChanges: false,
+            hasTagDefChanges: true,
+            isPureTagDefsChange: true,
+        });
+
+        expect(classifySprintTrackingStorageChanges({
+            [getTagDefsStorageKey(HOST)]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
+            [getTagsStorageKey('PM-1', HOST)]: { oldValue: [], newValue: ['Urgent'] },
+        }, HOST)).toEqual({
+            hasIssueChanges: true,
+            hasTagDefChanges: true,
+            isPureTagDefsChange: false,
+        });
+    });
+
     it('suppresses storage refreshes that are already covered by a direct tracking event', () => {
         const recentUpdates = new Map([
             ['PM-1', 2_000],
@@ -286,6 +352,10 @@ describe('incremental sprint tracking updates', () => {
 
         expect(shouldSuppressTrackingStorageRefresh({
             [getNotesStorageKey('PM-2', HOST)]: { oldValue: '', newValue: 'Other note' },
+        }, recentUpdates, 1_500)).toBe(false);
+
+        expect(shouldSuppressTrackingStorageRefresh({
+            [getTagDefsStorageKey(HOST)]: { oldValue: {}, newValue: { urgent: { label: 'Urgent', color: 'red' } } },
         }, recentUpdates, 1_500)).toBe(false);
     });
 });
@@ -315,6 +385,32 @@ describe('sprint tag filter', () => {
             { value: '__any_tag__', label: 'Any Tag' },
             { value: 'customer', label: 'Customer' },
             { value: 'urgent', label: 'Urgent' },
+        ]);
+    });
+
+    it('uses compatible tag definition updates to render filter labels without changing assigned tags', () => {
+        const options = buildSprintTagFilterOptions(
+            [
+                { key: 'PM-1' },
+                { key: 'PM-2' },
+            ],
+            {
+                tagsMap: {
+                    'PM-1': ['urgent'],
+                    'PM-2': ['customer'],
+                },
+                tagDefs: {
+                    urgent: { label: 'URGENT', color: 'red' },
+                    customer: { label: 'CUSTOMER', color: 'blue' },
+                },
+            },
+        );
+
+        expect(options).toEqual([
+            { value: '', label: 'No Filter' },
+            { value: '__any_tag__', label: 'Any Tag' },
+            { value: 'customer', label: 'CUSTOMER' },
+            { value: 'urgent', label: 'URGENT' },
         ]);
     });
 

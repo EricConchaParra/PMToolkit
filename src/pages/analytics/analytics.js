@@ -6,7 +6,14 @@
 
 // ---- Modules ----
 import { initNav } from './modules/nav.js';
-import { loadSettings, saveSettings, getLastProject, setLastProject } from './modules/settings.js';
+import {
+    loadSettings,
+    saveSettings,
+    getLastProject,
+    setLastProject,
+    loadSidebarCollapsed,
+    saveSidebarCollapsed,
+} from './modules/settings.js';
 import { getJiraHost, fetchProjects, fetchSpFieldResolution } from './modules/jiraApi.js';
 import { escapeHtml } from './modules/utils.js';
 import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, SP_KEYS } from './modules/constants.js';
@@ -43,7 +50,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('analytics-demo-hint')?.classList.toggle('hidden', !demoMode);
 
     // ---- Nav ----
-    initNav();
+    const sidebarCollapsed = await loadSidebarCollapsed();
+    initNav({
+        sidebarCollapsed,
+        onSidebarToggle: saveSidebarCollapsed,
+    });
 
     // ---- Jira host ----
     const currentHost = await getJiraHost();

@@ -21,6 +21,16 @@
                 <span class="brand-sub">Analytics Hub</span>
             </div>
             <span class="analytics-demo-badge hidden" id="analytics-demo-badge">Demo</span>
+            <button
+                class="sidebar-toggle"
+                id="sidebar-toggle-btn"
+                type="button"
+                aria-label="Collapse menu"
+                aria-pressed="false"
+                title="Collapse menu"
+            >
+                <span class="sidebar-toggle-icon" aria-hidden="true">‹</span>
+            </button>
         </div>
         <div class="sidebar-site-switcher hidden" id="analytics-site-switcher">
             <label for="analytics-site-select">Jira Site</label>
@@ -31,19 +41,19 @@
         </div>
 
         <nav class="sidebar-nav">
-            <button class="nav-item active" data-view="sprint-dashboard">
+            <button class="nav-item active" data-view="sprint-dashboard" title="Sprint Dashboard">
                 <span class="nav-icon">🚀</span>
                 <span class="nav-label">Sprint Dashboard</span>
             </button>
-            <button class="nav-item" data-view="performance-dashboard">
+            <button class="nav-item" data-view="performance-dashboard" title="Team Performance">
                 <span class="nav-icon">📈</span>
                 <span class="nav-label">Team Performance</span>
             </button>
-            <button class="nav-item" data-view="sprint-closure-report">
+            <button class="nav-item" data-view="sprint-closure-report" title="Sprint Closure">
                 <span class="nav-icon">📸</span>
                 <span class="nav-label">Sprint Closure</span>
             </button>
-            <button class="nav-item" data-view="csv-exporter">
+            <button class="nav-item" data-view="csv-exporter" title="History Exporter">
                 <span class="nav-icon">📤</span>
                 <span class="nav-label">History Exporter</span>
             </button>
@@ -51,7 +61,7 @@
 
         <div class="sidebar-footer">
             <a class="sidebar-feedback-link" href="https://tally.so/r/yPxMax" target="_blank" rel="noreferrer">Share feedback</a>
-            <span>v0.11.0 · PMsToolKit</span>
+            <span>v0.12.0 · PMsToolKit</span>
         </div>
     </aside>
 

@@ -71,6 +71,38 @@ export function getIgnoredStorageKey(issueOrRef, host = '') {
     return buildJiraTrackingStorageKey('ignored', issueOrRef, host);
 }
 
+export function buildJiraTrackingStorageKeys(issueOrRef, host = '') {
+    const parsed = parseJiraTicketRef(issueOrRef, host);
+    const ticketRef = parsed?.host ? buildJiraTicketRef(parsed.host, parsed.issueKey) : '';
+    const primaryRef = ticketRef || issueOrRef;
+    const normalizedHost = parsed?.host || '';
+    const notesKey = getNotesStorageKey(primaryRef, normalizedHost);
+    const reminderKey = getReminderStorageKey(primaryRef, normalizedHost);
+    const tagsKey = getTagsStorageKey(primaryRef, normalizedHost);
+    const metaKey = getMetaStorageKey(primaryRef, normalizedHost);
+    const ignoredKey = getIgnoredStorageKey(primaryRef, normalizedHost);
+    const tagDefsKey = getTagDefsStorageKey(normalizedHost);
+
+    const legacy = parsed?.host ? {
+        notesKey: getNotesStorageKey(parsed.issueKey),
+        reminderKey: getReminderStorageKey(parsed.issueKey),
+        tagsKey: getTagsStorageKey(parsed.issueKey),
+        metaKey: getMetaStorageKey(parsed.issueKey),
+        ignoredKey: getIgnoredStorageKey(parsed.issueKey),
+        tagDefsKey: getTagDefsStorageKey(''),
+    } : null;
+
+    return {
+        notesKey,
+        reminderKey,
+        tagsKey,
+        metaKey,
+        ignoredKey,
+        tagDefsKey,
+        legacy,
+    };
+}
+
 export function getTicketCacheStorageKey(issueOrRef, host = '') {
     const ticketRef = ensureJiraTicketRef(issueOrRef, host);
     if (ticketRef.startsWith('jira@')) return `ticket_cache_${ticketRef}`;

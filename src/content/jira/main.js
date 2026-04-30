@@ -1,6 +1,7 @@
-import { storage, syncStorage, isContextValid } from '../../common/storage';
+import { syncStorage, isContextValid } from '../../common/storage';
 import { getCurrentPageJiraHost } from '../../common/jiraIdentity.js';
 import { ensureJiraMultiSiteMigration, registerJiraHost } from '../../common/jiraSiteContext.js';
+import { PENDING_ALERTS_STORAGE_KEY } from '../../common/jiraStorageKeys.js';
 import { MetricsFeature } from './features/metrics';
 import { InjectionFeature } from './features/injections';
 import { CustomizationFeature } from './features/customization';
@@ -32,6 +33,22 @@ const DEFAULT_SETTINGS = {
 let cachedSettings = { ...DEFAULT_SETTINGS };
 let runTimeout = null;
 let isRunning = false;
+let reminderReconcileTimeout = null;
+
+function scheduleReminderReconcile() {
+    if (!isContextValid()) return;
+    clearTimeout(reminderReconcileTimeout);
+    reminderReconcileTimeout = setTimeout(() => {
+        void ReminderModal.rehydratePendingAlerts();
+    }, 150);
+}
+
+function isRelevantReminderStorageKey(key) {
+    return key === PENDING_ALERTS_STORAGE_KEY
+        || key.startsWith('reminder_')
+        || key.startsWith('ignored_')
+        || key.startsWith('ticket_cache_');
+}
 
 // Initialize settings and setup listener
 async function initSettings() {
@@ -104,13 +121,16 @@ function stopAll() {
         observer.disconnect();
     }
     clearTimeout(runTimeout);
+    clearTimeout(reminderReconcileTimeout);
 }
 
 // Initial Run
 if (window.top === window.self) {
     const pageHost = getCurrentPageJiraHost();
     if (pageHost) {
-        void ensureJiraMultiSiteMigration().then(() => registerJiraHost(pageHost));
+        void ensureJiraMultiSiteMigration()
+            .then(() => registerJiraHost(pageHost))
+            .then(() => ReminderModal.rehydratePendingAlerts());
     }
 }
 initTooltips();
@@ -136,6 +156,21 @@ observer.observe(document.body, { childList: true, subtree: true });
 chrome.runtime.onMessage.addListener((message) => {
     if (!isContextValid()) return;
     if (message.type === 'REMINDER_FIRED') {
-        ReminderModal.show(message.issueKey, message.noteText, message.summary);
+        ReminderModal.show(message.issueKey, message.noteText, message.summary, message.reminderTs, message.tags, message.tagDefs);
     }
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !isContextValid()) return;
+
+    const changedKeys = Object.keys(changes);
+    if (!changedKeys.some(isRelevantReminderStorageKey)) return;
+
+    changedKeys.forEach(key => {
+        if (key.startsWith('reminder_') || key.startsWith('ignored_')) {
+            ReminderModal.clearHandledAlertForStorageKey(key);
+        }
+    });
+
+    scheduleReminderReconcile();
 });

@@ -10,12 +10,54 @@ import {
 } from '../../../common/tagging.js';
 import { buildJiraTicketRef, getCurrentPageJiraHost, getJiraIssueKey } from '../../../common/jiraIdentity.js';
 import {
-    getIgnoredStorageKey,
+    buildJiraTrackingStorageKeys,
     getNotesStorageKey,
     getReminderStorageKey,
-    getTagDefsStorageKey,
+    getTicketCacheStorageKey,
     getTagsStorageKey,
 } from '../../../common/jiraStorageKeys.js';
+
+export const NOTE_DRAWER_CLOSED_EVENT = 'pmtoolkit:note-drawer-closed';
+
+function resolveCachedSummary(cachedTicket) {
+    if (!cachedTicket || typeof cachedTicket !== 'object') return '';
+    if (typeof cachedTicket.details?.summary === 'string') return cachedTicket.details.summary.trim();
+    if (typeof cachedTicket.summary === 'string') return cachedTicket.summary.trim();
+    return '';
+}
+
+function resolveMetaSummary(metaValue) {
+    if (!metaValue || typeof metaValue !== 'object') return '';
+    return typeof metaValue.summary === 'string' ? metaValue.summary.trim() : '';
+}
+
+function getCurrentPageIssueSummary(issueKey) {
+    if (typeof document === 'undefined') return '';
+
+    const selectors = [
+        '[data-testid="issue.views.issue-base.foundation.summary.heading"] h1',
+        '[data-testid="issue.views.issue.summary.summary-content"]',
+        '#summary-val',
+        'h1[data-test-id="issue.views.issue-base.foundation.summary.heading"]',
+    ];
+
+    for (const selector of selectors) {
+        const text = document.querySelector(selector)?.textContent?.trim();
+        if (text) return text;
+    }
+
+    const title = String(document.title || '').trim();
+    if (!title || !issueKey || !title.toUpperCase().includes(String(issueKey).toUpperCase())) return '';
+
+    let normalizedTitle = title.replace(new RegExp(`^\\[?${issueKey}\\]?\\s*[:\\-\\s]*`, 'i'), '');
+    normalizedTitle = normalizedTitle
+        .replace(/\s*-\s*[^-|]*JIRA$/i, '')
+        .replace(/\s*[\-\|]\s*JIRA$/i, '')
+        .trim();
+
+    if (normalizedTitle && normalizedTitle !== title) return normalizedTitle;
+    return '';
+}
 
 export const NoteDrawer = {
     el: null,
@@ -41,6 +83,10 @@ export const NoteDrawer = {
 
     hasTrackedItem({ noteText = '', reminderValue = '', tagLabels = [] } = {}) {
         return hasTrackedContent(noteText, reminderValue, tagLabels);
+    },
+
+    isOpen() {
+        return Boolean(this.el?.classList.contains('visible'));
     },
 
     async initIndicators() {
@@ -104,8 +150,8 @@ export const NoteDrawer = {
         this.el.innerHTML = `
             <div class="et-drawer-header">
                 <div>
-                    <h2 class="et-drawer-title">📝 Note: <span id="et-drawer-key">---</span></h2>
-                    <div id="et-drawer-summary" style="font-size: 13px; color: #6b778c; margin-top: 4px; font-weight: 500; line-height: 1.4;"></div>
+                    <h2 class="et-drawer-title" id="et-drawer-summary">---</h2>
+                    <a id="et-drawer-key" class="et-drawer-ticket-link" href="#" target="_blank" rel="noopener noreferrer">---</a>
                 </div>
                 <button class="et-drawer-close">×</button>
             </div>
@@ -224,30 +270,7 @@ export const NoteDrawer = {
     },
 
     buildStorageKeys(issueKey = this.currentKey, host = this.currentHost) {
-        const ticketRef = buildJiraTicketRef(host, issueKey);
-        const primaryRef = ticketRef || issueKey;
-        const notesKey = getNotesStorageKey(primaryRef, host);
-        const reminderKey = getReminderStorageKey(primaryRef, host);
-        const tagsKey = getTagsStorageKey(primaryRef, host);
-        const ignoredKey = getIgnoredStorageKey(primaryRef, host);
-        const tagDefsKey = getTagDefsStorageKey(host);
-
-        const legacy = host ? {
-            notesKey: getNotesStorageKey(issueKey),
-            reminderKey: getReminderStorageKey(issueKey),
-            tagsKey: getTagsStorageKey(issueKey),
-            ignoredKey: getIgnoredStorageKey(issueKey),
-            tagDefsKey: getTagDefsStorageKey(''),
-        } : null;
-
-        return {
-            notesKey,
-            reminderKey,
-            tagsKey,
-            ignoredKey,
-            tagDefsKey,
-            legacy,
-        };
+        return buildJiraTrackingStorageKeys(issueKey, host);
     },
 
     getFormSnapshot() {
@@ -293,8 +316,13 @@ export const NoteDrawer = {
         this.currentHost = this.getCurrentHost();
         this.currentKey = getJiraIssueKey(issueKey) || issueKey;
         this.currentTicketRef = buildJiraTicketRef(this.currentHost, this.currentKey);
-        this.el.querySelector('#et-drawer-key').textContent = this.currentKey;
-        this.el.querySelector('#et-drawer-summary').textContent = summary || '';
+        const ticketUrl = this.currentHost && this.currentKey
+            ? `https://${this.currentHost}/browse/${this.currentKey}`
+            : '#';
+        const keyLink = this.el.querySelector('#et-drawer-key');
+        this.el.querySelector('#et-drawer-summary').textContent = this.currentKey;
+        keyLink.textContent = this.currentKey;
+        keyLink.href = ticketUrl;
 
         const textarea = this.el.querySelector('.et-drawer-textarea');
         const reminderInput = this.el.querySelector('.et-drawer-reminder-input');
@@ -311,13 +339,18 @@ export const NoteDrawer = {
             storageKeys.reminderKey,
             storageKeys.tagsKey,
             storageKeys.tagDefsKey,
+            storageKeys.metaKey,
+            getTicketCacheStorageKey(this.currentTicketRef, this.currentHost),
+            getTicketCacheStorageKey(this.currentKey, this.currentHost),
         ];
         if (storageKeys.legacy) {
             requestedKeys.push(
                 storageKeys.legacy.notesKey,
                 storageKeys.legacy.reminderKey,
                 storageKeys.legacy.tagsKey,
+                storageKeys.legacy.metaKey,
                 storageKeys.legacy.tagDefsKey,
+                getTicketCacheStorageKey(this.currentKey),
             );
         }
 
@@ -327,11 +360,30 @@ export const NoteDrawer = {
         const noteValue = result[storageKeys.notesKey] ?? result[storageKeys.legacy?.notesKey] ?? '';
         const reminderValue = result[storageKeys.reminderKey] ?? result[storageKeys.legacy?.reminderKey] ?? '';
         const tagsValue = result[storageKeys.tagsKey] ?? result[storageKeys.legacy?.tagsKey] ?? [];
+        const existingMeta = result[storageKeys.metaKey] ?? result[storageKeys.legacy?.metaKey] ?? {};
+        const metaSummary = resolveMetaSummary(existingMeta);
+        const cachedSummary = resolveCachedSummary(result[getTicketCacheStorageKey(this.currentTicketRef, this.currentHost)])
+            || resolveCachedSummary(result[getTicketCacheStorageKey(this.currentKey, this.currentHost)])
+            || resolveCachedSummary(result[getTicketCacheStorageKey(this.currentKey)]);
+        const resolvedSummary = String(summary || '').trim()
+            || metaSummary
+            || cachedSummary
+            || getCurrentPageIssueSummary(this.currentKey)
+            || this.currentKey;
         this.currentTagDefs = normalizeTagDefs(
             result[storageKeys.tagDefsKey]
             || result[storageKeys.legacy?.tagDefsKey]
             || {}
         );
+        this.el.querySelector('#et-drawer-summary').textContent = resolvedSummary;
+        if (resolvedSummary && resolvedSummary !== this.currentKey && resolveMetaSummary(existingMeta) !== resolvedSummary) {
+            void setTrackingItems({
+                [storageKeys.metaKey]: {
+                    ...(existingMeta && typeof existingMeta === 'object' ? existingMeta : {}),
+                    summary: resolvedSummary,
+                },
+            }, { demoMode: this.demoMode });
+        }
         if (noteValue) textarea.value = noteValue;
         if (reminderValue) {
             const date = new Date(reminderValue);
@@ -362,6 +414,12 @@ export const NoteDrawer = {
         this.el.classList.remove('visible');
         this.backdrop.classList.remove('visible');
         this.isDirty = false;
+        document.dispatchEvent(new CustomEvent(NOTE_DRAWER_CLOSED_EVENT, {
+            detail: {
+                issueKey: this.currentKey || '',
+                ticketRef: this.currentTicketRef || '',
+            },
+        }));
     },
 
     emitTrackingUpdated(detail = {}) {
