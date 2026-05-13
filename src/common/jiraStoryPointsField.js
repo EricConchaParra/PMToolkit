@@ -216,3 +216,14 @@ export async function resolveStoryPointsField(host, opts = {}) {
 }
 
 export const STORY_POINTS_FIELD_ALIASES = Array.from(EXACT_STORY_POINT_ALIASES.values());
+
+export function findStoryPointsFieldCandidates(fields = []) {
+    const exactMatches = fields.filter(isExactStoryPointAlias);
+    if (exactMatches.length > 0) return exactMatches;
+
+    return fields
+        .map(field => ({ field, score: getHeuristicScore(field) }))
+        .filter(candidate => candidate.score >= 0)
+        .sort((left, right) => right.score - left.score || String(left.field?.name || '').localeCompare(String(right.field?.name || '')))
+        .map(candidate => candidate.field);
+}

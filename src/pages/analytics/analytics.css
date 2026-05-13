@@ -413,8 +413,10 @@ body.sidebar-collapsed .sidebar-footer {
 #project-search,
 #analytics-site-select,
 #perf-project-search,
+#burndown-project-search,
 #fu-project-search,
 #sprint-search,
+#burndown-sprint-search,
 #sprint-tag-filter {
     width: 100%;
     padding: 8px 32px 8px 12px;
@@ -432,8 +434,10 @@ body.sidebar-collapsed .sidebar-footer {
 #project-search:focus,
 #analytics-site-select:focus,
 #perf-project-search:focus,
+#burndown-project-search:focus,
 #fu-project-search:focus,
 #sprint-search:focus,
+#burndown-sprint-search:focus,
 #sprint-tag-filter:focus {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-glow);
@@ -2964,6 +2968,40 @@ body.sidebar-collapsed .sidebar-footer {
     color: #bf2600;
 }
 
+.sbe-fields-hint {
+    margin-top: 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-sub);
+}
+
+.sbe-status {
+    border-radius: var(--r-sm);
+    padding: 12px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    margin-bottom: 16px;
+}
+
+.sbe-status-info {
+    background: rgba(0, 82, 204, 0.08);
+    border-color: rgba(0, 82, 204, 0.16);
+    color: var(--primary);
+}
+
+.sbe-status-success {
+    background: rgba(54, 179, 126, 0.10);
+    border-color: rgba(54, 179, 126, 0.2);
+    color: var(--success);
+}
+
+.sbe-status-error {
+    background: rgba(222, 53, 11, 0.08);
+    border-color: rgba(222, 53, 11, 0.16);
+    color: var(--danger);
+}
+
 /* ==============================
    PERFORMANCE DASHBOARD
 ============================== */
@@ -4050,5 +4088,511 @@ body.sidebar-collapsed .sidebar-footer {
     .scr-add-row {
         flex-direction: column;
         align-items: stretch;
+    }
+}
+
+/* ==============================
+   BURNDOWN DASHBOARD
+============================== */
+.burndown-content {
+    padding: 0 28px 28px;
+}
+
+.burndown-hero-card,
+.burndown-panel,
+.burndown-kpi-card {
+    background: var(--bg-card);
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: var(--shadow);
+}
+
+.burndown-hero-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.9fr);
+    gap: 22px;
+    padding: 24px 26px;
+    border-radius: 22px;
+    background:
+        radial-gradient(circle at top right, rgba(0, 119, 255, 0.15), transparent 38%),
+        linear-gradient(135deg, #ffffff 0%, #f5f8ff 62%, #eef3ff 100%);
+    margin-bottom: 18px;
+}
+
+.burndown-hero-kicker,
+.burndown-panel-kicker,
+.burndown-detail-kicker {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #5e6c84;
+    margin-bottom: 8px;
+}
+
+.burndown-hero-copy h2 {
+    font-size: 28px;
+    line-height: 1.1;
+    margin-bottom: 10px;
+    letter-spacing: -0.03em;
+}
+
+.burndown-hero-copy p {
+    font-size: 14px;
+    color: var(--text-sub);
+    max-width: 680px;
+}
+
+.burndown-hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.burndown-pill,
+.burndown-mini-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.burndown-pill.is-success {
+    background: rgba(54, 179, 126, 0.14);
+    color: #156f4b;
+}
+
+.burndown-pill.is-warning {
+    background: rgba(255, 153, 31, 0.16);
+    color: #8f5400;
+}
+
+.burndown-pill.is-danger {
+    background: rgba(222, 53, 11, 0.12);
+    color: #a32a08;
+}
+
+.burndown-pill.is-info,
+.burndown-mini-stat {
+    background: #f4f5f7;
+    color: #44546f;
+}
+
+.burndown-hero-progress {
+    border-radius: 18px;
+    background: rgba(9, 30, 66, 0.03);
+    border: 1px solid rgba(9, 30, 66, 0.06);
+    padding: 18px 18px 16px;
+    align-self: center;
+}
+
+.burndown-progress-top,
+.burndown-progress-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.burndown-progress-top span,
+.burndown-progress-foot span {
+    font-size: 13px;
+    color: var(--text-sub);
+}
+
+.burndown-progress-top strong {
+    font-size: 28px;
+    letter-spacing: -0.04em;
+}
+
+.burndown-progress-track {
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(9, 30, 66, 0.07);
+    overflow: hidden;
+    margin: 14px 0 10px;
+}
+
+.burndown-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0052cc 0%, #2684ff 100%);
+}
+
+.burndown-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.burndown-kpi-card {
+    border-radius: 18px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.burndown-kpi-card.burndown-kpi-success {
+    background: linear-gradient(180deg, #ffffff 0%, #f5fcf8 100%);
+}
+
+.burndown-kpi-card.burndown-kpi-danger {
+    background: linear-gradient(180deg, #ffffff 0%, #fff6f4 100%);
+}
+
+.burndown-kpi-card.burndown-kpi-warning {
+    background: linear-gradient(180deg, #ffffff 0%, #fff9f1 100%);
+}
+
+.burndown-kpi-label {
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b778c;
+}
+
+.burndown-kpi-value {
+    font-size: 24px;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+}
+
+.burndown-kpi-sub {
+    font-size: 13px;
+    color: var(--text-sub);
+}
+
+.burndown-main-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.95fr);
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.burndown-secondary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.burndown-panel {
+    border-radius: 20px;
+    padding: 20px;
+}
+
+.burndown-panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.burndown-panel-head h3,
+.burndown-detail-head h3 {
+    font-size: 22px;
+    letter-spacing: -0.03em;
+}
+
+.burndown-panel-note {
+    font-size: 12px;
+    color: var(--text-sub);
+    text-align: right;
+}
+
+.burndown-chart-wrap {
+    height: 420px;
+}
+
+.burndown-day-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.burndown-detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.burndown-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.burndown-detail-card {
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    background: #f7f9fc;
+    padding: 12px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.burndown-detail-card span {
+    font-size: 12px;
+    color: var(--text-sub);
+}
+
+.burndown-detail-card strong {
+    font-size: 19px;
+    line-height: 1.15;
+}
+
+.burndown-detail-events {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 356px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.burndown-day-event {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 11px 12px;
+    border-radius: 14px;
+    text-decoration: none;
+    color: inherit;
+    background: #f7f9fc;
+    border: 1px solid rgba(9, 30, 66, 0.07);
+}
+
+.burndown-day-event:hover,
+.burndown-issue-row:hover {
+    border-color: rgba(0, 82, 204, 0.18);
+    box-shadow: 0 8px 18px rgba(9, 30, 66, 0.08);
+}
+
+.burndown-event-type {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.burndown-event-type.is-scope,
+.burndown-event-type.is-estimate {
+    background: rgba(255, 139, 0, 0.14);
+    color: #9a5600;
+}
+
+.burndown-event-type.is-done {
+    background: rgba(54, 179, 126, 0.14);
+    color: #156f4b;
+}
+
+.burndown-event-type.is-reopened {
+    background: rgba(222, 53, 11, 0.12);
+    color: #a32a08;
+}
+
+.burndown-event-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.burndown-event-title,
+.burndown-issue-summary {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.burndown-event-meta,
+.burndown-issue-meta {
+    font-size: 12px;
+    color: var(--text-sub);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.burndown-event-time {
+    font-size: 12px;
+    color: #6b778c;
+}
+
+.burndown-status-list,
+.burndown-open-issues {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.burndown-status-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(140px, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+}
+
+.burndown-status-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.burndown-status-name {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.burndown-status-helper {
+    font-size: 12px;
+    color: var(--text-sub);
+}
+
+.burndown-status-bar {
+    height: 10px;
+    border-radius: 999px;
+    background: #edf2f7;
+    overflow: hidden;
+}
+
+.burndown-status-bar-fill {
+    height: 100%;
+    border-radius: inherit;
+}
+
+.burndown-status-bar-fill.is-active {
+    background: linear-gradient(90deg, #0052cc, #2684ff);
+}
+
+.burndown-status-bar-fill.is-todo {
+    background: linear-gradient(90deg, #7a869a, #a5adba);
+}
+
+.burndown-status-bar-fill.is-done {
+    background: linear-gradient(90deg, #36b37e, #57d9a3);
+}
+
+.burndown-status-value,
+.burndown-issue-sp {
+    font-size: 13px;
+    font-weight: 800;
+    color: #172b4d;
+}
+
+.burndown-issue-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 14px;
+    text-decoration: none;
+    color: inherit;
+    background: #f7f9fc;
+    border: 1px solid rgba(9, 30, 66, 0.07);
+}
+
+.burndown-issue-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.burndown-issue-key {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #0052cc;
+}
+
+.burndown-empty-copy {
+    font-size: 13px;
+    color: var(--text-sub);
+    padding: 8px 0;
+}
+
+@media (max-width: 1200px) {
+    .burndown-kpi-grid,
+    .burndown-secondary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .burndown-main-grid,
+    .burndown-hero-card {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 900px) {
+    .burndown-content {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+
+    .burndown-secondary-grid,
+    .burndown-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .burndown-status-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+}
+
+@media (max-width: 640px) {
+    .burndown-content {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .burndown-hero-card,
+    .burndown-panel {
+        padding: 18px;
+        border-radius: 18px;
+    }
+
+    .burndown-chart-wrap {
+        height: 320px;
+    }
+
+    .burndown-detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .burndown-day-event {
+        grid-template-columns: 1fr;
+        align-items: flex-start;
+    }
+
+    .burndown-event-time {
+        justify-self: flex-start;
+    }
+
+    .burndown-issue-row {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
