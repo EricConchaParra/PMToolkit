@@ -26,7 +26,9 @@ import {
 } from './modules/sprintDashboard/sprintDashboard.js';
 import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
 import { initPerfCombo } from './modules/performanceDashboard/performanceDashboard.js';
+import { initBurndownDashboard } from './modules/sprintBurndown/burndownChart.js';
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
+import { initSprintBacklogExporter } from './modules/sprintBacklogExporter/sprintBacklogExporter.js';
 import { initAnalyticsAgeTooltips } from './modules/tooltips.js';
 import { getDemoMode, subscribeDemoMode } from '../../common/demoMode.js';
 import {
@@ -298,8 +300,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ---- Performance Dashboard ----
     initPerfCombo(allProjects, currentHost, lastProject);
 
+    // ---- Sprint Burndown ----
+    initBurndownDashboard(allProjects, currentHost, lastProject);
+
     // ---- Sprint Closure Report ----
     initSprintClosureReport(allProjects, currentHost, lastProject);
+
+    // ---- Sprint Backlog Exporter ----
+    initSprintBacklogExporter(allProjects, currentHost, lastProject);
+
     subscribeDemoMode(() => {
         window.location.reload();
     });

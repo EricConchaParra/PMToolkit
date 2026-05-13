@@ -26,7 +26,7 @@ import {
 } from '../../../common/demoData.js';
 import { getDemoMode } from '../../../common/demoMode.js';
 import { resolveActiveJiraHost } from '../../../common/jiraSiteContext.js';
-import { resolveStoryPointsField } from '../../../common/jiraStoryPointsField.js';
+import { findStoryPointsFieldCandidates, resolveStoryPointsField } from '../../../common/jiraStoryPointsField.js';
 
 // ============================================================
 // JIRA HOST
@@ -446,6 +446,17 @@ export async function fetchSpFieldResolution(host, opts = {}) {
     });
 }
 
+export async function fetchStoryPointsFieldCandidates(host) {
+    if (await getDemoMode()) {
+        return [{ id: DEMO_SP_FIELD_ID, name: 'Story Points' }];
+    }
+    const fields = await jiraFetch(host, '/rest/api/3/field');
+    return findStoryPointsFieldCandidates(fields).map(field => ({
+        id: String(field?.id || '').trim(),
+        name: String(field?.name || '').trim(),
+    })).filter(field => field.id);
+}
+
 export async function fetchSprintFieldId(host) {
     if (await getDemoMode()) {
         return DEMO_SPRINT_FIELD_ID;
@@ -483,4 +494,103 @@ export async function fetchProjectStatuses(host, projectKey) {
         }
         return result;
     });
+}
+
+export async function fetchSprintBacklogIssues(host, sprintId, storyPointFieldIds = [], extraFields = []) {
+    if (await getDemoMode()) {
+        return getDemoSprintIssues(sprintId);
+    }
+
+    const fields = [
+        'summary',
+        'status',
+        'assignee',
+        'created',
+        'issuetype',
+        'parent',
+        'customfield_10011',
+        'customfield_10014',
+        ...storyPointFieldIds,
+        ...extraFields,
+    ].filter(Boolean);
+
+    let all = [];
+    let nextPageToken;
+
+    while (true) {
+        const body = {
+            jql: `sprint = ${Number(sprintId)}`,
+            fields,
+            maxResults: 100,
+        };
+        if (nextPageToken) body.nextPageToken = nextPageToken;
+
+        const data = await jiraFetch(host, '/rest/api/3/search/jql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+            body: JSON.stringify(body),
+        });
+
+        all = all.concat(data.issues || []);
+        if (!data.nextPageToken || (data.issues || []).length === 0) break;
+        nextPageToken = data.nextPageToken;
+    }
+
+    return all;
+}
+
+export async function fetchIssueCurrentStatusAge(host, issueKey, {
+    currentStatusName = '',
+    currentStatusCategory = '',
+    createdDate = '',
+    sprintStartDate = '',
+} = {}) {
+    if (await getDemoMode()) {
+        const fallbackDate = createdDate || new Date().toISOString();
+        return {
+            changedDate: fallbackDate,
+            daysInStatus: 0,
+            statusName: currentStatusName,
+        };
+    }
+
+    const changelog = await fetchIssueChangelog(host, issueKey);
+    let changedDate = '';
+
+    for (let index = changelog.length - 1; index >= 0; index -= 1) {
+        const history = changelog[index];
+        if ((history.items || []).some(item => item.field === 'status')) {
+            changedDate = history.created || '';
+            break;
+        }
+    }
+
+    changedDate = changedDate || createdDate || '';
+
+    const normalizedStatus = String(currentStatusName || '').trim().toLowerCase();
+    const normalizedCategory = String(currentStatusCategory || '').trim().toLowerCase();
+    const isTodoLike = normalizedCategory === 'new'
+        || normalizedCategory === 'todo'
+        || normalizedStatus === 'to do'
+        || normalizedStatus === 'todo'
+        || normalizedStatus.includes('backlog');
+
+    if (isTodoLike && sprintStartDate) {
+        const sprintStartMs = new Date(sprintStartDate).getTime();
+        const changedMs = new Date(changedDate).getTime();
+        if (Number.isFinite(sprintStartMs) && Number.isFinite(changedMs) && sprintStartMs > changedMs) {
+            changedDate = sprintStartDate;
+        }
+    }
+
+    const changedMs = new Date(changedDate).getTime();
+    const daysInStatus = Number.isFinite(changedMs)
+        ? Math.max(0, Math.round(((Date.now() - changedMs) / (1000 * 60 * 60 * 24)) * 10) / 10)
+        : null;
+
+    return {
+        changedDate,
+        daysInStatus,
+        statusName: currentStatusName,
+    };
 }

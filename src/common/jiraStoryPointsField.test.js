@@ -28,6 +28,7 @@ vi.mock('./storage.js', () => ({
 
 import {
     clearStoryPointsFieldCache,
+    findStoryPointsFieldCandidates,
     resolveStoryPointsField,
     saveJiraFieldOverride,
 } from './jiraStoryPointsField.js';
@@ -127,5 +128,26 @@ describe('resolveStoryPointsField', () => {
 
         expect(first.fieldId).toBe('customfield_10018');
         expect(second.fieldId).toBe('customfield_10019');
+    });
+});
+
+describe('findStoryPointsFieldCandidates', () => {
+    it('returns all exact alias matches when multiple story point fields exist', () => {
+        const candidates = findStoryPointsFieldCandidates([
+            { id: 'customfield_10014', name: 'Story Point Estimate', schema: { type: 'number', custom: 'float' } },
+            { id: 'customfield_10015', name: 'Story Points Estimated', schema: { type: 'number', custom: 'float' } },
+            { id: 'customfield_10016', name: 'Some other field', schema: { type: 'string' } },
+        ]);
+
+        expect(candidates.map(field => field.id)).toEqual(['customfield_10014', 'customfield_10015']);
+    });
+
+    it('falls back to heuristic candidates when no exact alias exists', () => {
+        const candidates = findStoryPointsFieldCandidates([
+            { id: 'customfield_10017', name: 'Story Point Notes', schema: { type: 'string', custom: 'textarea' } },
+            { id: 'customfield_10018', name: 'Story Points Planned', schema: { type: 'number', custom: 'float' } },
+        ]);
+
+        expect(candidates.map(field => field.id)).toEqual(['customfield_10018', 'customfield_10017']);
     });
 });
