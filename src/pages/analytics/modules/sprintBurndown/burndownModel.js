@@ -38,6 +38,24 @@ function dayKeyFromMs(ms) {
     return `${year}-${month}-${day}`;
 }
 
+function isWeekend(dateLike) {
+    const day = new Date(dateLike).getDay();
+    return day === 0 || day === 6;
+}
+
+function countBusinessDays(startMs, endMs) {
+    let count = 0;
+    const cursor = startOfDay(startMs);
+
+    while (cursor.getTime() <= endMs) {
+        if (!isWeekend(cursor)) count += 1;
+        cursor.setDate(cursor.getDate() + 1);
+        cursor.setHours(0, 0, 0, 0);
+    }
+
+    return count;
+}
+
 function resolveStatusCategory(change = {}, lookup, fallback = '') {
     const statusId = String(change.id || '').trim();
     const statusName = String(change.name || '').trim().toLowerCase();
@@ -419,10 +437,9 @@ export function buildBurndownModel({
     let previousRemaining = runningRemaining;
     let previousDone = runningDone;
 
-    const totalSprintDays = Math.max(
-        1,
-        Math.floor((startOfDay(sprintEndMs).getTime() - startOfDay(sprintStartMs).getTime()) / (1000 * 60 * 60 * 24)) + 1,
-    );
+    const totalBusinessDays = Math.max(1, countBusinessDays(sprintStartMs, sprintEndMs));
+    let businessDaysElapsed = 0;
+    let previousIdealRemaining = initialCommitmentSp;
 
     let cursor = startOfDay(sprintStartMs);
     while (cursor.getTime() <= sprintEndMs) {
@@ -444,11 +461,13 @@ export function buildBurndownModel({
             ? []
             : fullDayEvents.filter(event => event.atMs <= snapshotMs);
         const dayEvents = summarizeVisibleDayEvents(visibleEvents);
-        const elapsedDays = Math.max(
-            0,
-            Math.round((startOfDay(cursor).getTime() - startOfDay(sprintStartMs).getTime()) / (1000 * 60 * 60 * 24)),
-        );
-        const idealRemaining = Math.max(0, initialCommitmentSp * (1 - (elapsedDays + 1) / totalSprintDays));
+        const weekend = isWeekend(cursor);
+        if (!weekend) {
+            businessDaysElapsed += 1;
+        }
+        const idealRemaining = weekend
+            ? previousIdealRemaining
+            : Math.max(0, initialCommitmentSp * (1 - (businessDaysElapsed / totalBusinessDays)));
         const actualVisible = snapshotMs != null;
         const remainingSp = actualVisible ? Math.max(0, Number(runningRemaining.toFixed(2))) : null;
         const doneSp = actualVisible ? Math.max(0, Number(runningDone.toFixed(2))) : null;
@@ -469,6 +488,8 @@ export function buildBurndownModel({
                 month: 'short',
                 day: 'numeric',
             }),
+            isWeekend: weekend,
+            isBusinessDay: !weekend,
             actualVisible,
             remainingSp,
             idealRemainingSp: Number(idealRemaining.toFixed(2)),
@@ -484,6 +505,7 @@ export function buildBurndownModel({
 
         previousRemaining = remainingSp ?? previousRemaining;
         previousDone = doneSp ?? previousDone;
+        previousIdealRemaining = Number(idealRemaining.toFixed(2));
         cursor.setDate(cursor.getDate() + 1);
         cursor.setHours(0, 0, 0, 0);
     }

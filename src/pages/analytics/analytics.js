@@ -29,6 +29,8 @@ import { initPerfCombo } from './modules/performanceDashboard/performanceDashboa
 import { initBurndownDashboard } from './modules/sprintBurndown/burndownChart.js';
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
 import { initSprintBacklogExporter } from './modules/sprintBacklogExporter/sprintBacklogExporter.js';
+import { initBacklogAnalyzer } from './modules/backlogAnalyzer/backlogAnalyzer.js';
+import { initJiraSnapshots } from './modules/jiraSnapshots/jiraSnapshots.js';
 import { initAnalyticsAgeTooltips } from './modules/tooltips.js';
 import { getDemoMode, subscribeDemoMode } from '../../common/demoMode.js';
 import {
@@ -308,6 +310,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Sprint Backlog Exporter ----
     initSprintBacklogExporter(allProjects, currentHost, lastProject);
+
+    // ---- Backlog Analyzer ----
+    initBacklogAnalyzer(allProjects, currentHost, lastProject);
+
+    // ---- Jira Snapshots ----
+    initJiraSnapshots(allProjects, currentHost, lastProject);
 
     subscribeDemoMode(() => {
         window.location.reload();

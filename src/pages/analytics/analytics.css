@@ -383,6 +383,55 @@ body.sidebar-collapsed .sidebar-footer {
     flex-wrap: wrap;
 }
 
+.sprint-dashboard-header {
+    align-items: flex-end;
+    flex-wrap: nowrap;
+    padding: 20px 36px 18px;
+}
+
+.sprint-dashboard-header .view-header-left {
+    flex: 0 0 auto;
+    min-width: 280px;
+}
+
+.sprint-dashboard-header .view-header-right {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 10px;
+}
+
+.sprint-dashboard-header .project-select-wrap {
+    flex: 1 1 190px;
+    min-width: 170px;
+    max-width: 280px;
+}
+
+.sprint-dashboard-header .combo-wrapper {
+    width: 100%;
+}
+
+.sprint-dashboard-header .icon-action-btn {
+    flex: 0 0 auto;
+}
+
+@media (max-width: 1180px) {
+    .sprint-dashboard-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .sprint-dashboard-header .view-header-left {
+        min-width: 0;
+    }
+
+    .sprint-dashboard-header .view-header-right {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+}
+
 .project-select-wrap {
     display: flex;
     flex-direction: column;

@@ -142,4 +142,72 @@ describe('buildBurndownModel', () => {
         expect(model.summary.doneSp).toBe(0);
         expect(model.dayPoints.find(point => point.dayKey === '2026-05-04')?.reopenedTodayCount).toBe(1);
     });
+
+    it('keeps the ideal line flat during weekends and resumes on monday', () => {
+        const weekendSprint = {
+            id: 12,
+            name: 'Sprint Weekend',
+            state: 'active',
+            startDate: '2026-06-05T09:00:00.000Z',
+            endDate: '2026-06-08T21:00:00.000Z',
+        };
+
+        const issues = [makeIssue({
+            key: 'OPS-4',
+            statusName: 'In Progress',
+            statusCategory: 'indeterminate',
+            storyPoints: 8,
+        })];
+
+        const model = buildBurndownModel({
+            sprint: weekendSprint,
+            issues,
+            changelogsByIssue: {},
+            statusCatalog,
+            spFieldId: SP_FIELD_ID,
+            now: '2026-06-08T18:00:00.000Z',
+        });
+
+        expect(model.dayPoints.map(point => ({
+            dayKey: point.dayKey,
+            idealRemainingSp: point.idealRemainingSp,
+            isWeekend: point.isWeekend,
+        }))).toEqual([
+            { dayKey: '2026-06-05', idealRemainingSp: 4, isWeekend: false },
+            { dayKey: '2026-06-06', idealRemainingSp: 4, isWeekend: true },
+            { dayKey: '2026-06-07', idealRemainingSp: 4, isWeekend: true },
+            { dayKey: '2026-06-08', idealRemainingSp: 0, isWeekend: false },
+        ]);
+    });
+
+    it('counts only business days when the sprint starts on a weekend', () => {
+        const weekendStartSprint = {
+            id: 13,
+            name: 'Weekend Start Sprint',
+            state: 'active',
+            startDate: '2026-06-06T09:00:00.000Z',
+            endDate: '2026-06-09T21:00:00.000Z',
+        };
+
+        const issues = [makeIssue({
+            key: 'OPS-5',
+            statusName: 'In Progress',
+            statusCategory: 'indeterminate',
+            storyPoints: 6,
+            created: '2026-06-06T10:00:00.000Z',
+        })];
+
+        const model = buildBurndownModel({
+            sprint: weekendStartSprint,
+            issues,
+            changelogsByIssue: {},
+            statusCatalog,
+            spFieldId: SP_FIELD_ID,
+            now: '2026-06-09T18:00:00.000Z',
+        });
+
+        expect(model.dayPoints.map(point => point.idealRemainingSp)).toEqual([6, 6, 3, 0]);
+        expect(model.dayPoints.map(point => point.isBusinessDay)).toEqual([false, false, true, true]);
+        expect(model.dayPoints.at(-1)?.idealRemainingSp).toBe(0);
+    });
 });

@@ -65,11 +65,19 @@
                 <span class="nav-icon">🧾</span>
                 <span class="nav-label">Sprint Backlog Exporter</span>
             </button>
+            <button class="nav-item" data-view="backlog-analyzer" title="Backlog Analyzer">
+                <span class="nav-icon">🔎</span>
+                <span class="nav-label">Backlog Analyzer</span>
+            </button>
+            <button class="nav-item" data-view="jira-snapshots" title="Jira Snapshots">
+                <span class="nav-icon">🗓️</span>
+                <span class="nav-label">Jira Snapshots</span>
+            </button>
         </nav>
 
         <div class="sidebar-footer">
             <a class="sidebar-feedback-link" href="https://tally.so/r/yPxMax" target="_blank" rel="noreferrer">Share feedback</a>
-            <span>v0.12.0 · PMsToolKit</span>
+            <span>v0.13.0 · PMsToolKit</span>
         </div>
     </aside>
 
@@ -79,7 +87,7 @@
 
         <!-- ========== SPRINT DASHBOARD VIEW ========== -->
         <div id="view-sprint-dashboard" class="view active">
-            <div class="view-header">
+            <div class="view-header sprint-dashboard-header">
                 <div class="view-header-left">
                     <h1>🚀 Sprint Dashboard</h1>
                     <p>Real-time analysis of your active sprint per developer</p>
@@ -115,7 +123,6 @@
                     </div>
                     <button id="settings-toggle-btn" class="icon-action-btn" title="Dashboard Settings">⚙️
                         Settings</button>
-                    <span id="dash-gh-status" class="fu-data-pill is-muted">GitHub PR signals OFF</span>
                     <button id="refresh-btn" class="icon-action-btn" title="Refresh">🔄 Refresh</button>
                 </div>
             </div>
@@ -1013,6 +1020,198 @@
                     <div class="step-box">
                         <span class="step-num">3</span>
                         <p><strong>Download CSV</strong>Get a flat export ready for Excel or Google Sheets.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== BACKLOG ANALYZER VIEW ========== -->
+        <div id="view-backlog-analyzer" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>🔎 Backlog Analyzer</h1>
+                    <p>Export Jira backlog snapshot and changelog as two separate CSV files</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📌</span>
+                    <div>
+                        <h2>Snapshot CSV</h2>
+                        <p class="card-subtitle">One current row per issue</p>
+                    </div>
+                </div>
+                <div class="fields-list">
+                    <span class="field-badge">issue_key</span>
+                    <span class="field-badge">summary</span>
+                    <span class="field-badge">issue_type</span>
+                    <span class="field-badge">status</span>
+                    <span class="field-badge">resolution</span>
+                    <span class="field-badge">created</span>
+                    <span class="field-badge">updated</span>
+                    <span class="field-badge">resolved</span>
+                    <span class="field-badge">epic_key</span>
+                    <span class="field-badge">epic_name</span>
+                    <span class="field-badge">parent_key</span>
+                    <span class="field-badge">story_points</span>
+                    <span class="field-badge">story_point_estimate</span>
+                    <span class="field-badge">sprint_current</span>
+                    <span class="field-badge">acceptance_criteria</span>
+                    <span class="field-badge">description</span>
+                </div>
+                <p class="sbe-fields-hint" id="ba-fields-hint"></p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🕘</span>
+                    <div>
+                        <h2>History CSV</h2>
+                        <p class="card-subtitle">One row per tracked field change</p>
+                    </div>
+                </div>
+                <div class="fields-list">
+                    <span class="field-badge">status</span>
+                    <span class="field-badge">resolution</span>
+                    <span class="field-badge">story_points</span>
+                    <span class="field-badge">story_point_estimate</span>
+                    <span class="field-badge">sprint</span>
+                    <span class="field-badge">epic</span>
+                    <span class="field-badge">parent</span>
+                    <span class="field-badge">issue_type</span>
+                    <span class="field-badge">acceptance_criteria</span>
+                    <span class="field-badge">description</span>
+                    <span class="field-badge">summary</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⬇️</span>
+                    <div>
+                        <h2>Export backlog analysis</h2>
+                        <p class="card-subtitle">Downloads jira_issues_snapshot_YYYY-MM-DD.csv and jira_issue_history_YYYY-MM-DD.csv</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ba-jql-input">🔎 JQL Query</label>
+                    <textarea id="ba-jql-input" class="jql-textarea"
+                        placeholder='e.g. project = "MY-PROJECT" AND issuetype not in (Epic, subtask) ORDER BY updated DESC'
+                        spellcheck="false"></textarea>
+                    <div class="form-hint">
+                        <div class="jql-examples">
+                            <span class="jql-chip ba-jql-chip" data-jql='project = "MY-PROJECT" ORDER BY updated DESC'>Project backlog</span>
+                            <span class="jql-chip ba-jql-chip" data-jql='project = "MY-PROJECT" AND sprint in openSprints() ORDER BY updated DESC'>Active sprint</span>
+                            <span class="jql-chip ba-jql-chip" data-jql='project = "MY-PROJECT" AND updated >= "2026-01-05" ORDER BY updated ASC'>Updated since baseline</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn-export" id="ba-export-btn">
+                    <span>⬇️</span> Export Snapshot and History
+                </button>
+
+                <div id="ba-progress" class="progress-section hidden">
+                    <div class="progress-label">
+                        <span id="ba-progress-text">Fetching issues...</span>
+                        <span id="ba-progress-pct">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="ba-progress-bar"></div>
+                    </div>
+                </div>
+
+                <div class="status-msg success hidden" id="ba-success">
+                    <span>✅</span><span id="ba-success-text">Export complete!</span>
+                </div>
+                <div class="status-msg error hidden" id="ba-error">
+                    <span>❌</span><span id="ba-error-text">An error occurred.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== JIRA SNAPSHOTS VIEW ========== -->
+        <div id="view-jira-snapshots" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>🗓️ Jira Snapshots</h1>
+                    <p>Choose a project and date to export a reconstructed Jira snapshot CSV</p>
+                </div>
+                <div class="view-header-right">
+                    <div class="project-select-wrap">
+                        <label for="jsnap-project-select">📁 Project</label>
+                        <select id="jsnap-project-select" class="scr-select"></select>
+                    </div>
+                    <div class="project-select-wrap">
+                        <label for="jsnap-date-input">📅 Snapshot date</label>
+                        <input id="jsnap-date-input" class="scr-select" type="date">
+                    </div>
+                    <button id="jsnap-export-btn" class="icon-action-btn" title="Export Jira snapshot CSV" disabled>⬇️ Export CSV</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📌</span>
+                    <div>
+                        <h2>Snapshot export</h2>
+                        <p class="card-subtitle">One row per issue that existed in the selected project by the selected date</p>
+                    </div>
+                </div>
+                <div class="fields-list">
+                    <span class="field-badge">snapshot_date</span>
+                    <span class="field-badge">issue_key</span>
+                    <span class="field-badge">summary</span>
+                    <span class="field-badge">issue_type</span>
+                    <span class="field-badge">status</span>
+                    <span class="field-badge">resolution</span>
+                    <span class="field-badge">created</span>
+                    <span class="field-badge">updated</span>
+                    <span class="field-badge">resolved</span>
+                    <span class="field-badge">epic_key</span>
+                    <span class="field-badge">epic_name</span>
+                    <span class="field-badge">parent_key</span>
+                    <span class="field-badge">story_points</span>
+                    <span class="field-badge">story_point_estimate</span>
+                    <span class="field-badge">sprint_current</span>
+                    <span class="field-badge">acceptance_criteria</span>
+                    <span class="field-badge">description</span>
+                </div>
+                <p class="sbe-fields-hint" id="jsnap-fields-hint"></p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⬇️</span>
+                    <div>
+                        <h2>Export selected snapshot</h2>
+                        <p class="card-subtitle">The file downloads as jira_snapshot_PROJECT_as_of_YYYY-MM-DD.csv</p>
+                    </div>
+                </div>
+                <div id="jsnap-status" class="sbe-status hidden"></div>
+                <div id="jsnap-progress" class="progress-section hidden">
+                    <div class="progress-label">
+                        <span id="jsnap-progress-text">Fetching issues...</span>
+                        <span id="jsnap-progress-pct">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="jsnap-progress-bar"></div>
+                    </div>
+                </div>
+                <div class="how-it-works">
+                    <div class="step-box">
+                        <span class="step-num">1</span>
+                        <p><strong>Select project</strong>Only issues in this Jira project are included.</p>
+                    </div>
+                    <div class="step-box">
+                        <span class="step-num">2</span>
+                        <p><strong>Pick date</strong>The export reconstructs values at the end of that local day.</p>
+                    </div>
+                    <div class="step-box">
+                        <span class="step-num">3</span>
+                        <p><strong>Download CSV</strong>Current values are rolled back with Jira changelog when possible.</p>
                     </div>
                 </div>
             </div>

@@ -31,6 +31,33 @@ const burndownState = {
     latestModel: null,
 };
 
+const weekendBandsPlugin = {
+    id: 'burndownWeekendBands',
+    beforeDatasetsDraw(chart, _args, pluginOptions) {
+        const { ctx, chartArea, scales } = chart;
+        const xScale = scales.x;
+        if (!ctx || !chartArea || !xScale) return;
+
+        const weekendIndexes = pluginOptions?.weekendIndexes || [];
+        if (!weekendIndexes.length) return;
+
+        ctx.save();
+        ctx.fillStyle = pluginOptions?.color || 'rgba(9, 30, 66, 0.05)';
+
+        weekendIndexes.forEach(index => {
+            const center = xScale.getPixelForValue(index);
+            const previousCenter = index > 0 ? xScale.getPixelForValue(index - 1) : null;
+            const nextCenter = index < xScale.ticks.length - 1 ? xScale.getPixelForValue(index + 1) : null;
+            const left = previousCenter == null ? chartArea.left : (previousCenter + center) / 2;
+            const right = nextCenter == null ? chartArea.right : (center + nextCenter) / 2;
+
+            ctx.fillRect(left, chartArea.top, Math.max(0, right - left), chartArea.bottom - chartArea.top);
+        });
+
+        ctx.restore();
+    },
+};
+
 function getEls() {
     return {
         projectSearch: document.getElementById('burndown-project-search'),
@@ -419,6 +446,9 @@ function renderChart(model) {
     const actualData = model.dayPoints.map(point => point.actualVisible ? point.remainingSp : null);
     const idealData = model.dayPoints.map(point => point.idealRemainingSp);
     const scopeData = model.dayPoints.map(point => point.actualVisible ? point.scopeSp : null);
+    const weekendIndexes = model.dayPoints
+        .map((point, index) => point.isWeekend ? index : -1)
+        .filter(index => index >= 0);
     const latestVisibleIndex = Math.max(0, model.dayPoints.map((point, index) => point.actualVisible ? index : -1).filter(index => index >= 0).slice(-1)[0] ?? 0);
     burndownState.selectedDayIndex = latestVisibleIndex;
 
@@ -460,6 +490,7 @@ function renderChart(model) {
                 },
             ],
         },
+        plugins: [weekendBandsPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -489,12 +520,18 @@ function renderChart(model) {
                                 `Done today: ${formatSp(point.doneTodaySp)} SP`,
                                 `Events: ${point.events.length}`,
                             ];
+                            if (point.isWeekend) {
+                                lines.push('Weekend');
+                            }
                             if (point.scopeDeltaTodaySp !== 0) {
                                 lines.push(`Scope delta: ${point.scopeDeltaTodaySp > 0 ? '+' : ''}${formatSp(point.scopeDeltaTodaySp)} SP`);
                             }
                             return lines;
                         },
                     },
+                },
+                burndownWeekendBands: {
+                    weekendIndexes,
                 },
             },
             scales: {

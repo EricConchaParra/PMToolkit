@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "PMsToolKit",
-    "version": "0.12.0",
-    "description": "Personal toolkit to enhance project management workflows on Jira Cloud. (Beta v0.12.0)",
+    "version": "0.13.0",
+    "description": "Personal toolkit to enhance project management workflows on Jira Cloud. (Beta v0.13.0)",
     "permissions": [
         "clipboardWrite",
         "storage",
