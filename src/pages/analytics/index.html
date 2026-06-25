@@ -49,6 +49,10 @@
                 <span class="nav-icon">📈</span>
                 <span class="nav-label">Team Performance</span>
             </button>
+            <button class="nav-item" data-view="qa-completion-report" title="QA Analytics">
+                <span class="nav-icon">✅</span>
+                <span class="nav-label">QA Analytics</span>
+            </button>
             <button class="nav-item" data-view="burndown-dashboard" title="Sprint Burndown">
                 <span class="nav-icon">📉</span>
                 <span class="nav-label">Sprint Burndown</span>
@@ -648,6 +652,100 @@
                     <div class="perf-contributors" id="perf-contributors"></div>
                 </div>
 
+            </div>
+        </div>
+
+        <!-- ========== QA COMPLETION REPORT VIEW ========== -->
+        <div id="view-qa-completion-report" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>✅ QA Analytics</h1>
+                    <p>Project-level QA completion ownership by tickets and Story Points</p>
+                </div>
+                <div class="view-header-right">
+                    <div class="project-select-wrap">
+                        <label for="qa-project-search">📁 Project</label>
+                        <div class="combo-wrapper" id="qa-combo-wrapper">
+                            <input type="text" id="qa-project-search" autocomplete="off" placeholder="Select a project...">
+                            <span class="combo-arrow">▾</span>
+                            <div class="combo-dropdown hidden" id="qa-project-dropdown"></div>
+                        </div>
+                    </div>
+                    <div class="project-select-wrap">
+                        <label for="qa-scope-select">Scope</label>
+                        <select id="qa-scope-select" class="qa-select">
+                            <option value="all">All project history</option>
+                            <option value="sprints">Specific sprints</option>
+                        </select>
+                    </div>
+                    <div class="project-select-wrap">
+                        <label for="qa-sprint-select">Sprints</label>
+                        <select id="qa-sprint-select" class="qa-select qa-sprint-select" multiple disabled></select>
+                    </div>
+                    <button id="qa-analyze-btn" class="icon-action-btn" title="Analyze QA completions">🔎 Analyze</button>
+                    <button id="qa-export-btn" class="icon-action-btn" title="Export QA completion CSV" disabled>⬇️ Export CSV</button>
+                </div>
+            </div>
+
+            <div id="qa-status" class="qa-status hidden"></div>
+
+            <div id="qa-placeholder" class="state-box">
+                <span class="state-icon">👆</span>
+                <p>Select a project above and run the QA analysis.</p>
+            </div>
+            <div id="qa-loading" class="state-box hidden">
+                <div class="spinner"></div>
+                <p id="qa-loading-text">Loading QA analysis...</p>
+            </div>
+            <div id="qa-error" class="state-box error hidden">
+                <span class="state-icon">❌</span>
+                <p id="qa-error-text">An error occurred.</p>
+            </div>
+
+            <div id="qa-content" class="qa-content hidden">
+                <div class="qa-kpis" id="qa-kpis"></div>
+
+                <div class="qa-section-card">
+                    <div class="qa-section-header">
+                        <div>
+                            <span class="qa-section-kicker">Contributors</span>
+                            <h3>QA completion split</h3>
+                        </div>
+                    </div>
+                    <div id="qa-contributors"></div>
+                </div>
+
+                <div class="qa-metrics-grid">
+                    <div class="qa-section-card">
+                        <div class="qa-section-header">
+                            <div>
+                                <span class="qa-section-kicker">Created By</span>
+                                <h3>Tickets created by</h3>
+                            </div>
+                        </div>
+                        <div id="qa-creators"></div>
+                    </div>
+
+                    <div class="qa-section-card">
+                        <div class="qa-section-header">
+                            <div>
+                                <span class="qa-section-kicker">Reporter</span>
+                                <h3>Tickets where reporter is</h3>
+                            </div>
+                        </div>
+                        <div id="qa-reporters"></div>
+                    </div>
+                </div>
+
+                <div class="qa-section-card">
+                    <div class="qa-section-header">
+                        <div>
+                            <span class="qa-section-kicker">Details</span>
+                            <h3>Counted tickets</h3>
+                        </div>
+                    </div>
+                    <div id="qa-details"></div>
+                </div>
             </div>
         </div>
 

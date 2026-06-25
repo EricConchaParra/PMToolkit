@@ -318,6 +318,18 @@ export async function fetchProjectSprintIssues(host, projectKey, sprintId, spFie
     );
 }
 
+export async function fetchProjectAnalysisIssues(host, projectKey, spFieldId, extraFields = []) {
+    if (await getDemoMode()) {
+        return getDemoSprintIssues(1);
+    }
+    const fields = ['summary', 'status', 'issuetype', 'creator', 'reporter', spFieldId, ...extraFields].filter(Boolean);
+    return searchIssuesByJql(
+        host,
+        `${buildProjectScopedSprintJql(projectKey, '')} ORDER BY key ASC`,
+        fields,
+    );
+}
+
 export async function fetchIssueInProgressSince(host, issueKey) {
     // Returns ISO string of when issue entered first "In Progress"-category status (most recent)
     const data = await jiraFetch(host, `/rest/api/3/issue/${issueKey}/changelog?maxResults=100`);

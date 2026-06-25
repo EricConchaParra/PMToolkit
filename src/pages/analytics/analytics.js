@@ -26,6 +26,7 @@ import {
 } from './modules/sprintDashboard/sprintDashboard.js';
 import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
 import { initPerfCombo } from './modules/performanceDashboard/performanceDashboard.js';
+import { initQaCompletionReport } from './modules/qaCompletionReport/qaCompletionReport.js';
 import { initBurndownDashboard } from './modules/sprintBurndown/burndownChart.js';
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
 import { initSprintBacklogExporter } from './modules/sprintBacklogExporter/sprintBacklogExporter.js';
@@ -301,6 +302,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Performance Dashboard ----
     initPerfCombo(allProjects, currentHost, lastProject);
+
+    // ---- QA Completion Report ----
+    initQaCompletionReport(allProjects, currentHost, lastProject);
 
     // ---- Sprint Burndown ----
     initBurndownDashboard(allProjects, currentHost, lastProject);
