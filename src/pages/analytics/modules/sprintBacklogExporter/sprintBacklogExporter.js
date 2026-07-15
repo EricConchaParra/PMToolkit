@@ -13,7 +13,7 @@ import {
     fetchSpFieldResolution,
     fetchStoryPointsFieldCandidates,
 } from '../jiraApi.js';
-import { downloadFile, escapeCSV } from '../csvExporter/csvExporter.js';
+import { downloadFile, escapeCSV } from '../csvUtils.js';
 
 const sprintBacklogState = {
     allProjects: [],

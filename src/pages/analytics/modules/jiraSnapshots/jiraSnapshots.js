@@ -10,7 +10,7 @@ import {
     fetchStoryPointsFieldCandidates,
     getJiraHost,
 } from '../jiraApi.js';
-import { downloadFile, escapeCSV } from '../csvExporter/csvExporter.js';
+import { downloadFile, escapeCSV } from '../csvUtils.js';
 import {
     SNAPSHOT_HEADERS,
     buildSnapshotRow,

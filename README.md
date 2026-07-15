@@ -45,7 +45,6 @@ The popup opens a dedicated analytics page with four working areas:
 - `Sprint Dashboard`: active, closed, or future sprint view by developer, sprint selection, tag filtering, capacity settings, inline notes/reminders/tags, and optional GitHub PR enrichment.
 - `Team Performance`: throughput, velocity, contributor summaries, and CSV export.
 - `Sprint Closure Report`: closed sprint summary with carryover and capture-oriented output.
-- `History Exporter`: JQL-driven CSV export of issue change history.
 
 ### Sprint Dashboard
 
@@ -134,7 +133,6 @@ src/
   content/zoom/         Zoom transcript copy feature
   popup/                Extension popup
   pages/analytics/      Analytics Hub
-  pages/exporter/       Standalone Jira history exporter page
 ```
 
 ## Development

@@ -6,12 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PMsToolKit — Analytics Hub</title>
   <script type="module" crossorigin src="/analytics.js"></script>
-  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill.js">
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
+  <link rel="modulepreload" crossorigin href="/assets/demoMode.js">
   <link rel="modulepreload" crossorigin href="/assets/jiraSiteContext.js">
   <link rel="modulepreload" crossorigin href="/assets/jiraStoryPointsField.js">
   <link rel="modulepreload" crossorigin href="/assets/jira-styles.js">
-  <link rel="modulepreload" crossorigin href="/assets/demoMode.js">
   <link rel="modulepreload" crossorigin href="/assets/githubPrStorage.js">
   <link rel="stylesheet" crossorigin href="/assets/jiraStoryPointsField.css">
   <link rel="stylesheet" crossorigin href="/assets/jira-styles.css">
@@ -68,10 +67,6 @@
             <button class="nav-item" data-view="sprint-closure-report" title="Sprint Closure">
                 <span class="nav-icon">📸</span>
                 <span class="nav-label">Sprint Closure</span>
-            </button>
-            <button class="nav-item" data-view="csv-exporter" title="History Exporter">
-                <span class="nav-icon">📤</span>
-                <span class="nav-label">History Exporter</span>
             </button>
             <button class="nav-item" data-view="sprint-backlog-exporter" title="Sprint Backlog Exporter">
                 <span class="nav-icon">🧾</span>
@@ -954,114 +949,6 @@
             <div id="scr-content" class="scr-content hidden"></div>
         </div>
 
-        <!-- ========== CSV EXPORTER VIEW ========== -->
-        <div id="view-csv-exporter" class="view">
-            <div class="view-header">
-                <div class="view-header-left">
-                    <h1>📤 Jira History Exporter</h1>
-                    <p>Export issue field changes to CSV · You must be logged into Jira</p>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-icon">ℹ️</span>
-                    <div>
-                        <h2>How it works</h2>
-                        <p class="card-subtitle">Simple 3-step process to export your Jira history</p>
-                    </div>
-                </div>
-                <div class="how-it-works">
-                    <div class="step-box">
-                        <span class="step-num">1</span>
-                        <p><strong>Write a JQL query</strong>Specify which issues to analyze (e.g., by project, sprint,
-                            date range).</p>
-                    </div>
-                    <div class="step-box">
-                        <span class="step-num">2</span>
-                        <p><strong>Click Export</strong>The tool fetches all matching issues and their complete change
-                            history from Jira.</p>
-                    </div>
-                    <div class="step-box">
-                        <span class="step-num">3</span>
-                        <p><strong>Download CSV</strong>Open the file in Excel or Google Sheets for analysis and
-                            reporting.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-icon">🔍</span>
-                    <div>
-                        <h2>Tracked Fields</h2>
-                        <p class="card-subtitle">Only changes to these fields will appear in the export</p>
-                    </div>
-                </div>
-                <div class="fields-list">
-                    <span class="field-badge">Story Points</span>
-                    <span class="field-badge">Description</span>
-                    <span class="field-badge">Acceptance Criteria</span>
-                    <span class="field-badge">Epic Link</span>
-                    <span class="field-badge">Sprint</span>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-icon">⬇️</span>
-                    <div>
-                        <h2>Export History</h2>
-                        <p class="card-subtitle">You must be logged into Jira in this browser for this to work</p>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="jql-input">🔎 JQL Query</label>
-                    <textarea id="jql-input" class="jql-textarea"
-                        placeholder='e.g. project = "MY-PROJECT" AND sprint in openSprints()'
-                        spellcheck="false"></textarea>
-                    <div class="form-hint">
-                        💡 <strong>Quick examples</strong> — click to use:
-                        <div class="jql-examples">
-                            <span class="jql-chip" data-jql='project = "MY-PROJECT" AND sprint in openSprints()'>Active
-                                Sprint</span>
-                            <span class="jql-chip"
-                                data-jql='project = "MY-PROJECT" AND sprint in closedSprints() ORDER BY updated DESC'>Last
-                                Closed Sprint</span>
-                            <span class="jql-chip"
-                                data-jql='project = "MY-PROJECT" AND updated >= -7d ORDER BY updated DESC'>Updated last
-                                7 days</span>
-                            <span class="jql-chip"
-                                data-jql='project = "MY-PROJECT" AND issuetype = Story AND created >= -30d'>Stories —
-                                last 30 days</span>
-                        </div>
-                    </div>
-                </div>
-
-                <button class="btn-export" id="export-btn">
-                    <span>⬇️</span> Export History to CSV
-                </button>
-
-                <div id="exp-progress" class="progress-section hidden">
-                    <div class="progress-label">
-                        <span id="exp-progress-text">Fetching issues...</span>
-                        <span id="exp-progress-pct">0%</span>
-                    </div>
-                    <div class="progress-track">
-                        <div class="progress-fill" id="exp-progress-bar"></div>
-                    </div>
-                </div>
-
-                <div class="status-msg success hidden" id="exp-success">
-                    <span>✅</span><span id="exp-success-text">Export complete!</span>
-                </div>
-                <div class="status-msg error hidden" id="exp-error">
-                    <span>❌</span><span id="exp-error-text">An error occurred.</span>
-                </div>
-            </div>
-        </div>
-
         <!-- ========== SPRINT BACKLOG EXPORTER VIEW ========== -->
         <div id="view-sprint-backlog-exporter" class="view">
             <div class="view-header">
@@ -1110,7 +997,7 @@
                     <span class="card-icon">⬇️</span>
                     <div>
                         <h2>Export selected sprint</h2>
-                        <p class="card-subtitle">The CSV downloads immediately in this browser, like History Exporter</p>
+                        <p class="card-subtitle">The CSV downloads immediately in this browser</p>
                     </div>
                 </div>
                 <div id="sbe-status" class="sbe-status hidden"></div>

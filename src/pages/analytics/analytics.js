@@ -24,7 +24,6 @@ import {
     loadDashboard, loadDashboardForSprint, resetSprintGithubState,
     getCurrentSprints, getSelectedSprintId, setSelectedSprintId,
 } from './modules/sprintDashboard/sprintDashboard.js';
-import { initCsvExporter } from './modules/csvExporter/csvExporter.js';
 import { initPerfCombo } from './modules/performanceDashboard/performanceDashboard.js';
 import { initQaCompletionReport } from './modules/qaCompletionReport/qaCompletionReport.js';
 import { initBurndownDashboard } from './modules/sprintBurndown/burndownChart.js';
@@ -296,9 +295,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadDashboard(selectedProjectKey);
         }
     });
-
-    // ---- CSV Exporter ----
-    initCsvExporter();
 
     // ---- Performance Dashboard ----
     initPerfCombo(allProjects, currentHost, lastProject);

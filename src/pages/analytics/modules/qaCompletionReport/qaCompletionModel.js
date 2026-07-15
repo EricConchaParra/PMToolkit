@@ -1,4 +1,4 @@
-import { escapeCSV } from '../csvExporter/csvExporter.js';
+import { escapeCSV } from '../csvUtils.js';
 
 const QA_READY_STATUS = 'ready for qa';
 const QA_COMPLETED_STATUS = 'qa completed';

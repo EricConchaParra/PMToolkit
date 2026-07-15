@@ -62,8 +62,6 @@
                 "content.js",
                 "zoom-content.js",
                 "background.js",
-                "src/pages/exporter/index.html",
-                "exporter.js",
                 "src/pages/analytics/index.html",
                 "analytics.js"
             ],

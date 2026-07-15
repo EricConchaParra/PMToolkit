@@ -9,7 +9,7 @@ import {
     fetchSprintFieldId,
     fetchSprintIssues,
 } from '../jiraApi.js';
-import { downloadFile } from '../csvExporter/csvExporter.js';
+import { downloadFile } from '../csvUtils.js';
 import { escapeHtml } from '../utils.js';
 import {
     buildQaCompletionCSV,

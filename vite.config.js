@@ -9,7 +9,6 @@ export default defineConfig({
                 background: resolve(__dirname, 'src/background/background.js'),
                 content: resolve(__dirname, 'src/content/jira/main.js'),
                 'zoom-content': resolve(__dirname, 'src/content/zoom/main.js'),
-                exporter: resolve(__dirname, 'src/pages/exporter/index.html'),
                 analytics: resolve(__dirname, 'src/pages/analytics/index.html'),
             },
             output: {

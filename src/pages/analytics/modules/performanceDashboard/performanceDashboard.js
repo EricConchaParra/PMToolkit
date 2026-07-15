@@ -12,7 +12,7 @@ import { escapeHtml } from '../utils.js';
 import { getInitialsOrImg } from '../sprintDashboard/devCard.js';
 import { getActiveView } from '../nav.js';
 import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from '../analyticsPerf.js';
-import { downloadFile, escapeCSV } from '../csvExporter/csvExporter.js';
+import { downloadFile, escapeCSV } from '../csvUtils.js';
 
 const perfState = {
     selectedProjectKey: '',

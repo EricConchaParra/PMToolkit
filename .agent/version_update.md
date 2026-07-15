@@ -27,10 +27,6 @@ When updating the version of the PMToolkit Extension (e.g., from v0.4.0 to v0.5.
     - Update the version in the `.sidebar-footer` section.
     - Example: `<span>v0.5.0 · PMsToolKit</span>`
 
-7.  **History Exporter (`src/pages/exporter/index.html`)**
-    - Update the version in the `<header>` description.
-    - Example: `<p>PMsToolKit v0.5.0 · Export issue field changes to CSV</p>`
-
 ## Post-Update Steps
 
 - Run `npm run build` to ensure the changes are reflected in the `dist/` directory.

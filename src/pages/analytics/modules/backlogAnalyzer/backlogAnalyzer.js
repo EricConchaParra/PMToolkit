@@ -11,7 +11,7 @@ import {
     getJiraHost,
     jiraFetch,
 } from '../jiraApi.js';
-import { downloadFile, escapeCSV } from '../csvExporter/csvExporter.js';
+import { downloadFile, escapeCSV } from '../csvUtils.js';
 
 export const SNAPSHOT_HEADERS = [
     'issue_key',
