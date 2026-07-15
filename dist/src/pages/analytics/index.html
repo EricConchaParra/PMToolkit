@@ -48,38 +48,47 @@
         </div>
 
         <nav class="sidebar-nav">
-            <button class="nav-item active" data-view="sprint-dashboard" title="Sprint Dashboard">
-                <span class="nav-icon">🚀</span>
-                <span class="nav-label">Sprint Dashboard</span>
-            </button>
-            <button class="nav-item" data-view="performance-dashboard" title="Team Performance">
-                <span class="nav-icon">📈</span>
-                <span class="nav-label">Team Performance</span>
-            </button>
-            <button class="nav-item" data-view="qa-completion-report" title="QA Analytics">
-                <span class="nav-icon">✅</span>
-                <span class="nav-label">QA Analytics</span>
-            </button>
-            <button class="nav-item" data-view="burndown-dashboard" title="Sprint Burndown">
-                <span class="nav-icon">📉</span>
-                <span class="nav-label">Sprint Burndown</span>
-            </button>
-            <button class="nav-item" data-view="sprint-closure-report" title="Sprint Closure">
-                <span class="nav-icon">📸</span>
-                <span class="nav-label">Sprint Closure</span>
-            </button>
-            <button class="nav-item" data-view="sprint-backlog-exporter" title="Sprint Backlog Exporter">
-                <span class="nav-icon">🧾</span>
-                <span class="nav-label">Sprint Backlog Exporter</span>
-            </button>
-            <button class="nav-item" data-view="backlog-analyzer" title="Backlog Analyzer">
-                <span class="nav-icon">🔎</span>
-                <span class="nav-label">Backlog Analyzer</span>
-            </button>
-            <button class="nav-item" data-view="jira-snapshots" title="Jira Snapshots">
-                <span class="nav-icon">🗓️</span>
-                <span class="nav-label">Jira Snapshots</span>
-            </button>
+            <div class="nav-group">
+                <span class="nav-group-label">Sprints</span>
+                <button class="nav-item active" data-view="sprint-dashboard" title="Dashboard">
+                    <span class="nav-icon">🚀</span>
+                    <span class="nav-label">Dashboard</span>
+                </button>
+                <button class="nav-item" data-view="burndown-dashboard" title="Burndown chart">
+                    <span class="nav-icon">📉</span>
+                    <span class="nav-label">Burndown chart</span>
+                </button>
+                <button class="nav-item" data-view="sprint-closure-report" title="Closure Report">
+                    <span class="nav-icon">📸</span>
+                    <span class="nav-label">Closure Report</span>
+                </button>
+            </div>
+            <div class="nav-group">
+                <span class="nav-group-label">Performance</span>
+                <button class="nav-item" data-view="performance-dashboard" title="Team Performance">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-label">Team Performance</span>
+                </button>
+                <button class="nav-item" data-view="qa-completion-report" title="QA Analytics">
+                    <span class="nav-icon">✅</span>
+                    <span class="nav-label">QA Analytics</span>
+                </button>
+            </div>
+            <div class="nav-group">
+                <span class="nav-group-label">Jira Reports</span>
+                <button class="nav-item" data-view="sprint-backlog-exporter" title="Sprint Backlog">
+                    <span class="nav-icon">🧾</span>
+                    <span class="nav-label">Sprint Backlog</span>
+                </button>
+                <button class="nav-item" data-view="backlog-analyzer" title="Backlog Analyzer">
+                    <span class="nav-icon">🔎</span>
+                    <span class="nav-label">Backlog Analyzer</span>
+                </button>
+                <button class="nav-item" data-view="jira-snapshots" title="Jira Snapshots">
+                    <span class="nav-icon">🗓️</span>
+                    <span class="nav-label">Jira Snapshots</span>
+                </button>
+            </div>
         </nav>
 
         <div class="sidebar-footer">
