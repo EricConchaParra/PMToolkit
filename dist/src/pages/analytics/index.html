@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PMsToolKit — Analytics Hub</title>
+    <title>PMsToolKit — Analytics Hub</title>
   <script type="module" crossorigin src="/analytics.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/storage.js">
   <link rel="modulepreload" crossorigin href="/assets/demoMode.js">
@@ -62,6 +62,10 @@
                     <span class="nav-icon">📸</span>
                     <span class="nav-label">Closure Report</span>
                 </button>
+                <button class="nav-item" data-view="sprint-gantt" title="Sprint Timeline">
+                    <span class="nav-icon">📆</span>
+                    <span class="nav-label">Sprint Timeline</span>
+                </button>
             </div>
             <div class="nav-group">
                 <span class="nav-group-label">Performance</span>
@@ -93,7 +97,7 @@
 
         <div class="sidebar-footer">
             <a class="sidebar-feedback-link" href="https://tally.so/r/yPxMax" target="_blank" rel="noreferrer">Share feedback</a>
-            <span>v0.13.0 · PMsToolKit</span>
+            <span>v1.0.0 · PMsToolKit</span>
         </div>
     </aside>
 
@@ -761,6 +765,148 @@
             </div>
         </div>
 
+        <!-- ========== SPRINT TIMELINE (GANTT) VIEW ========== -->
+        <div id="view-sprint-gantt" class="view">
+            <div class="view-header">
+                <div class="view-header-left">
+                    <h1>📆 Sprint Timeline</h1>
+                    <p>Dependency-aware timeline (critical path) to validate whether the sprint plan is feasible</p>
+                </div>
+                <div class="view-header-right">
+                    <div class="project-select-wrap">
+                        <label for="sg-project-search">📁 Project</label>
+                        <div class="combo-wrapper" id="sg-combo-wrapper">
+                            <input type="text" id="sg-project-search" autocomplete="off" placeholder="Select a project...">
+                            <span class="combo-arrow">▾</span>
+                            <div class="combo-dropdown hidden" id="sg-project-dropdown"></div>
+                        </div>
+                    </div>
+                    <div class="project-select-wrap">
+                        <label for="sg-sprint-select">Sprints (multi)</label>
+                        <select id="sg-sprint-select" class="qa-select qa-sprint-select" multiple disabled></select>
+                    </div>
+                    <button id="sg-analyze-btn" class="icon-action-btn" title="Build the dependency timeline">📆 Analyze</button>
+                </div>
+            </div>
+
+            <div id="sg-status" class="sg-status hidden"></div>
+
+            <div id="sg-placeholder" class="state-box">
+                <span class="state-icon">👆</span>
+                <p>Select a project and one or more sprints, then hit Analyze to build the dependency timeline.</p>
+            </div>
+            <div id="sg-loading" class="state-box hidden">
+                <div class="spinner"></div>
+                <p id="sg-loading-text">Building timeline...</p>
+            </div>
+            <div id="sg-error" class="state-box error hidden">
+                <span class="state-icon">❌</span>
+                <p id="sg-error-text">An error occurred.</p>
+            </div>
+
+            <div id="sg-content" class="sg-content hidden">
+                <div class="sg-fs-bar" id="sg-fs-bar">
+                    <div class="sg-fs-views">
+                        <button id="sg-fs-timeline" class="sg-btn" type="button">Timeline</button>
+                        <button id="sg-fs-workload" class="sg-btn" type="button">Workload</button>
+                        <button id="sg-fs-table" class="sg-btn" type="button">Table</button>
+                    </div>
+                    <div class="sg-fs-controls">
+                        <button id="sg-fs-zoom-out" class="sg-btn" type="button" title="Zoom out">−</button>
+                        <button id="sg-fs-zoom-in" class="sg-btn" type="button" title="Zoom in">+</button>
+                        <button id="sg-fs-deps" class="sg-btn" type="button">Dependencies: ON</button>
+                        <button id="sg-fs-critical" class="sg-btn" type="button">Highlight critical path</button>
+                        <button id="sg-fs-exit" class="sg-btn sg-btn-primary" type="button">⤢ Exit full screen (Esc)</button>
+                    </div>
+                </div>
+
+                <div class="sg-stats" id="sg-stats"></div>
+
+                <details class="sg-panel" id="sg-settings-panel">
+                    <summary>⚙ Scheduling settings <span class="sg-chev">›</span></summary>
+                    <div class="sg-panel-body">
+                        <div class="sg-checkbox-row">
+                            <label class="sg-checkbox-label"><input type="checkbox" id="sg-work-weekends"> Work on weekends (Sat-Sun)</label>
+                            <label class="sg-checkbox-label"><input type="checkbox" id="sg-one-parallel" checked> 1 parallel task per assignee</label>
+                        </div>
+                        <div class="sg-config-grid">
+                            <div class="sg-config-field">
+                                <label for="sg-start-date">Simulation start date</label>
+                                <input type="date" id="sg-start-date">
+                            </div>
+                            <div class="sg-config-field">
+                                <label for="sg-hours-per-day">Hours per workday</label>
+                                <input type="number" id="sg-hours-per-day" min="1" step="0.5">
+                            </div>
+                            <div class="sg-config-field">
+                                <label>Timeline zoom / dependencies</label>
+                                <div class="sg-btn-row">
+                                    <button id="sg-zoom-out" type="button" class="sg-btn">−</button>
+                                    <button id="sg-zoom-in" type="button" class="sg-btn">+</button>
+                                    <button id="sg-show-deps" type="button" class="sg-btn">Dependencies: ON</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="sg-config-field sg-sp-field">
+                            <label>Story Points → Hours conversion</label>
+                            <table class="sg-sp-table">
+                                <thead><tr><th>Story Points</th><th>Hours</th></tr></thead>
+                                <tbody id="sg-sp-table-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="sg-config-actions">
+                            <button id="sg-reset-config" type="button" class="sg-btn">Restore defaults</button>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="sg-panel" id="sg-warnings-panel">
+                    <summary>⚠ Plan warnings <span id="sg-warnings-count"></span> <span class="sg-chev">›</span></summary>
+                    <div class="sg-panel-body">
+                        <ul class="sg-warn-list" id="sg-warnings-list"></ul>
+                    </div>
+                </details>
+
+                <div class="sg-legend" id="sg-legend"></div>
+
+                <div class="sg-view-toggle">
+                    <button id="sg-view-timeline" class="sg-btn active" type="button">Timeline</button>
+                    <button id="sg-view-workload" class="sg-btn" type="button">Workload</button>
+                    <button id="sg-view-table" class="sg-btn" type="button">Table</button>
+                    <button id="sg-clear-selection" class="sg-btn sg-btn-right" type="button" style="display:none;">Clear selection</button>
+                    <button id="sg-critical-btn" class="sg-btn" type="button">Highlight critical path</button>
+                    <button id="sg-fullscreen-btn" class="sg-btn" type="button" title="Toggle full screen">⛶ Full screen</button>
+                </div>
+
+                <div id="sg-gantt-view">
+                    <div class="sg-scroll">
+                        <div class="sg-grid" id="sg-gantt-grid"></div>
+                    </div>
+                </div>
+
+                <div id="sg-workload-view" class="hidden">
+                    <div class="sg-footnote" id="sg-workload-footnote"></div>
+                    <div class="sg-scroll">
+                        <div class="sg-grid" id="sg-workload-grid"></div>
+                    </div>
+                </div>
+
+                <div id="sg-table-view" class="hidden">
+                    <div class="sg-table-wrap">
+                        <table class="sg-data-table">
+                            <thead><tr id="sg-table-head"></tr></thead>
+                            <tbody id="sg-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="sg-footnote">Critical path = the longest chain of dependent tasks; its end determines the delivery date. Click any bar to isolate its dependency chain.</div>
+
+                <!-- Inside #sg-content so it stays visible when this element is fullscreened -->
+                <div class="sg-tooltip" id="sg-tooltip"></div>
+            </div>
+        </div>
+
         <!-- ========== FOLLOW-UP WORK VIEW ========== -->
         <div id="view-followup-dashboard" class="view">
             <div class="view-header">
@@ -1220,7 +1366,7 @@
         </div>
 
     </main>
-
+
 </body>
 
 </html>

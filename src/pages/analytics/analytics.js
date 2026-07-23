@@ -28,6 +28,7 @@ import { initPerfCombo } from './modules/performanceDashboard/performanceDashboa
 import { initQaCompletionReport } from './modules/qaCompletionReport/qaCompletionReport.js';
 import { initBurndownDashboard } from './modules/sprintBurndown/burndownChart.js';
 import { initSprintClosureReport } from './modules/sprintClosureReport/sprintClosureReport.js';
+import { initSprintGantt } from './modules/sprintGantt/sprintGantt.js';
 import { initSprintBacklogExporter } from './modules/sprintBacklogExporter/sprintBacklogExporter.js';
 import { initBacklogAnalyzer } from './modules/backlogAnalyzer/backlogAnalyzer.js';
 import { initJiraSnapshots } from './modules/jiraSnapshots/jiraSnapshots.js';
@@ -307,6 +308,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Sprint Closure Report ----
     initSprintClosureReport(allProjects, currentHost, lastProject);
+
+    // ---- Sprint Timeline (Gantt) ----
+    initSprintGantt(allProjects, currentHost, lastProject);
 
     // ---- Sprint Backlog Exporter ----
     initSprintBacklogExporter(allProjects, currentHost, lastProject);
