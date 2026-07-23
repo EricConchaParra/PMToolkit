@@ -127,7 +127,7 @@ function getStoryPointsAtTime(issue, spFieldId, changelog = [], targetMs) {
     return Math.max(0, storyPoints);
 }
 
-function getDoneStateAtTime(issue, changelog = [], statusLookup, targetMs) {
+function getStatusAtTime(issue, changelog = [], statusLookup, targetMs) {
     let statusName = String(issue?.fields?.status?.name || '').trim();
     let statusId = String(issue?.fields?.status?.id || '').trim();
     let categoryKey = String(issue?.fields?.status?.statusCategory?.key || '').trim().toLowerCase();
@@ -147,7 +147,11 @@ function getDoneStateAtTime(issue, changelog = [], statusLookup, targetMs) {
     });
 
     categoryKey = resolveStatusCategory({ id: statusId, name: statusName }, statusLookup, categoryKey);
-    return isDoneCategory(categoryKey);
+    return { name: statusName, id: statusId, categoryKey };
+}
+
+function getDoneStateAtTime(issue, changelog = [], statusLookup, targetMs) {
+    return isDoneCategory(getStatusAtTime(issue, changelog, statusLookup, targetMs).categoryKey);
 }
 
 function sprintMembershipContains(value, sprint) {
@@ -188,6 +192,40 @@ function getScopedAtMs(issue, sprint, changelog = [], sprintStartMs) {
 
 function createIssueUrl(host, issueKey) {
     return host && issueKey ? `https://${host}/browse/${issueKey}` : '';
+}
+
+export const BURNDOWN_LANES = [
+    { key: 'done', label: 'Done', order: 0 },
+    { key: 'qa', label: 'Ready for QA', order: 1 },
+    { key: 'review', label: 'In Review', order: 2 },
+    { key: 'progress', label: 'In Progress', order: 3 },
+    { key: 'blocked', label: 'Blocked', order: 4 },
+    { key: 'todo', label: 'To Do', order: 5 },
+];
+
+const LANE_BY_KEY = BURNDOWN_LANES.reduce((map, lane) => {
+    map[lane.key] = lane;
+    return map;
+}, {});
+
+// Classify a Jira status into one of the six canonical burndown lanes.
+// Jira only distinguishes three status categories (new / indeterminate / done),
+// so the status *name* is the only signal that can split QA / Review / Blocked /
+// In Progress apart. Precedence is deliberate: explicit To Do signals are checked
+// before "progress" so names like "Selected for Development" don't fall into
+// In Progress. This is heuristic and safe to tune per real-world workflows.
+function classifyStatusLane({ name = '', categoryKey = '' } = {}) {
+    const normalized = String(name || '').trim().toLowerCase();
+    const category = String(categoryKey || '').trim().toLowerCase();
+
+    if (category === 'done') return 'done';
+    if (/block|imped|hold|stuck|awaiting|waiting/.test(normalized)) return 'blocked';
+    if (/\bqa\b|quality|ready for (qa|test)|to test|in test|testing|verif/.test(normalized)) return 'qa';
+    if (/review|approv|\bpr\b|sign.?off|acceptance/.test(normalized)) return 'review';
+    if (/to ?do|backlog|\bopen\b|selected for|ready for dev|not started|planned|refin|groom/.test(normalized)) return 'todo';
+    if (/progress|doing|develop|build|implement|\bwip\b|coding|in dev/.test(normalized)) return 'progress';
+    if (category === 'new') return 'todo';
+    return 'progress';
 }
 
 function getStatusBucket(categoryKey = '') {
@@ -379,6 +417,78 @@ function buildOpenIssues(issues = [], spFieldId, host) {
         .sort((left, right) => right.storyPoints - left.storyPoints || left.key.localeCompare(right.key));
 }
 
+// Snapshot the story points sitting in each real status at a point in time.
+// Returns Map(statusNameKey -> { statusName, laneKey, laneLabel, laneOrder, sp }).
+function accumulateStatusSpAtTime(issueRuntime, statusLookup, spFieldId, snapshotMs) {
+    const byStatus = new Map();
+
+    issueRuntime.forEach(({ issue, changelog, scopedAtMs }) => {
+        if (scopedAtMs > snapshotMs) return;
+
+        const storyPoints = getStoryPointsAtTime(issue, spFieldId, changelog, snapshotMs);
+        if (!(storyPoints > 0)) return;
+
+        const status = getStatusAtTime(issue, changelog, statusLookup, snapshotMs);
+        const laneKey = classifyStatusLane(status);
+        const lane = LANE_BY_KEY[laneKey];
+        const statusName = String(status.name || 'Unknown').trim() || 'Unknown';
+        const key = statusName.toLowerCase();
+
+        const entry = byStatus.get(key) || {
+            statusName,
+            laneKey,
+            laneLabel: lane.label,
+            laneOrder: lane.order,
+            sp: 0,
+        };
+        entry.sp += storyPoints;
+        byStatus.set(key, entry);
+    });
+
+    return byStatus;
+}
+
+function buildStatusSeries(dayPoints, dayStatusMaps) {
+    const seriesByKey = new Map();
+
+    dayStatusMaps.forEach(map => {
+        if (!map) return;
+        map.forEach((entry, key) => {
+            if (seriesByKey.has(key)) return;
+            seriesByKey.set(key, {
+                statusName: entry.statusName,
+                laneKey: entry.laneKey,
+                laneLabel: entry.laneLabel,
+                laneOrder: entry.laneOrder,
+                data: new Array(dayPoints.length).fill(null),
+                totalSp: 0,
+            });
+        });
+    });
+
+    dayPoints.forEach((point, dayIndex) => {
+        const map = dayStatusMaps[dayIndex];
+        seriesByKey.forEach((series, key) => {
+            if (!point.actualVisible) {
+                series.data[dayIndex] = null;
+                return;
+            }
+            const entry = map?.get(key);
+            series.data[dayIndex] = entry ? Number(entry.sp.toFixed(2)) : 0;
+        });
+    });
+
+    const statusSeries = Array.from(seriesByKey.values());
+    statusSeries.forEach(series => {
+        series.totalSp = Number(series.data.reduce((sum, value) => sum + (value || 0), 0).toFixed(2));
+    });
+
+    return statusSeries.sort((left, right) =>
+        left.laneOrder - right.laneOrder
+        || right.totalSp - left.totalSp
+        || left.statusName.localeCompare(right.statusName));
+}
+
 export function buildBurndownModel({
     sprint,
     issues = [],
@@ -418,6 +528,16 @@ export function buildBurndownModel({
     const dayEventMap = new Map();
     allEvents.forEach(event => pushEventIntoDay(dayEventMap, event));
 
+    const issueRuntime = (Array.isArray(issues) ? issues : []).map(issue => {
+        const changelog = changelogsByIssue?.[issue.key] || [];
+        return {
+            issue,
+            changelog,
+            scopedAtMs: getScopedAtMs(issue, sprint, changelog, sprintStartMs),
+        };
+    });
+    const dayStatusMaps = [];
+
     let runningScope = 0;
     let runningRemaining = 0;
     let runningDone = 0;
@@ -454,6 +574,10 @@ export function buildBurndownModel({
             runningDone += event.deltaDone;
             eventIndex += 1;
         }
+
+        dayStatusMaps.push(snapshotMs == null
+            ? null
+            : accumulateStatusSpAtTime(issueRuntime, statusLookup, spFieldId, snapshotMs));
 
         const key = dayKeyFromMs(dayEndMs);
         const fullDayEvents = dayEventMap.get(key)?.events || [];
@@ -546,6 +670,7 @@ export function buildBurndownModel({
             latestLabel: latestVisiblePoint?.longLabel || '',
         },
         dayPoints,
+        statusSeries: buildStatusSeries(dayPoints, dayStatusMaps),
         statusBreakdown: buildStatusBreakdown(issues, spFieldId, host),
         openIssues: buildOpenIssues(issues, spFieldId, host),
     };

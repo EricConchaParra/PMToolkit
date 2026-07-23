@@ -437,58 +437,103 @@ function destroyChart() {
     }
 }
 
+const LANE_COLORS = {
+    done: '#36b37e',
+    qa: '#00b8d9',
+    review: '#6554c0',
+    progress: '#2684ff',
+    blocked: '#de350b',
+    todo: '#7a869a',
+};
+
+function clampChannel(value) {
+    return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function mixHex(hex, target, amount) {
+    const base = String(hex || '').replace('#', '');
+    const mix = String(target || '').replace('#', '');
+    if (base.length !== 6 || mix.length !== 6) return hex;
+    const parse = (value, offset) => parseInt(value.slice(offset, offset + 2), 16);
+    const channel = offset => clampChannel(parse(base, offset) + (parse(mix, offset) - parse(base, offset)) * amount);
+    const toHex = value => value.toString(16).padStart(2, '0');
+    return `#${toHex(channel(0))}${toHex(channel(2))}${toHex(channel(4))}`;
+}
+
+// Same lane hue for every status in a lane, nudged lighter→darker across the
+// lane's members so adjacent same-color segments stay distinguishable.
+function laneColor(laneKey, indexInLane, laneCount) {
+    const base = LANE_COLORS[laneKey] || LANE_COLORS.todo;
+    if (laneCount <= 1) return base;
+    const t = indexInLane / (laneCount - 1); // 0..1
+    const amount = (t - 0.5) * 0.5; // -0.25 (lighter) .. +0.25 (darker)
+    return amount >= 0 ? mixHex(base, '#000000', amount) : mixHex(base, '#ffffff', -amount);
+}
+
+function buildStatusDatasets(model) {
+    const series = Array.isArray(model.statusSeries) ? model.statusSeries : [];
+    const laneCounts = series.reduce((counts, item) => {
+        counts[item.laneKey] = (counts[item.laneKey] || 0) + 1;
+        return counts;
+    }, {});
+    const laneSeen = {};
+
+    // `series` is display order (Done → To Do). Datasets stack from index 0 at the
+    // bottom, so reverse it → To Do at the bottom, Done on top.
+    return series.map((item, displayIndex) => {
+        const indexInLane = (laneSeen[item.laneKey] = (laneSeen[item.laneKey] ?? -1) + 1);
+        return {
+            type: 'bar',
+            label: item.statusName,
+            data: item.data,
+            backgroundColor: laneColor(item.laneKey, indexInLane, laneCounts[item.laneKey]),
+            borderColor: 'rgba(255, 255, 255, 0.92)',
+            borderWidth: { top: 2, right: 0, bottom: 0, left: 0 },
+            borderSkipped: false,
+            stack: 'status',
+            maxBarThickness: 46,
+            order: 1,
+            _laneKey: item.laneKey,
+            _legendOrder: displayIndex,
+        };
+    }).reverse();
+}
+
 function renderChart(model) {
     const { chartCanvas } = getEls();
     if (!chartCanvas) return;
 
     destroyChart();
 
-    const actualData = model.dayPoints.map(point => point.actualVisible ? point.remainingSp : null);
     const idealData = model.dayPoints.map(point => point.idealRemainingSp);
-    const scopeData = model.dayPoints.map(point => point.actualVisible ? point.scopeSp : null);
     const weekendIndexes = model.dayPoints
         .map((point, index) => point.isWeekend ? index : -1)
         .filter(index => index >= 0);
     const latestVisibleIndex = Math.max(0, model.dayPoints.map((point, index) => point.actualVisible ? index : -1).filter(index => index >= 0).slice(-1)[0] ?? 0);
     burndownState.selectedDayIndex = latestVisibleIndex;
 
-    burndownState.chart = new Chart(chartCanvas, {
+    const statusDatasets = buildStatusDatasets(model);
+    const idealDataset = {
         type: 'line',
+        label: 'Ideal Remaining',
+        data: idealData,
+        borderColor: '#7a869a',
+        borderDash: [6, 6],
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        fill: false,
+        tension: 0,
+        stack: 'ideal',
+        order: 0, // lower order → drawn on top of the bars
+        _legendOrder: statusDatasets.length + 1,
+    };
+
+    burndownState.chart = new Chart(chartCanvas, {
+        type: 'bar',
         data: {
             labels: model.dayPoints.map(point => point.label),
-            datasets: [
-                {
-                    label: 'Actual Remaining',
-                    data: actualData,
-                    borderColor: '#0052cc',
-                    backgroundColor: 'rgba(0, 82, 204, 0.12)',
-                    fill: true,
-                    tension: 0.28,
-                    borderWidth: 3,
-                    pointRadius: context => context.dataIndex === burndownState.selectedDayIndex ? 6 : 3,
-                    pointHoverRadius: 7,
-                    pointBackgroundColor: context => context.dataIndex === burndownState.selectedDayIndex ? '#091e42' : '#0052cc',
-                },
-                {
-                    label: 'Ideal Remaining',
-                    data: idealData,
-                    borderColor: '#7a869a',
-                    borderDash: [6, 6],
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0,
-                },
-                {
-                    label: 'Total Scope',
-                    data: scopeData,
-                    borderColor: '#ff8b00',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0.18,
-                },
-            ],
+            datasets: [...statusDatasets, idealDataset],
         },
         plugins: [weekendBandsPlugin],
         options: {
@@ -496,8 +541,8 @@ function renderChart(model) {
             maintainAspectRatio: false,
             animation: false,
             interaction: {
-                mode: 'index',
-                intersect: false,
+                mode: 'nearest',
+                intersect: true,
             },
             plugins: {
                 legend: {
@@ -505,6 +550,10 @@ function renderChart(model) {
                     labels: {
                         boxWidth: 12,
                         usePointStyle: true,
+                        sort(left, right, data) {
+                            const orderOf = item => data.datasets[item.datasetIndex]?._legendOrder ?? 999;
+                            return orderOf(left) - orderOf(right);
+                        },
                     },
                 },
                 tooltip: {
@@ -513,20 +562,8 @@ function renderChart(model) {
                             const point = model.dayPoints[items[0]?.dataIndex || 0];
                             return point?.longLabel || '';
                         },
-                        afterBody(items) {
-                            const point = model.dayPoints[items[0]?.dataIndex || 0];
-                            if (!point) return '';
-                            const lines = [
-                                `Done today: ${formatSp(point.doneTodaySp)} SP`,
-                                `Events: ${point.events.length}`,
-                            ];
-                            if (point.isWeekend) {
-                                lines.push('Weekend');
-                            }
-                            if (point.scopeDeltaTodaySp !== 0) {
-                                lines.push(`Scope delta: ${point.scopeDeltaTodaySp > 0 ? '+' : ''}${formatSp(point.scopeDeltaTodaySp)} SP`);
-                            }
-                            return lines;
+                        label(item) {
+                            return `${item.dataset.label}: ${formatSp(item.parsed.y)} SP`;
                         },
                     },
                 },
@@ -536,6 +573,7 @@ function renderChart(model) {
             },
             scales: {
                 x: {
+                    stacked: true,
                     grid: { display: false },
                     ticks: {
                         maxRotation: 0,
@@ -543,6 +581,7 @@ function renderChart(model) {
                     },
                 },
                 y: {
+                    stacked: true,
                     beginAtZero: true,
                     title: {
                         display: true,

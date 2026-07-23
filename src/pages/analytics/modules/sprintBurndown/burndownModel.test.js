@@ -180,6 +180,50 @@ describe('buildBurndownModel', () => {
         ]);
     });
 
+    it('breaks daily story points into ordered status lanes', () => {
+        const issues = [
+            makeIssue({ key: 'OPS-10', statusName: 'To Do', statusCategory: 'new', storyPoints: 3 }),
+            makeIssue({ key: 'OPS-11', statusName: 'In Progress', statusCategory: 'indeterminate', storyPoints: 5 }),
+            makeIssue({ key: 'OPS-12', statusName: 'Done', statusCategory: 'done', storyPoints: 8 }),
+        ];
+
+        const changelogsByIssue = {
+            // OPS-12 was In Progress at kickoff, completed on May 3.
+            'OPS-12': [
+                {
+                    created: '2026-05-03T15:00:00.000Z',
+                    items: [{ field: 'status', fromString: 'In Progress', toString: 'Done', from: 'in-progress', to: 'done' }],
+                },
+            ],
+        };
+
+        const model = buildBurndownModel({
+            sprint,
+            issues,
+            changelogsByIssue,
+            statusCatalog,
+            spFieldId: SP_FIELD_ID,
+            now: '2026-05-04T12:00:00.000Z',
+        });
+
+        // Ordered Done → To Do (top → bottom of the stack).
+        expect(model.statusSeries.map(series => series.laneKey)).toEqual(['done', 'progress', 'todo']);
+        expect(model.statusSeries.map(series => series.laneLabel)).toEqual(['Done', 'In Progress', 'To Do']);
+
+        const doneSeries = model.statusSeries.find(series => series.laneKey === 'done');
+        const day2 = model.dayPoints.findIndex(point => point.dayKey === '2026-05-02');
+        const day3 = model.dayPoints.findIndex(point => point.dayKey === '2026-05-03');
+
+        // Before completion the 8 SP sit in In Progress; after, in Done.
+        expect(doneSeries.data[day2]).toBe(0);
+        expect(doneSeries.data[day3]).toBe(8);
+
+        // Done-lane total on the latest visible day equals summary.doneSp.
+        const latestVisibleIndex = model.dayPoints.map((point, index) => point.actualVisible ? index : -1)
+            .filter(index => index >= 0).slice(-1)[0];
+        expect(doneSeries.data[latestVisibleIndex]).toBe(model.summary.doneSp);
+    });
+
     it('counts only business days when the sprint starts on a weekend', () => {
         const weekendStartSprint = {
             id: 13,

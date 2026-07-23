@@ -1,4 +1,3 @@
-```gitignore
 # Private key — NEVER publish
 *.pem
 
@@ -20,4 +19,5 @@ node_modules/
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
 
-```
+# Temp folder
+temp/
