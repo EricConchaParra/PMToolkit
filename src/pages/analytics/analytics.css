@@ -5041,6 +5041,22 @@ body.sidebar-collapsed .sidebar-footer {
 .sg-btn.active { background: var(--primary); color: #fff; border-color: transparent; }
 .sg-btn-right { margin-left: auto; }
 
+.sg-search {
+    font-family: inherit;
+    font-size: 0.78rem;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 10px;
+    width: 230px;
+}
+
+.sg-search:focus {
+    outline: none;
+    border-color: var(--accent, #4c9aff);
+}
+
 /* ---------- Gantt grid ---------- */
 .sg-scroll {
     overflow: auto;
@@ -5239,6 +5255,9 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
 .sg-done-marker.sg-dimmed { opacity: 0.25; }
 
 /* ---------- Workload ---------- */
+.sg-workload-label.sg-dimmed { opacity: 0.32; }
+.sg-idle-block.sg-dimmed { opacity: 0.15; }
+
 .sg-workload-label {
     grid-column: 1;
     position: sticky;

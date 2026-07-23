@@ -54,6 +54,7 @@ const sgState = {
     view: 'timeline',
     selection: null,
     criticalOnly: false,
+    filterText: '',
     startDateTouched: false,
 
     config: {
@@ -111,6 +112,8 @@ function getEls() {
         viewTimelineBtn: document.getElementById('sg-view-timeline'),
         viewWorkloadBtn: document.getElementById('sg-view-workload'),
         viewTableBtn: document.getElementById('sg-view-table'),
+        searchInput: document.getElementById('sg-search'),
+        fsSearchInput: document.getElementById('sg-fs-search'),
         clearSelectionBtn: document.getElementById('sg-clear-selection'),
         criticalBtn: document.getElementById('sg-critical-btn'),
         fullscreenBtn: document.getElementById('sg-fullscreen-btn'),
@@ -258,6 +261,19 @@ function hasAnalysis() {
 
 function issueUrl(key) {
     return sgState.host ? `https://${sgState.host}/browse/${encodeURIComponent(key)}` : '';
+}
+
+// Search filter: visual only — schedule, stats and warnings still use every task.
+function matchesFilter(task) {
+    const term = sgState.filterText.trim().toLowerCase();
+    if (!term) return true;
+    return String(task.displayId || '').toLowerCase().includes(term)
+        || String(task.name || '').toLowerCase().includes(term)
+        || String(task.assignee || '').toLowerCase().includes(term);
+}
+
+function filterActive() {
+    return sgState.filterText.trim().length > 0;
 }
 
 function allWarnings() {
@@ -645,7 +661,13 @@ function buildTimeBackgroundHtml(timelineStart, timelineEnd, pxPerDay) {
 function renderGantt() {
     const { ganttGrid } = getEls();
     if (!ganttGrid || !hasAnalysis()) return;
-    const rows = displayOrder();
+    const rows = displayOrder().filter(id => matchesFilter(sgState.tasksById[id]));
+    if (!rows.length) {
+        ganttGrid.style.gridTemplateColumns = '';
+        ganttGrid.style.gridTemplateRows = '';
+        ganttGrid.innerHTML = '<div class="sg-empty-state">No issues match the current filter.</div>';
+        return;
+    }
     const schedule = sgState.scheduleResult.schedule;
     const { start: timelineStart, end: timelineEnd } = computeTimelineRange();
     const pxPerDay = sgState.config.pxPerDay;
@@ -661,7 +683,7 @@ function renderGantt() {
 
     const chain = activeChain();
 
-    let html = `<div class="sg-corner">${rows.length} issues</div>`;
+    let html = `<div class="sg-corner">${filterActive() ? `${rows.length} / ${sgState.order.length}` : rows.length} issues</div>`;
     html += `<div class="sg-axis" style="height:${axisH}px;">`;
     if (showSprintAxis) html += `<div class="sg-sprint-axis" style="height:${sprintAxisH}px;">${buildSprintAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += `<div class="sg-axis-inner" style="height:${weekAxisH}px;">${buildAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
@@ -762,7 +784,8 @@ function utilBadge(pct) {
 function renderWorkload() {
     const { workloadGrid, workloadFootnote } = getEls();
     if (!workloadGrid || !hasAnalysis()) return;
-    const { assignees, unassignedCount } = computeWorkload(sgState.tasksById, sgState.order, sgState.scheduleResult);
+    const visibleOrder = sgState.order.filter(id => matchesFilter(sgState.tasksById[id]));
+    const { assignees, unassignedCount } = computeWorkload(sgState.tasksById, visibleOrder, sgState.scheduleResult);
 
     if (workloadFootnote) {
         workloadFootnote.textContent = unassignedCount
@@ -773,7 +796,9 @@ function renderWorkload() {
     if (!assignees.length) {
         workloadGrid.style.gridTemplateColumns = '';
         workloadGrid.style.gridTemplateRows = '';
-        workloadGrid.innerHTML = '<div class="sg-empty-state">No scheduled issues have an assignee yet.</div>';
+        workloadGrid.innerHTML = filterActive()
+            ? '<div class="sg-empty-state">No issues match the current filter.</div>'
+            : '<div class="sg-empty-state">No scheduled issues have an assignee yet.</div>';
         return;
     }
 
@@ -792,14 +817,21 @@ function renderWorkload() {
     workloadGrid.style.gridTemplateColumns = `var(--sg-label-w) ${timelineWidth}px`;
     workloadGrid.style.gridTemplateRows = [`${axisH}px`, ...assignees.map(a => `${a.laneCount * rowH}px`)].join(' ');
 
-    let html = `<div class="sg-corner">${assignees.length} assignees</div>`;
+    // Selection in workload highlights the clicked task + its transitive
+    // "blocked by" chain only (no descendants, unlike the timeline view).
+    const blockerChain = sgState.selection
+        ? new Set([sgState.selection, ...ancestorsOf(sgState.selection, sgState.tasksById)])
+        : null;
+
+    let html = `<div class="sg-corner">${assignees.length} assignees${filterActive() ? ' (filtered)' : ''}</div>`;
     html += `<div class="sg-axis" style="height:${axisH}px;">`;
     if (showSprintAxis) html += `<div class="sg-sprint-axis" style="height:${sprintAxisH}px;">${buildSprintAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += `<div class="sg-axis-inner" style="height:${weekAxisH}px;">${buildAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += '</div>';
 
     assignees.forEach((a, i) => {
-        html += `<div class="sg-workload-label" style="grid-row:${i + 2};">
+        const rowDimmed = blockerChain && !a.tasks.some(t => blockerChain.has(t.id));
+        html += `<div class="sg-workload-label ${rowDimmed ? 'sg-dimmed' : ''}" style="grid-row:${i + 2};">
             <div class="sg-workload-name">
                 <span class="sg-status-dot" style="background:${colorForAssignee(a.name) || 'var(--sg-muted)'}"></span>
                 ${escapeHtml(a.name)}
@@ -824,16 +856,17 @@ function renderWorkload() {
             const x1 = toX(from.end);
             const x2 = toX(to.start);
             const days = ((g.end - g.start) / hpd).toFixed(1);
-            layerHtml += `<div class="sg-idle-block" style="left:${x1}px; width:${Math.max(4, x2 - x1)}px;" title="Idle: ${days}d"></div>`;
+            layerHtml += `<div class="sg-idle-block ${blockerChain ? 'sg-dimmed' : ''}" style="left:${x1}px; width:${Math.max(4, x2 - x1)}px;" title="Idle: ${days}d"></div>`;
         });
         a.tasks.forEach(t => {
             const task = sgState.tasksById[t.id];
             const sc = schedule[t.id];
+            const dimmed = blockerChain && !blockerChain.has(t.id);
             const x1 = toX(sc.start);
             const x2 = toX(sc.end);
             const barH = rowH - 10;
             const y = t.lane * rowH + Math.round((rowH - barH) / 2);
-            layerHtml += `<div class="sg-bar ${sc.critical ? 'sg-critical' : ''}" data-task="${escapeHtml(t.id)}" style="left:${x1}px; top:${y}px; width:${Math.max(6, x2 - x1)}px; height:${barH}px; background:${taskColor(task)};">
+            layerHtml += `<div class="sg-bar ${sc.critical ? 'sg-critical' : ''} ${dimmed ? 'sg-dimmed' : ''}" data-task="${escapeHtml(t.id)}" style="left:${x1}px; top:${y}px; width:${Math.max(6, x2 - x1)}px; height:${barH}px; background:${taskColor(task)};">
                 <span class="sg-bar-label">${escapeHtml(task.displayId)}</span>
             </div>`;
         });
@@ -882,7 +915,7 @@ function renderTable() {
         const i = sgState.config.sprintOrder.indexOf(name);
         return i === -1 ? Infinity : i;
     };
-    const rows = [...sgState.order].sort((a, b) => {
+    const rows = sgState.order.filter(id => matchesFilter(sgState.tasksById[id])).sort((a, b) => {
         const ta = sgState.tasksById[a], tb = sgState.tasksById[b];
         const sa = schedule[a], sb = schedule[b];
         let va, vb;
@@ -905,6 +938,10 @@ function renderTable() {
         return 0;
     });
 
+    if (!rows.length) {
+        tableBody.innerHTML = `<tr><td colspan="${COLUMNS.length}" class="sg-empty-state">No issues match the current filter.</td></tr>`;
+        return;
+    }
     tableBody.innerHTML = rows.map(id => {
         const t = sgState.tasksById[id];
         const sc = schedule[id];
@@ -1115,6 +1152,16 @@ function wireSettings() {
             savePrefs();
         });
     }
+
+    // Search filter — the normal bar and full-screen bar inputs mirror each other.
+    const applyFilter = value => {
+        sgState.filterText = value || '';
+        if (els.searchInput && els.searchInput.value !== sgState.filterText) els.searchInput.value = sgState.filterText;
+        if (els.fsSearchInput && els.fsSearchInput.value !== sgState.filterText) els.fsSearchInput.value = sgState.filterText;
+        renderAll();
+    };
+    els.searchInput?.addEventListener('input', event => applyFilter(event.target.value));
+    els.fsSearchInput?.addEventListener('input', event => applyFilter(event.target.value));
 
     els.viewTimelineBtn?.addEventListener('click', () => switchView('timeline'));
     els.viewWorkloadBtn?.addEventListener('click', () => switchView('workload'));
