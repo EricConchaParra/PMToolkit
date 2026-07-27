@@ -5348,6 +5348,47 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
 .sg-tt-chip { display: inline-block; background: rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; margin: 2px 3px 0 0; font-size: 0.72rem; }
 .sg-tt-done { color: #79f2c0; }
 
+/* ---------- Context menu (right-click on a task bar) ---------- */
+.sg-ctx-menu {
+    position: fixed;
+    z-index: 60;
+    min-width: 170px;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-sm);
+    box-shadow: var(--shadow-md);
+    padding: 4px;
+    font-size: 0.8rem;
+}
+
+.sg-ctx-title {
+    padding: 5px 10px 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-sub);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 3px;
+}
+
+.sg-ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    font: inherit;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.sg-ctx-item:hover { background: var(--accent); }
+
+.sg-ctx-icon { font-size: 0.85rem; }
+
 .sg-empty-state { padding: 40px 20px; text-align: center; color: var(--text-sub); }
 .sg-footnote { font-size: 0.72rem; color: var(--text-sub); margin: 10px 0 8px; }
 

@@ -784,8 +784,9 @@ function utilBadge(pct) {
 function renderWorkload() {
     const { workloadGrid, workloadFootnote } = getEls();
     if (!workloadGrid || !hasAnalysis()) return;
-    const visibleOrder = sgState.order.filter(id => matchesFilter(sgState.tasksById[id]));
-    const { assignees, unassignedCount } = computeWorkload(sgState.tasksById, visibleOrder, sgState.scheduleResult);
+    // Workload never hides on search: non-matching bars/rows are dimmed
+    // instead, and per-assignee stats always cover all their tasks.
+    const { assignees, unassignedCount } = computeWorkload(sgState.tasksById, sgState.order, sgState.scheduleResult);
 
     if (workloadFootnote) {
         workloadFootnote.textContent = unassignedCount
@@ -796,9 +797,7 @@ function renderWorkload() {
     if (!assignees.length) {
         workloadGrid.style.gridTemplateColumns = '';
         workloadGrid.style.gridTemplateRows = '';
-        workloadGrid.innerHTML = filterActive()
-            ? '<div class="sg-empty-state">No issues match the current filter.</div>'
-            : '<div class="sg-empty-state">No scheduled issues have an assignee yet.</div>';
+        workloadGrid.innerHTML = '<div class="sg-empty-state">No scheduled issues have an assignee yet.</div>';
         return;
     }
 
@@ -823,14 +822,19 @@ function renderWorkload() {
         ? new Set([sgState.selection, ...ancestorsOf(sgState.selection, sgState.tasksById)])
         : null;
 
-    let html = `<div class="sg-corner">${assignees.length} assignees${filterActive() ? ' (filtered)' : ''}</div>`;
+    let html = `<div class="sg-corner">${assignees.length} assignees</div>`;
     html += `<div class="sg-axis" style="height:${axisH}px;">`;
     if (showSprintAxis) html += `<div class="sg-sprint-axis" style="height:${sprintAxisH}px;">${buildSprintAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += `<div class="sg-axis-inner" style="height:${weekAxisH}px;">${buildAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += '</div>';
 
+    // A bar stays crisp only if it matches the search AND (when a task is
+    // selected) belongs to its transitive "blocked by" chain.
+    const barDimmed = id => (filterActive() && !matchesFilter(sgState.tasksById[id]))
+        || (blockerChain && !blockerChain.has(id));
+
     assignees.forEach((a, i) => {
-        const rowDimmed = blockerChain && !a.tasks.some(t => blockerChain.has(t.id));
+        const rowDimmed = (filterActive() || blockerChain) && a.tasks.every(t => barDimmed(t.id));
         html += `<div class="sg-workload-label ${rowDimmed ? 'sg-dimmed' : ''}" style="grid-row:${i + 2};">
             <div class="sg-workload-name">
                 <span class="sg-status-dot" style="background:${colorForAssignee(a.name) || 'var(--sg-muted)'}"></span>
@@ -848,6 +852,8 @@ function renderWorkload() {
     const startDate = sgState.scheduleResult.projectStart;
     assignees.forEach((a, i) => {
         const toX = (date) => dayOffset(date, timelineStart) * pxPerDay;
+        const idleDimmed = blockerChain
+            || (filterActive() && a.tasks.every(t => barDimmed(t.id)));
         let layerHtml = '';
         a.gaps.forEach(g => {
             const from = schedule[a.tasks.find(t => Math.abs(t.efHours - g.start) < 0.01)?.id];
@@ -856,12 +862,12 @@ function renderWorkload() {
             const x1 = toX(from.end);
             const x2 = toX(to.start);
             const days = ((g.end - g.start) / hpd).toFixed(1);
-            layerHtml += `<div class="sg-idle-block ${blockerChain ? 'sg-dimmed' : ''}" style="left:${x1}px; width:${Math.max(4, x2 - x1)}px;" title="Idle: ${days}d"></div>`;
+            layerHtml += `<div class="sg-idle-block ${idleDimmed ? 'sg-dimmed' : ''}" style="left:${x1}px; width:${Math.max(4, x2 - x1)}px;" title="Idle: ${days}d"></div>`;
         });
         a.tasks.forEach(t => {
             const task = sgState.tasksById[t.id];
             const sc = schedule[t.id];
-            const dimmed = blockerChain && !blockerChain.has(t.id);
+            const dimmed = barDimmed(t.id);
             const x1 = toX(sc.start);
             const x2 = toX(sc.end);
             const barH = rowH - 10;
@@ -969,6 +975,7 @@ function renderTable() {
             sgState.selection = sgState.selection === id ? null : id;
             renderAll();
         });
+        tr.addEventListener('contextmenu', event => showContextMenu(tr.dataset.task, event));
     });
 }
 
@@ -987,14 +994,104 @@ function wireRowInteractions(container) {
             sgState.selection = sgState.selection === id ? null : id;
             renderAll();
         });
+        el.addEventListener('contextmenu', event => showContextMenu(id, event));
     });
+}
+
+/* =========================================================================
+ * Context menu (right-click on a task: Copy Link / Open Ticket)
+ * ========================================================================= */
+
+let ctxMenuEl = null;
+
+function hideContextMenu() {
+    if (ctxMenuEl) {
+        ctxMenuEl.remove();
+        ctxMenuEl = null;
+    }
+}
+
+// Same clipboard payload as the dashboard copy icon: rich HTML link for
+// Slack ("KEY Summary" → issue URL) with a plain-text fallback.
+function copyIssueLinkToClipboard(task, url, itemEl) {
+    const plainText = `${task.displayId} ${task.name}\n${url}`;
+    const htmlLink = `<a href="${url}">${escapeHtml(task.displayId)} ${escapeHtml(task.name)}</a>`;
+    const done = () => {
+        if (itemEl) itemEl.innerHTML = '<span class="sg-ctx-icon">✅</span> Copied!';
+        setTimeout(hideContextMenu, 700);
+    };
+    const fallback = () => navigator.clipboard.writeText(plainText).then(done).catch(hideContextMenu);
+    try {
+        navigator.clipboard.write([
+            new ClipboardItem({
+                'text/plain': new Blob([plainText], { type: 'text/plain' }),
+                'text/html': new Blob([htmlLink], { type: 'text/html' }),
+            }),
+        ]).then(done).catch(fallback);
+    } catch {
+        fallback();
+    }
+}
+
+function showContextMenu(id, evt) {
+    evt.preventDefault();
+    hideTooltip();
+    hideContextMenu();
+    const t = sgState.tasksById[id];
+    const url = issueUrl(id);
+    if (!t || !url) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'sg-ctx-menu';
+    menu.innerHTML = `
+        <div class="sg-ctx-title">${escapeHtml(t.displayId)}</div>
+        <button type="button" class="sg-ctx-item" data-action="copy"><span class="sg-ctx-icon">🔗</span> Copy Link</button>
+        <button type="button" class="sg-ctx-item" data-action="open"><span class="sg-ctx-icon">↗</span> Open Ticket</button>
+    `;
+    // Mounted inside the module container so it also shows in full screen.
+    (getEls().content || document.body).appendChild(menu);
+
+    const pad = 6;
+    const rect = menu.getBoundingClientRect();
+    let x = evt.clientX, y = evt.clientY;
+    if (x + rect.width > window.innerWidth - pad) x = window.innerWidth - rect.width - pad;
+    if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    menu.addEventListener('click', event => {
+        event.stopPropagation();
+        const item = event.target.closest('.sg-ctx-item');
+        if (!item) return;
+        if (item.dataset.action === 'copy') copyIssueLinkToClipboard(t, url, item);
+        else if (item.dataset.action === 'open') {
+            window.open(url, '_blank', 'noreferrer');
+            hideContextMenu();
+        }
+    });
+    menu.addEventListener('contextmenu', event => event.preventDefault());
+
+    ctxMenuEl = menu;
+}
+
+function wireContextMenuDismissal() {
+    document.addEventListener('click', hideContextMenu);
+    document.addEventListener('contextmenu', event => {
+        // Right-clicking outside any task bar closes the menu.
+        if (!event.target.closest('[data-task]') && !event.target.closest('.sg-ctx-menu')) hideContextMenu();
+    });
+    document.addEventListener('scroll', hideContextMenu, true);
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') hideContextMenu();
+    });
+    document.addEventListener('fullscreenchange', hideContextMenu);
 }
 
 function showTooltip(id, evt) {
     const { tooltip } = getEls();
     const t = sgState.tasksById[id];
     const sc = sgState.scheduleResult?.schedule[id];
-    if (!tooltip || !t || !sc) return;
+    if (!tooltip || !t || !sc || ctxMenuEl) return; // no tooltip while the context menu is open
     const depsHtml = t.needs.length
         ? t.needs.map(d => `<span class="sg-tt-chip">${escapeHtml(d)}</span>`).join('')
         : '<span class="sg-tt-row">No blocking dependencies</span>';
@@ -1210,6 +1307,7 @@ export function initSprintGantt(allProjects = [], currentHost = '', initialProje
 
     loadPrefs();
     wireSettings();
+    wireContextMenuDismissal();
 
     function renderProjectOptions(filterText = '') {
         const term = String(filterText || '').toLowerCase();
