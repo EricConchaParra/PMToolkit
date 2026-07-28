@@ -1,3 +1,4 @@
+import { DEFAULT_STAGE_WEIGHTS } from './constants.js';
 import { spToHours } from './utils.js';
 
 function slugify(value = '') {
@@ -33,12 +34,34 @@ function getColumnIcon(column = {}) {
     return '🧩';
 }
 
+function classifyColumnStage(meta = {}) {
+    const normalized = normalizeStatusName(meta.name);
+
+    if (meta.isDone || /cancel/.test(normalized)) return 'done';
+    if (meta.isBlocked) return 'blocked';
+    // "Changes Required" style columns must match before the qa/review patterns.
+    if (/change|fix|rework|reject|return/.test(normalized)) return 'changes';
+    if (/qa|test|verif|uat/.test(normalized)) return 'qa';
+    if (/review|approv/.test(normalized)) return 'review';
+    if (meta.isTodoLike) return 'todo';
+    return 'inProgress';
+}
+
+export function resolveStageWeight(column = {}, stageWeights = DEFAULT_STAGE_WEIGHTS) {
+    if (column?.isDone === true) return 0;
+    const stage = column?.stage || 'inProgress';
+    const raw = Number(stageWeights?.[stage]);
+    const weight = Number.isFinite(raw) ? raw : DEFAULT_STAGE_WEIGHTS[stage];
+    if (!Number.isFinite(weight)) return 1;
+    return Math.min(1, Math.max(0, weight));
+}
+
 function buildColumnMeta(rawColumn = {}, index = 0, isDone = false) {
     const name = String(rawColumn?.name || `Column ${index + 1}`);
     const normalized = normalizeStatusName(name);
     const isTodoLike = normalized.includes('todo') || normalized.includes('to do') || normalized.includes('backlog');
 
-    return {
+    const meta = {
         id: rawColumn?.id != null && rawColumn.id !== ''
             ? String(rawColumn.id)
             : `board-column-${index}-${slugify(name)}`,
@@ -55,6 +78,8 @@ function buildColumnMeta(rawColumn = {}, index = 0, isDone = false) {
         isBlocked: /blocked|hold|imped/.test(normalized),
         isReviewLike: /review|qa|test|approve/.test(normalized),
     };
+    meta.stage = classifyColumnStage(meta);
+    return meta;
 }
 
 export function createBoardFlow(boardConfig = {}) {
@@ -201,7 +226,7 @@ export function resolveCurrentBoardColumnSince(issue, statusChanges = [], boardF
     return currentColumnSince || issue?.fields?.updated || null;
 }
 
-export function buildBoardColumnBuckets(issues = [], boardFlow, spHours = {}) {
+export function buildBoardColumnBuckets(issues = [], boardFlow, spHours = {}, stageWeights = DEFAULT_STAGE_WEIGHTS) {
     const bucketMap = new Map();
 
     (boardFlow?.columns || []).forEach(column => {
@@ -211,6 +236,7 @@ export function buildBoardColumnBuckets(issues = [], boardFlow, spHours = {}) {
             count: 0,
             sp: 0,
             hours: 0,
+            weightedHours: 0,
         });
     });
 
@@ -219,10 +245,12 @@ export function buildBoardColumnBuckets(issues = [], boardFlow, spHours = {}) {
         if (!column || !bucketMap.has(column.id)) return;
 
         const bucket = bucketMap.get(column.id);
+        const issueHours = spToHours(issue?._sp || 0, spHours);
         bucket.issues.push(issue);
         bucket.count += 1;
         bucket.sp += Number(issue?._sp || 0);
-        bucket.hours += spToHours(issue?._sp || 0, spHours);
+        bucket.hours += issueHours;
+        bucket.weightedHours += issueHours * resolveStageWeight(column, stageWeights);
     });
 
     return Array.from(bucketMap.values()).sort((left, right) => left.column.order - right.column.order);
@@ -246,5 +274,6 @@ export function summarizeBoardBuckets(buckets = []) {
         pendingIssues: pendingBuckets.reduce((sum, bucket) => sum + bucket.count, 0),
         pendingSp: pendingBuckets.reduce((sum, bucket) => sum + bucket.sp, 0),
         pendingHours: pendingBuckets.reduce((sum, bucket) => sum + bucket.hours, 0),
+        pendingWeightedHours: pendingBuckets.reduce((sum, bucket) => sum + (bucket.weightedHours || 0), 0),
     };
 }

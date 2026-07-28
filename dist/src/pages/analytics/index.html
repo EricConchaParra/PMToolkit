@@ -184,6 +184,24 @@
                             </div>
                         </div>
                         <div class="settings-col">
+                            <h4>Remaining Effort by Stage (%)</h4>
+                            <div class="sp-scale-grid">
+                                <div class="sp-row"><label>To Do</label><input type="number" class="sp-input"
+                                        id="stage-weight-todo" min="0" max="100" step="5"></div>
+                                <div class="sp-row"><label>Blocked</label><input type="number" class="sp-input"
+                                        id="stage-weight-blocked" min="0" max="100" step="5"></div>
+                                <div class="sp-row"><label>In Progress</label><input type="number" class="sp-input"
+                                        id="stage-weight-inProgress" min="0" max="100" step="5"></div>
+                                <div class="sp-row"><label>Changes Required</label><input type="number" class="sp-input"
+                                        id="stage-weight-changes" min="0" max="100" step="5"></div>
+                                <div class="sp-row"><label>Review</label><input type="number" class="sp-input"
+                                        id="stage-weight-review" min="0" max="100" step="5"></div>
+                                <div class="sp-row"><label>QA</label><input type="number" class="sp-input"
+                                        id="stage-weight-qa" min="0" max="100" step="5"></div>
+                            </div>
+                            <p class="status-map-hint">Share of an issue's estimated hours still counted as remaining work, based on its board column.</p>
+                        </div>
+                        <div class="settings-col">
                             <h4>GitHub Repositories</h4>
                             <div class="setting-row">
                                 <label for="github-repos">Repos linked to this Jira project</label>
@@ -902,7 +920,7 @@
                     </div>
                 </div>
 
-                <div class="sg-footnote">Critical path = the longest chain of dependent tasks; its end determines the delivery date. Click any bar to isolate its dependency chain.</div>
+                <div class="sg-footnote">Critical path = the longest chain of dependent tasks; its end determines the delivery date. Click any bar to isolate its dependency chain: <span class="sg-legend-up">amber</span> = blocks it (upstream), <span class="sg-legend-down">blue</span> = blocked by it (downstream).</div>
 
                 <!-- Inside #sg-content so it stays visible when this element is fullscreened -->
                 <div class="sg-tooltip" id="sg-tooltip"></div>

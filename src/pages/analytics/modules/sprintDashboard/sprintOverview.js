@@ -11,9 +11,10 @@ function getPct(value, total) {
 }
 
 export function buildSprintOverviewModel(issues, sprint, settings, devCount, teamVelAvg, totalCommittedSP, boardFlow) {
-    const { hoursPerDay, spHours } = settings;
-    const buckets = buildBoardColumnBuckets(issues, boardFlow, spHours);
+    const { hoursPerDay, spHours, stageWeights } = settings;
+    const buckets = buildBoardColumnBuckets(issues, boardFlow, spHours, stageWeights);
     const summary = summarizeBoardBuckets(buckets);
+    const remainingHours = summary.pendingWeightedHours;
     const totalSp = summary.totalSp;
     const donePct = getPct(summary.doneSp, totalSp);
 
@@ -26,8 +27,8 @@ export function buildSprintOverviewModel(issues, sprint, settings, devCount, tea
 
     let usagePct = null;
     if (teamCapacityHours !== null) {
-        if (teamCapacityHours > 0) usagePct = Math.round((summary.pendingHours / teamCapacityHours) * 100);
-        else usagePct = summary.pendingHours > 0 ? Infinity : 0;
+        if (teamCapacityHours > 0) usagePct = Math.round((remainingHours / teamCapacityHours) * 100);
+        else usagePct = remainingHours > 0 ? Infinity : 0;
     }
 
     let predIcon;
@@ -45,26 +46,26 @@ export function buildSprintOverviewModel(issues, sprint, settings, devCount, tea
         predLabel = 'No sprint end date';
         predClass = 'unknown';
         predDetail = 'Cannot predict completion without a sprint end date.';
-    } else if (teamCapacityHours === 0 && summary.pendingHours > 0) {
+    } else if (teamCapacityHours === 0 && remainingHours > 0) {
         predIcon = '🔴';
         predLabel = 'Overloaded — Sprint at Risk';
         predClass = 'overloaded';
-        predDetail = `Sprint ends today. Team still needs ${formatHours(summary.pendingHours)}, but remaining capacity is 0h.`;
+        predDetail = `Sprint ends today. Team still needs ~${formatHours(remainingHours)} est. remaining (${formatHours(summary.pendingHours)} committed), but remaining capacity is 0h.`;
     } else if (usagePct <= 75) {
         predIcon = '🟢';
         predLabel = 'On Track';
         predClass = 'on-track';
-        predDetail = `Team is using ${usagePct}% of remaining capacity (${formatHours(summary.pendingHours)} needed / ${formatHours(teamCapacityHours)} available).`;
+        predDetail = `Team is using ${usagePct}% of remaining capacity (~${formatHours(remainingHours)} est. remaining / ${formatHours(teamCapacityHours)} available · ${formatHours(summary.pendingHours)} committed).`;
     } else if (usagePct <= 100) {
         predIcon = '🟡';
         predLabel = 'At Risk';
         predClass = 'at-risk';
-        predDetail = `Team is using ${usagePct}% of remaining capacity — tight but possible. ${formatHours(summary.pendingHours)} needed vs. ${formatHours(teamCapacityHours)} available.`;
+        predDetail = `Team is using ${usagePct}% of remaining capacity — tight but possible. ~${formatHours(remainingHours)} est. remaining vs. ${formatHours(teamCapacityHours)} available (${formatHours(summary.pendingHours)} committed).`;
     } else {
         predIcon = '🔴';
         predLabel = 'Overloaded — Sprint at Risk';
         predClass = 'overloaded';
-        predDetail = `Team needs ${formatHours(summary.pendingHours)} but only has ${formatHours(teamCapacityHours)} remaining (${usagePct}% load). Consider re-scoping.`;
+        predDetail = `Team needs ~${formatHours(remainingHours)} est. remaining (${formatHours(summary.pendingHours)} committed) but only has ${formatHours(teamCapacityHours)} remaining (${usagePct}% load). Consider re-scoping.`;
     }
 
     let velocityHint = '';

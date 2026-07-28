@@ -117,22 +117,23 @@ export function buildIssueTrackingMarkup(issueKey, tracking = {}, now = Date.now
 
 export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracking = {}, boardFlow) {
     const { assignee, issues, velocity } = devData;
-    const { hoursPerDay, spHours } = settings;
+    const { hoursPerDay, spHours, stageWeights } = settings;
 
     const now = new Date();
     const sprintEnd = sprintEndDate ? new Date(sprintEndDate) : null;
     const sprintHoursLeft = sprintEnd ? workingHoursBetween(now, sprintEnd, hoursPerDay) : null;
-    const buckets = buildBoardColumnBuckets(issues, boardFlow, spHours);
+    const buckets = buildBoardColumnBuckets(issues, boardFlow, spHours, stageWeights);
     const summary = summarizeBoardBuckets(buckets);
+    const remainingHours = summary.pendingWeightedHours;
 
-    const eta = calculateETA(summary.pendingHours, hoursPerDay);
+    const eta = calculateETA(remainingHours, hoursPerDay);
     const isLate = sprintEnd && eta > sprintEnd;
-    const isOverloaded = sprintHoursLeft !== null && summary.pendingHours > sprintHoursLeft;
+    const isOverloaded = sprintHoursLeft !== null && remainingHours > sprintHoursLeft;
 
     let capacityPct = 0;
     if (sprintHoursLeft !== null) {
-        if (sprintHoursLeft > 0) capacityPct = Math.round((summary.pendingHours / sprintHoursLeft) * 100);
-        else if (summary.pendingHours > 0) capacityPct = 150;
+        if (sprintHoursLeft > 0) capacityPct = Math.round((remainingHours / sprintHoursLeft) * 100);
+        else if (remainingHours > 0) capacityPct = 150;
     }
 
     const timeInStateByIssue = new Map();
@@ -233,14 +234,14 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
                 <div class="remaining-summary">
                     <span class="remaining-sp">${summary.pendingSp}</span>
                     <span class="remaining-sp-label">SP remaining</span>
-                    <span class="remaining-hours">${escapeHtml(formatHours(summary.pendingHours || 0))}</span>
+                    <span class="remaining-hours">${escapeHtml(formatHours(summary.pendingHours || 0))} committed · ~${escapeHtml(formatHours(remainingHours || 0))} est. remaining</span>
                 </div>
                 ${sprintHoursLeft !== null ? `
                 <div class="capacity-bar-track">
                     <div class="capacity-bar-fill ${barClass}" style="width:${barWidth}%"></div>
                 </div>
                 <div class="eta-row">
-                    <span class="capacity-tooltip" data-tooltip="${escapeHtml(formatHours(summary.pendingHours || 0))} needed / ${escapeHtml(formatHours(sprintHoursLeft))} capacity">
+                    <span class="capacity-tooltip" data-tooltip="~${escapeHtml(formatHours(remainingHours || 0))} est. remaining / ${escapeHtml(formatHours(sprintHoursLeft))} capacity (${escapeHtml(formatHours(summary.pendingHours || 0))} committed)">
                         ${capacityPct}% of sprint capacity
                     </span>
                     ${sprintEnd ? `<span class="eta-value ${isLate ? 'eta-late' : 'eta-ok'}">ETA: ${escapeHtml(formatDate(eta))}</span>` : ''}

@@ -4917,6 +4917,8 @@ body.sidebar-collapsed .sidebar-footer {
     --sg-baseline: #c3c2b7;
     --sg-weekend-fill: rgba(9, 30, 66, 0.045);
     --sg-today: #4a3aa7;
+    --sg-chain-up: #eda100;
+    --sg-chain-down: #2a78d6;
     --sg-label-w: 340px;
 }
 
@@ -5200,9 +5202,23 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
 .sg-sprint-boundary-label.end { transform: translateX(calc(-100% - 2px)); }
 
 .sg-connectors { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
-.sg-connectors path { fill: none; stroke: var(--sg-baseline); stroke-width: 1.5; }
-.sg-connectors path.sg-path-critical { stroke: var(--sg-bad); stroke-width: 2; }
-.sg-connectors path.sg-dimmed { opacity: 0.15; }
+/* Direct children only: the arrowhead paths live inside <defs> markers and
+   must keep their own fill. */
+.sg-connectors > path { fill: none; stroke: var(--sg-baseline); stroke-width: 1.5; }
+.sg-connectors > path.sg-path-critical { stroke: var(--sg-bad); stroke-width: 2; }
+.sg-connectors > path.sg-dimmed { opacity: 0.15; }
+.sg-connectors > path.sg-path-up { stroke: var(--sg-chain-up); stroke-width: 2; }
+.sg-connectors > path.sg-path-down { stroke: var(--sg-chain-down); stroke-width: 2; }
+
+/* Selection chain: amber = blocks the selected task (upstream),
+   blue = blocked by it (downstream). Outline, not box-shadow, so the
+   critical-path box-shadow on bars is preserved. */
+.sg-bar.sg-chain-up, .sg-milestone.sg-chain-up, .sg-done-marker.sg-chain-up { outline: 2px solid var(--sg-chain-up); outline-offset: 1px; }
+.sg-bar.sg-chain-down, .sg-milestone.sg-chain-down, .sg-done-marker.sg-chain-down { outline: 2px solid var(--sg-chain-down); outline-offset: 1px; }
+.sg-bar.sg-selected, .sg-milestone.sg-selected, .sg-done-marker.sg-selected { outline: 2.5px solid #1a1a1a; outline-offset: 1px; }
+.sg-label-row.sg-chain-up { box-shadow: inset 3px 0 0 var(--sg-chain-up); }
+.sg-label-row.sg-chain-down { box-shadow: inset 3px 0 0 var(--sg-chain-down); }
+.sg-label-row.sg-selected { box-shadow: inset 3px 0 0 #1a1a1a; }
 
 .sg-bar {
     position: absolute;
@@ -5346,6 +5362,10 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
 .sg-tt-title { font-weight: 600; margin-bottom: 4px; }
 .sg-tt-row { color: rgba(255, 255, 255, 0.75); margin-top: 2px; }
 .sg-tt-chip { display: inline-block; background: rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; margin: 2px 3px 0 0; font-size: 0.72rem; }
+.sg-tt-chip.sg-chain-up { box-shadow: inset 0 0 0 1px var(--sg-chain-up); }
+.sg-tt-chip.sg-chain-down { box-shadow: inset 0 0 0 1px var(--sg-chain-down); }
+.sg-legend-up { color: var(--sg-chain-up); font-weight: 600; }
+.sg-legend-down { color: var(--sg-chain-down); font-weight: 600; }
 .sg-tt-done { color: #79f2c0; }
 
 /* ---------- Context menu (right-click on a task bar) ---------- */

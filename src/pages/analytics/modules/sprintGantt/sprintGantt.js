@@ -565,11 +565,23 @@ function dayOffset(date, timelineStart) {
     return (date.getTime() - timelineStart.getTime()) / 86400000;
 }
 
+// Directional selection chain: `up` = transitive blockers (what must finish
+// before the selection), `down` = transitive blocked tasks (what the
+// selection unblocks), `all` = both plus the selection itself.
 function activeChain() {
     if (!sgState.selection) return null;
-    const anc = ancestorsOf(sgState.selection, sgState.tasksById);
-    const desc = descendantsOf(sgState.selection, sgState.tasksById, sgState.order);
-    return new Set([sgState.selection, ...anc, ...desc]);
+    const up = ancestorsOf(sgState.selection, sgState.tasksById);
+    const down = descendantsOf(sgState.selection, sgState.tasksById, sgState.order);
+    return { up, down, all: new Set([sgState.selection, ...up, ...down]) };
+}
+
+// CSS class marking a task's role relative to the current selection.
+function chainClass(chain, id) {
+    if (!chain) return '';
+    if (id === sgState.selection) return 'sg-selected';
+    if (chain.up.has(id)) return 'sg-chain-up';
+    if (chain.down.has(id)) return 'sg-chain-down';
+    return '';
 }
 
 // Timeline row order: grouped by sprint (chronological, no-sprint last),
@@ -658,6 +670,14 @@ function buildTimeBackgroundHtml(timelineStart, timelineEnd, pxPerDay) {
     return bgHtml;
 }
 
+// Arrowheads for the dependency connectors. `auto-start-reverse` lets the
+// same marker serve as marker-end (points forward) or marker-start (points
+// back along the path), which the workload view relies on.
+function connectorDefs() {
+    const arrow = (name, color) => `<marker id="sg-arrow-${name}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${color}" /></marker>`;
+    return `<defs>${arrow('neutral', 'var(--sg-baseline)')}${arrow('critical', 'var(--sg-bad)')}${arrow('up', 'var(--sg-chain-up)')}${arrow('down', 'var(--sg-chain-down)')}</defs>`;
+}
+
 function renderGantt() {
     const { ganttGrid } = getEls();
     if (!ganttGrid || !hasAnalysis()) return;
@@ -682,6 +702,10 @@ function renderGantt() {
     ganttGrid.style.gridTemplateRows = `${axisH}px repeat(${rows.length}, ${ROW_H}px)`;
 
     const chain = activeChain();
+    // A live search wins over the selection for dimming: anything that matches
+    // the term stays crisp even when a task is selected, otherwise typing a key
+    // looks like "not found". Chain outlines/colors still render.
+    const dimChain = filterActive() ? null : chain;
 
     let html = `<div class="sg-corner">${filterActive() ? `${rows.length} / ${sgState.order.length}` : rows.length} issues</div>`;
     html += `<div class="sg-axis" style="height:${axisH}px;">`;
@@ -691,12 +715,12 @@ function renderGantt() {
 
     for (const id of rows) {
         const t = sgState.tasksById[id];
-        const dimmed = chain && !chain.has(id);
+        const dimmed = dimChain && !dimChain.all.has(id);
         const flag = t.done ? '✓' : (t.points == null ? '⚠' : '');
         const who = t.assignee ? escapeHtml(t.assignee) : 'Unassigned';
         const spText = t.points != null ? `${t.points} SP` : 'unestimated';
         const url = issueUrl(id);
-        html += `<div class="sg-label-row ${dimmed ? 'sg-dimmed' : ''}" data-task="${escapeHtml(id)}">
+        html += `<div class="sg-label-row ${dimmed ? 'sg-dimmed' : ''} ${chainClass(chain, id)}" data-task="${escapeHtml(id)}">
             <span class="sg-status-dot" style="background:${taskColor(t)}"></span>
             <div class="sg-label-main">
                 <div class="sg-label-name-row">
@@ -720,18 +744,19 @@ function renderGantt() {
     rows.forEach((id, i) => {
         const t = sgState.tasksById[id];
         const sc = schedule[id];
-        const dimmed = (chain && !chain.has(id)) || (sgState.criticalOnly && !sc.critical);
+        const dimmed = (dimChain && !dimChain.all.has(id)) || (sgState.criticalOnly && !sc.critical);
+        const chainCls = chainClass(chain, id);
         const x1 = dayOffset(sc.start, timelineStart) * pxPerDay;
         const x2 = dayOffset(sc.end, timelineStart) * pxPerDay;
         const y = i * ROW_H;
         if (t.done) {
-            html += `<div class="sg-done-marker ${dimmed ? 'sg-dimmed' : ''}" data-task="${escapeHtml(id)}" style="left:${x1}px; top:${y + (ROW_H - 22) / 2}px;" title="Done — no time allocated">✓ ${escapeHtml(t.displayId)}</div>`;
+            html += `<div class="sg-done-marker ${dimmed ? 'sg-dimmed' : ''} ${chainCls}" data-task="${escapeHtml(id)}" style="left:${x1}px; top:${y + (ROW_H - 22) / 2}px;" title="Done — no time allocated">✓ ${escapeHtml(t.displayId)}</div>`;
         } else if (t.points == null) {
-            html += `<div class="sg-milestone ${dimmed ? 'sg-dimmed' : ''}" data-task="${escapeHtml(id)}" style="left:${x1}px; top:${y + (ROW_H - 14) / 2}px;"></div>`;
+            html += `<div class="sg-milestone ${dimmed ? 'sg-dimmed' : ''} ${chainCls}" data-task="${escapeHtml(id)}" style="left:${x1}px; top:${y + (ROW_H - 14) / 2}px;"></div>`;
         } else {
             const w = Math.max(6, x2 - x1);
             const assigneeColor = colorForAssignee(t.assignee);
-            html += `<div class="sg-bar ${sc.critical ? 'sg-critical' : ''} ${dimmed ? 'sg-dimmed' : ''}" data-task="${escapeHtml(id)}"
+            html += `<div class="sg-bar ${sc.critical ? 'sg-critical' : ''} ${dimmed ? 'sg-dimmed' : ''} ${chainCls}" data-task="${escapeHtml(id)}"
                 style="left:${x1}px; top:${y + (ROW_H - 22) / 2}px; width:${w}px; background:${taskColor(t)};">
                 ${assigneeColor ? `<span class="sg-bar-tick" style="background:${assigneeColor}" title="${escapeHtml(t.assignee)}"></span>` : ''}
                 <span class="sg-bar-label">${escapeHtml(t.displayId)}</span>
@@ -744,15 +769,15 @@ function renderGantt() {
 
     const svg = ganttGrid.querySelector('.sg-connectors');
     if (sgState.config.showDeps && svg) {
-        let paths = '';
+        let paths = connectorDefs();
         rows.forEach((id, i) => {
             const scTo = schedule[id];
-            const toDimmed = (chain && !chain.has(id)) || (sgState.criticalOnly && !scTo.critical);
+            const toDimmed = (dimChain && !dimChain.all.has(id)) || (sgState.criticalOnly && !scTo.critical);
             sgState.tasksById[id].needs.forEach(dep => {
                 const depIdx = rows.indexOf(dep);
                 if (depIdx < 0) return;
                 const scFrom = schedule[dep];
-                const fromDimmed = (chain && !chain.has(dep)) || (sgState.criticalOnly && !scFrom.critical);
+                const fromDimmed = (dimChain && !dimChain.all.has(dep)) || (sgState.criticalOnly && !scFrom.critical);
                 const bothDimmed = fromDimmed || toDimmed;
                 const x1 = dayOffset(scFrom.end, timelineStart) * pxPerDay;
                 const y1 = depIdx * ROW_H + ROW_H / 2;
@@ -760,7 +785,15 @@ function renderGantt() {
                 const y2 = i * ROW_H + ROW_H / 2;
                 const midX = x1 + Math.max(10, (x2 - x1) / 2);
                 const critical = scFrom.critical && scTo.critical;
-                paths += `<path class="${critical ? 'sg-path-critical' : ''} ${bothDimmed ? 'sg-dimmed' : ''}" d="M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}" />`;
+                // Edge dep → id relative to the selection: it feeds the
+                // selection's blocker chain (up), leaves the selection toward
+                // what it unblocks (down), or is unrelated (neutral).
+                let dir = 'neutral';
+                if (chain && (id === sgState.selection || chain.up.has(id))) dir = 'up';
+                else if (chain && (dep === sgState.selection || chain.down.has(dep))) dir = 'down';
+                const dirCls = dir === 'up' ? 'sg-path-up' : dir === 'down' ? 'sg-path-down' : '';
+                const markerName = dir !== 'neutral' ? dir : (critical ? 'critical' : 'neutral');
+                paths += `<path class="${critical ? 'sg-path-critical' : ''} ${dirCls} ${bothDimmed ? 'sg-dimmed' : ''}" marker-end="url(#sg-arrow-${markerName})" d="M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}" />`;
             });
         });
         svg.innerHTML = paths;
@@ -816,11 +849,9 @@ function renderWorkload() {
     workloadGrid.style.gridTemplateColumns = `var(--sg-label-w) ${timelineWidth}px`;
     workloadGrid.style.gridTemplateRows = [`${axisH}px`, ...assignees.map(a => `${a.laneCount * rowH}px`)].join(' ');
 
-    // Selection in workload highlights the clicked task + its transitive
-    // "blocked by" chain only (no descendants, unlike the timeline view).
-    const blockerChain = sgState.selection
-        ? new Set([sgState.selection, ...ancestorsOf(sgState.selection, sgState.tasksById)])
-        : null;
+    // Selection in workload highlights the clicked task + both transitive
+    // chains, color-coded by direction (same convention as the timeline).
+    const chain = activeChain();
 
     let html = `<div class="sg-corner">${assignees.length} assignees</div>`;
     html += `<div class="sg-axis" style="height:${axisH}px;">`;
@@ -828,13 +859,16 @@ function renderWorkload() {
     html += `<div class="sg-axis-inner" style="height:${weekAxisH}px;">${buildAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += '</div>';
 
-    // A bar stays crisp only if it matches the search AND (when a task is
-    // selected) belongs to its transitive "blocked by" chain.
+    // A live search wins over the selection: while filtering, only the search
+    // decides what stays crisp (otherwise a matching task outside the selected
+    // chain would be dimmed and look like "not found"). With no search active,
+    // the selection's dependency chain drives the dimming.
+    const dimChain = filterActive() ? null : chain;
     const barDimmed = id => (filterActive() && !matchesFilter(sgState.tasksById[id]))
-        || (blockerChain && !blockerChain.has(id));
+        || (dimChain && !dimChain.all.has(id));
 
     assignees.forEach((a, i) => {
-        const rowDimmed = (filterActive() || blockerChain) && a.tasks.every(t => barDimmed(t.id));
+        const rowDimmed = (filterActive() || chain) && a.tasks.every(t => barDimmed(t.id));
         html += `<div class="sg-workload-label ${rowDimmed ? 'sg-dimmed' : ''}" style="grid-row:${i + 2};">
             <div class="sg-workload-name">
                 <span class="sg-status-dot" style="background:${colorForAssignee(a.name) || 'var(--sg-muted)'}"></span>
@@ -850,9 +884,13 @@ function renderWorkload() {
     html += `<div class="sg-bg" style="grid-row: 2 / span ${assignees.length}; grid-column:2; height:${totalBodyHeight}px;">${bgHtml}</div>`;
 
     const startDate = sgState.scheduleResult.projectStart;
+    // Bar geometry in the combined body coordinate space (all assignee rows
+    // stacked), so the selection's dependency arrows can span rows.
+    const geom = {};
+    let rowTop = 0;
     assignees.forEach((a, i) => {
         const toX = (date) => dayOffset(date, timelineStart) * pxPerDay;
-        const idleDimmed = blockerChain
+        const idleDimmed = dimChain
             || (filterActive() && a.tasks.every(t => barDimmed(t.id)));
         let layerHtml = '';
         a.gaps.forEach(g => {
@@ -872,12 +910,45 @@ function renderWorkload() {
             const x2 = toX(sc.end);
             const barH = rowH - 10;
             const y = t.lane * rowH + Math.round((rowH - barH) / 2);
-            layerHtml += `<div class="sg-bar ${sc.critical ? 'sg-critical' : ''} ${dimmed ? 'sg-dimmed' : ''}" data-task="${escapeHtml(t.id)}" style="left:${x1}px; top:${y}px; width:${Math.max(6, x2 - x1)}px; height:${barH}px; background:${taskColor(task)};">
+            geom[t.id] = { x1, x2, y: rowTop + t.lane * rowH + rowH / 2 };
+            layerHtml += `<div class="sg-bar ${sc.critical ? 'sg-critical' : ''} ${dimmed ? 'sg-dimmed' : ''} ${chainClass(chain, t.id)}" data-task="${escapeHtml(t.id)}" style="left:${x1}px; top:${y}px; width:${Math.max(6, x2 - x1)}px; height:${barH}px; background:${taskColor(task)};">
                 <span class="sg-bar-label">${escapeHtml(task.displayId)}</span>
             </div>`;
         });
         html += `<div class="sg-body-layer" style="grid-row:${i + 2}; height:${a.laneCount * rowH}px;">${layerHtml}</div>`;
+        rowTop += a.laneCount * rowH;
     });
+
+    // Dependency arrows, drawn only for the selected task's chain. Every edge
+    // runs from the blocker's right edge to the blocked task's left edge; the
+    // arrowhead sits on the blocker for upstream links (leaving the selection
+    // leftwards, towards what it waits on) and on the blocked task for
+    // downstream ones (leaving rightwards, towards what it unblocks).
+    if (chain) {
+        let paths = connectorDefs();
+        for (const id of sgState.order) {
+            const to = geom[id];
+            if (!to) continue;
+            for (const dep of sgState.tasksById[id].needs) {
+                const from = geom[dep];
+                if (!from) continue;
+                const upstream = id === sgState.selection || chain.up.has(id);
+                const downstream = dep === sgState.selection || chain.down.has(dep);
+                if (!upstream && !downstream) continue;
+                // Bow the curve away from the task in its reading direction so
+                // the two kinds stay distinguishable even when the blocker ends
+                // exactly where the blocked task starts (no horizontal gap).
+                const cx = upstream
+                    ? Math.min(from.x2, to.x1) - 16
+                    : Math.max(from.x2, to.x1) + 16;
+                const d = `M${from.x2},${from.y} C${cx},${from.y} ${cx},${to.y} ${to.x1},${to.y}`;
+                paths += upstream
+                    ? `<path class="sg-path-up" marker-start="url(#sg-arrow-up)" d="${d}" />`
+                    : `<path class="sg-path-down" marker-end="url(#sg-arrow-down)" d="${d}" />`;
+            }
+        }
+        html += `<svg class="sg-connectors" style="grid-row: 2 / span ${assignees.length}; grid-column:2;" width="${timelineWidth}" height="${totalBodyHeight}">${paths}</svg>`;
+    }
 
     workloadGrid.innerHTML = html;
     wireRowInteractions(workloadGrid);
@@ -900,6 +971,7 @@ const COLUMNS = [
     { key: 'end', label: 'End' },
     { key: 'slack', label: 'Slack (d)' },
     { key: 'needs', label: 'Blocked by' },
+    { key: 'blocks', label: 'Blocks' },
 ];
 
 function renderTable() {
@@ -937,6 +1009,7 @@ function renderTable() {
             case 'end': va = sa.end; vb = sb.end; break;
             case 'slack': va = sa.slack; vb = sb.slack; break;
             case 'needs': va = ta.needs.length; vb = tb.needs.length; break;
+            case 'blocks': va = ta.blocks.length; vb = tb.blocks.length; break;
             default: va = 0; vb = 0;
         }
         if (va < vb) return -1 * sortState.dir;
@@ -952,6 +1025,7 @@ function renderTable() {
         const t = sgState.tasksById[id];
         const sc = schedule[id];
         const needsChips = t.needs.map(d => escapeHtml(d)).join(', ') || '—';
+        const blocksChips = t.blocks.map(d => escapeHtml(d)).join(', ') || '—';
         const url = issueUrl(id);
         return `<tr data-task="${escapeHtml(id)}">
             <td class="sg-num">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(t.displayId)}</a>` : escapeHtml(t.displayId)}</td>
@@ -965,6 +1039,7 @@ function renderTable() {
             <td class="sg-num">${formatDateHuman(sc.end)}</td>
             <td class="sg-num">${sc.critical ? '<span class="sg-badge sg-badge-critical">critical</span>' : (sc.slack / hpd).toFixed(1)}</td>
             <td>${needsChips}</td>
+            <td>${blocksChips}</td>
         </tr>`;
     }).join('');
 
@@ -1093,8 +1168,11 @@ function showTooltip(id, evt) {
     const sc = sgState.scheduleResult?.schedule[id];
     if (!tooltip || !t || !sc || ctxMenuEl) return; // no tooltip while the context menu is open
     const depsHtml = t.needs.length
-        ? t.needs.map(d => `<span class="sg-tt-chip">${escapeHtml(d)}</span>`).join('')
+        ? t.needs.map(d => `<span class="sg-tt-chip sg-chain-up">${escapeHtml(d)}</span>`).join('')
         : '<span class="sg-tt-row">No blocking dependencies</span>';
+    const blocksHtml = t.blocks.length
+        ? t.blocks.map(d => `<span class="sg-tt-chip sg-chain-down">${escapeHtml(d)}</span>`).join('')
+        : '<span class="sg-tt-row">Blocks nothing</span>';
     tooltip.innerHTML = `
         <div class="sg-tt-title">${escapeHtml(t.displayId)} — ${escapeHtml(t.name)}</div>
         <div class="sg-tt-row">Status: ${escapeHtml(t.status || 'No status')} · ${t.points != null ? `${t.points} SP` : 'Unestimated'} · ${sc.durationHours}h${t.done ? ' · <strong class="sg-tt-done">✓ Done</strong>' : ''}</div>
@@ -1103,6 +1181,8 @@ function showTooltip(id, evt) {
         <div class="sg-tt-row">${formatDateHuman(sc.start)} → ${formatDateHuman(sc.end)}${sc.critical ? ' · <strong>critical path</strong>' : ` · slack ${(sc.slack / (sgState.config.hoursPerDay || 8)).toFixed(1)}d`}</div>
         <div class="sg-tt-row">Blocked by:</div>
         <div>${depsHtml}</div>
+        <div class="sg-tt-row">Blocks:</div>
+        <div>${blocksHtml}</div>
     `;
     tooltip.style.display = 'block';
     positionTooltip(evt);

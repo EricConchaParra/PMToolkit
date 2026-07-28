@@ -46,6 +46,8 @@ describe('buildSprintOverviewModel', () => {
         expect(model.donePct).toBe(20);
         expect(model.summary.pendingSp).toBe(8);
         expect(model.summary.pendingHours).toBe(27);
+        // To Do (9h × 1) + In Review (18h × 0.4 default review weight)
+        expect(model.summary.pendingWeightedHours).toBeCloseTo(16.2);
         expect(model.buckets.find(bucket => bucket.column.name === 'Review')?.count).toBe(1);
     });
 });

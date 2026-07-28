@@ -3,7 +3,7 @@
  * Chrome storage helpers for settings (per-project and last-used project)
  */
 
-import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS } from './constants.js';
+import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, DEFAULT_STAGE_WEIGHTS } from './constants.js';
 import {
     getJiraProjectSettingsStorageKey,
     getLastProjectStorageKey,
@@ -19,11 +19,21 @@ export function settingsStorageKey(host, projectKey) {
     return getJiraProjectSettingsStorageKey(host, projectKey);
 }
 
+function sanitizeStageWeights(saved = {}) {
+    const weights = { ...DEFAULT_STAGE_WEIGHTS };
+    Object.keys(DEFAULT_STAGE_WEIGHTS).forEach(stage => {
+        const value = Number(saved?.[stage]);
+        if (Number.isFinite(value)) weights[stage] = Math.min(1, Math.max(0, value));
+    });
+    return weights;
+}
+
 export function loadSettings(host, projectKey) {
     return new Promise(resolve => {
         const defaults = {
             hoursPerDay: DEFAULT_HOURS_PER_DAY,
             spHours: { ...DEFAULT_SP_HOURS },
+            stageWeights: { ...DEFAULT_STAGE_WEIGHTS },
             githubRepos: [],
         };
         const storageKey = settingsStorageKey(host, projectKey);
@@ -36,6 +46,7 @@ export function loadSettings(host, projectKey) {
             resolve({
                 hoursPerDay: saved.hoursPerDay || DEFAULT_HOURS_PER_DAY,
                 spHours: { ...DEFAULT_SP_HOURS, ...(saved.spHours || {}) },
+                stageWeights: sanitizeStageWeights(saved.stageWeights),
                 githubRepos: Array.isArray(saved.githubRepos)
                     ? saved.githubRepos.filter(Boolean).map(repo => String(repo).trim()).filter(Boolean)
                     : [],

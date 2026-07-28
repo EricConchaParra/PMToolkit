@@ -16,7 +16,7 @@ import {
 } from './modules/settings.js';
 import { getJiraHost, fetchProjects, fetchSpFieldResolution } from './modules/jiraApi.js';
 import { escapeHtml } from './modules/utils.js';
-import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, SP_KEYS } from './modules/constants.js';
+import { DEFAULT_HOURS_PER_DAY, DEFAULT_SP_HOURS, DEFAULT_STAGE_WEIGHTS, SP_KEYS, STAGE_KEYS } from './modules/constants.js';
 import { logAnalyticsPerf, markAnalyticsPerf, measureAnalyticsPerf } from './modules/analyticsPerf.js';
 import { populateSettingsUI, readGithubReposFromUI } from './modules/sprintDashboard/settingsUI.js';
 import {
@@ -116,8 +116,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             const val = parseFloat(document.getElementById(`sp-${k}`)?.value);
             if (!isNaN(val)) spHours[k] = val;
         });
+        const stageWeights = { ...DEFAULT_STAGE_WEIGHTS };
+        STAGE_KEYS.forEach(k => {
+            const val = parseFloat(document.getElementById(`stage-weight-${k}`)?.value);
+            if (!isNaN(val)) stageWeights[k] = Math.min(1, Math.max(0, val / 100));
+        });
         const githubRepos = readGithubReposFromUI();
-        currentSettings = { hoursPerDay, spHours, githubRepos };
+        currentSettings = { hoursPerDay, spHours, stageWeights, githubRepos };
         setSettings(currentSettings);
         await saveSettings(currentHost, selectedProjectKey, currentSettings);
         const msg = document.getElementById('settings-saved-msg');
@@ -127,7 +132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Reset settings ----
     document.getElementById('reset-settings-btn').addEventListener('click', async () => {
-        currentSettings = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, githubRepos: [] };
+        currentSettings = { hoursPerDay: DEFAULT_HOURS_PER_DAY, spHours: { ...DEFAULT_SP_HOURS }, stageWeights: { ...DEFAULT_STAGE_WEIGHTS }, githubRepos: [] };
         setSettings(currentSettings);
         await saveSettings(currentHost, selectedProjectKey, currentSettings);
         populateSettingsUI(currentSettings);

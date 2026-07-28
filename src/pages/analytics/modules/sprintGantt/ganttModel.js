@@ -104,6 +104,13 @@ export function mapIssuesToTasks(issues, { spFieldId = null, sprintNameByIssueKe
 
     warnings.push(...breakCycles(tasksById, order));
 
+    // Direct forward links ("this task blocks..."), the inverse of `needs`.
+    // Built after breakCycles so both directions describe the same graph.
+    for (const id of order) tasksById[id].blocks = [];
+    for (const id of order) {
+        for (const dep of tasksById[id].needs) tasksById[dep].blocks.push(id);
+    }
+
     for (const id of order) {
         const task = tasksById[id];
         if (task.points == null && !task.done) {

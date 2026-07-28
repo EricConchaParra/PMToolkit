@@ -83,6 +83,17 @@ describe('mapIssuesToTasks', () => {
         expect(warnings).toEqual([]);
     });
 
+    it('populates blocks as the inverse of needs', () => {
+        const { tasksById } = buildModel([
+            makeIssue('A-1', { points: 3 }),
+            makeIssue('A-2', { points: 5, blockedBy: ['A-1'] }),
+            makeIssue('A-3', { points: 2, blockedBy: ['A-1'] }),
+        ]);
+        expect(tasksById['A-1'].blocks).toEqual(['A-2', 'A-3']);
+        expect(tasksById['A-2'].blocks).toEqual([]);
+        expect(tasksById['A-3'].blocks).toEqual([]);
+    });
+
     it('warns and drops deps pointing outside the selection and self-deps', () => {
         const { tasksById, warnings } = buildModel([
             makeIssue('A-1', { points: 3, blockedBy: ['A-1', 'B-99'] }),
