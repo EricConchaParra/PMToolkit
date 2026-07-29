@@ -133,6 +133,20 @@
                         </div>
                     </div>
                     <div class="project-select-wrap">
+                        <label for="sprint-status-filter-toggle">📊 Status</label>
+                        <div class="combo-wrapper multi-select" id="sprint-status-filter">
+                            <button type="button" class="multi-select-toggle" id="sprint-status-filter-toggle"
+                                aria-haspopup="listbox" aria-expanded="false"
+                                aria-controls="sprint-status-filter-dropdown">
+                                <span class="multi-select-value" id="sprint-status-filter-label">All Statuses</span>
+                            </button>
+                            <span class="combo-arrow">▾</span>
+                            <div class="combo-dropdown multi-select-dropdown hidden" id="sprint-status-filter-dropdown"
+                                role="listbox" aria-multiselectable="true">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="project-select-wrap">
                         <label for="sprint-tag-filter">🏷️ Tag</label>
                         <div class="combo-wrapper">
                             <select id="sprint-tag-filter">

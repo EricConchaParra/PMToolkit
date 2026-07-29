@@ -17,6 +17,7 @@ import {
     fetchSprintIssues,
 } from '../jiraApi.js';
 import { escapeHtml } from '../utils.js';
+import { NoteDrawer } from '../../../../content/jira/ui/NoteDrawer.js';
 import { DEFAULT_HOURS_PER_DAY } from '../constants.js';
 import {
     DEFAULT_GANTT_SP_TABLE,
@@ -1108,6 +1109,15 @@ function copyIssueLinkToClipboard(task, url, itemEl) {
     }
 }
 
+// The drawer mounts on document.body, so it stays hidden while #sg-content is
+// the fullscreen element — leave full screen first, then open it.
+async function openNotesDrawer(task) {
+    if (document.fullscreenElement) {
+        await document.exitFullscreen().catch(() => {});
+    }
+    void NoteDrawer.open(task.displayId, task.name);
+}
+
 function showContextMenu(id, evt) {
     evt.preventDefault();
     hideTooltip();
@@ -1122,6 +1132,7 @@ function showContextMenu(id, evt) {
         <div class="sg-ctx-title">${escapeHtml(t.displayId)}</div>
         <button type="button" class="sg-ctx-item" data-action="copy"><span class="sg-ctx-icon">🔗</span> Copy Link</button>
         <button type="button" class="sg-ctx-item" data-action="open"><span class="sg-ctx-icon">↗</span> Open Ticket</button>
+        <button type="button" class="sg-ctx-item" data-action="notes"><span class="sg-ctx-icon">📝</span> Notes</button>
     `;
     // Mounted inside the module container so it also shows in full screen.
     (getEls().content || document.body).appendChild(menu);
@@ -1142,9 +1153,18 @@ function showContextMenu(id, evt) {
         else if (item.dataset.action === 'open') {
             window.open(url, '_blank', 'noreferrer');
             hideContextMenu();
+        } else if (item.dataset.action === 'notes') {
+            hideContextMenu();
+            void openNotesDrawer(t);
         }
     });
     menu.addEventListener('contextmenu', event => event.preventDefault());
+
+    // Async: the menu renders immediately and the dot lands once storage answers.
+    void NoteDrawer.hasTrackingFor(id).then(tracked => {
+        if (!tracked || ctxMenuEl !== menu) return; // menu may have closed or been replaced
+        menu.querySelector('[data-action="notes"]')?.classList.add('has-note');
+    });
 
     ctxMenuEl = menu;
 }

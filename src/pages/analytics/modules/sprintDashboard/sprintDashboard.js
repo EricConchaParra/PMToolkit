@@ -37,6 +37,14 @@ import { createBoardFlow, buildFallbackBoardConfig, resolveCurrentBoardColumnSin
 import { fetchIssueTimeline } from '../issueTimeline.js';
 import { workingHoursBetween, formatDate, escapeHtml } from '../utils.js';
 import { buildIssueTrackingViewModel, renderDevCard, renderReadOnlyTags } from './devCard.js';
+import {
+    buildSprintStatusFilterOptions,
+    buildStatusFilterSummary,
+    filterSprintIssuesByStatus,
+    getStatusFilterLabels,
+    normalizeStatusValue,
+    sanitizeStatusFilterSelection,
+} from './statusFilter.js';
 import { renderSprintOverview } from './sprintOverview.js';
 import { getDashVisibilityState } from './dashVisibility.js';
 import { enrichChips, clearPrCache } from '../githubPrCache.js';
@@ -69,8 +77,10 @@ let _currentSprint = null;
 let _trackingReloadTimer = null;
 let _currentIssues = [];
 let _selectedTagFilter = '';
+let _selectedStatusFilters = [];
 let _velocityByAssignee = {};
 let _tagFilterListenerBound = false;
+let _statusFilterListenerBound = false;
 let _demoMode = false;
 let _recentDirectTrackingUpdates = new Map();
 let _trackingState = {
@@ -531,6 +541,96 @@ function renderSprintTagFilter(issues = _currentIssues, tracking = _trackingStat
     return options;
 }
 
+function setStatusFilterOpen(open) {
+    const wrapper = document.getElementById('sprint-status-filter');
+    const toggle = document.getElementById('sprint-status-filter-toggle');
+    const dropdown = document.getElementById('sprint-status-filter-dropdown');
+    if (!wrapper || !toggle || !dropdown) return;
+
+    dropdown.classList.toggle('hidden', !open);
+    wrapper.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function renderSprintStatusFilter(issues = _currentIssues) {
+    const wrapper = document.getElementById('sprint-status-filter');
+    const toggle = document.getElementById('sprint-status-filter-toggle');
+    const label = document.getElementById('sprint-status-filter-label');
+    const dropdown = document.getElementById('sprint-status-filter-dropdown');
+    if (!wrapper || !toggle || !label || !dropdown) return [];
+
+    const options = buildSprintStatusFilterOptions(issues, _boardFlow);
+    _selectedStatusFilters = sanitizeStatusFilterSelection(_selectedStatusFilters, options);
+    const selected = new Set(_selectedStatusFilters);
+
+    dropdown.innerHTML = options.length
+        ? `
+            <button type="button" class="multi-option multi-option-clear" data-status-clear="true"
+                ${_selectedStatusFilters.length ? '' : 'disabled'}>Clear selection</button>
+            ${options.map(option => `
+                <label class="multi-option" role="option" aria-selected="${selected.has(option.value)}">
+                    <input type="checkbox" value="${escapeHtml(option.value)}" ${selected.has(option.value) ? 'checked' : ''}>
+                    <span class="legend-dot board-tone-${escapeHtml(option.tone)}"></span>
+                    <span class="multi-option-label">${escapeHtml(option.label)}</span>
+                    <span class="multi-option-count">${option.count}</span>
+                </label>
+            `).join('')}
+        `
+        : '<div class="combo-msg">No statuses found in this sprint</div>';
+
+    label.textContent = buildStatusFilterSummary(_selectedStatusFilters, options);
+    toggle.disabled = options.length === 0;
+    toggle.title = options.length
+        ? 'Filter sprint issues by ticket status'
+        : 'No statuses found in this sprint';
+    wrapper.classList.toggle('has-selection', _selectedStatusFilters.length > 0);
+    if (!options.length) setStatusFilterOpen(false);
+
+    return options;
+}
+
+function bindStatusFilterListener() {
+    if (_statusFilterListenerBound) return;
+
+    const wrapper = document.getElementById('sprint-status-filter');
+    const toggle = document.getElementById('sprint-status-filter-toggle');
+    const dropdown = document.getElementById('sprint-status-filter-dropdown');
+    if (!wrapper || !toggle || !dropdown) return;
+
+    toggle.addEventListener('click', event => {
+        event.stopPropagation();
+        if (toggle.disabled) return;
+        setStatusFilterOpen(dropdown.classList.contains('hidden'));
+    });
+
+    dropdown.addEventListener('change', event => {
+        const checkbox = event.target.closest('input[type="checkbox"]');
+        if (!checkbox) return;
+
+        const value = normalizeStatusValue(checkbox.value);
+        _selectedStatusFilters = checkbox.checked
+            ? [..._selectedStatusFilters.filter(item => item !== value), value]
+            : _selectedStatusFilters.filter(item => item !== value);
+        renderCurrentSprintDashboard();
+    });
+
+    dropdown.addEventListener('click', event => {
+        if (!event.target.closest('[data-status-clear]')) return;
+        _selectedStatusFilters = [];
+        renderCurrentSprintDashboard();
+    });
+
+    document.addEventListener('click', event => {
+        if (!wrapper.contains(event.target)) setStatusFilterOpen(false);
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') setStatusFilterOpen(false);
+    });
+
+    _statusFilterListenerBound = true;
+}
+
 function refreshVisibleSprintTagDefs() {
     if (!_currentIssues.length) return;
 
@@ -601,8 +701,17 @@ function renderCurrentSprintDashboard() {
     if (!grid) return;
 
     const filterOptions = renderSprintTagFilter(_currentIssues, _trackingState);
-    const visibleIssues = filterSprintIssuesByTag(_currentIssues, _selectedTagFilter, _trackingState);
+    const statusOptions = renderSprintStatusFilter(_currentIssues);
+    const visibleIssues = filterSprintIssuesByStatus(
+        filterSprintIssuesByTag(_currentIssues, _selectedTagFilter, _trackingState),
+        _selectedStatusFilters
+    );
     const selectedTagLabel = filterOptions.find(option => option.value === _selectedTagFilter)?.label || '';
+    const selectedStatusLabels = getStatusFilterLabels(_selectedStatusFilters, statusOptions);
+    const activeFilterLabels = [
+        selectedTagLabel ? `tag: ${selectedTagLabel}` : '',
+        selectedStatusLabels.length ? `status: ${selectedStatusLabels.join(', ')}` : '',
+    ].filter(Boolean);
 
     const devMap = {};
     visibleIssues.forEach(issue => {
@@ -636,7 +745,7 @@ function renderCurrentSprintDashboard() {
     if (!visibleIssues.length) {
         grid.innerHTML = `
             <div class="dash-filter-empty">
-                No issues match the selected tag${selectedTagLabel ? `: ${escapeHtml(selectedTagLabel)}` : '.'}
+                No issues match the selected filters${activeFilterLabels.length ? ` — ${escapeHtml(activeFilterLabels.join(' · '))}` : '.'}
             </div>
         `;
     }
@@ -660,8 +769,8 @@ function renderCurrentSprintDashboard() {
     );
 
     const overviewSubtitle = document.getElementById('overview-subtitle');
-    if (overviewSubtitle && _selectedTagFilter) {
-        overviewSubtitle.textContent = `${overviewSubtitle.textContent} · tag: ${selectedTagLabel}`;
+    if (overviewSubtitle && activeFilterLabels.length) {
+        overviewSubtitle.textContent = `${overviewSubtitle.textContent} · ${activeFilterLabels.join(' · ')}`;
     }
 
     renderGithubStatus();
@@ -884,11 +993,13 @@ export async function loadDashboard(projectKey) {
     _projectSprintFallback = false;
     _velocityByAssignee = {};
     renderSprintTagFilter([], { notesMap: {}, remindersMap: {}, tagsMap: {}, tagDefs: {} });
+    renderSprintStatusFilter([]);
     bindSprintViewListener();
     bindGithubAvailabilityListener();
     bindTrackingStorageListener();
     bindTrackingEventListener();
     bindTagFilterListener();
+    bindStatusFilterListener();
     showDashState('loading', 'Connecting to Jira...');
     markAnalyticsPerf(`sprint:${projectKey}:start`);
 
@@ -1059,6 +1170,7 @@ export async function loadDashboardForSprint(sprint, opts = {}) {
             _velocityByAssignee = {};
             _trackingState = { notesMap: {}, remindersMap: {}, tagsMap: {}, tagDefs: {} };
             renderSprintTagFilter([], _trackingState);
+            renderSprintStatusFilter([]);
             showDashState('empty');
             return;
         }

@@ -85,6 +85,33 @@ export const NoteDrawer = {
         return hasTrackedContent(noteText, reminderValue, tagLabels);
     },
 
+    // Single-ticket version of initIndicators(), for consumers that need the
+    // tracking state without rendering an .et-notes-btn to decorate.
+    async hasTrackingFor(issueKey) {
+        const host = this.getCurrentHost();
+        const key = getJiraIssueKey(issueKey) || issueKey;
+        if (!host || !key) return false;
+
+        try {
+            // Same key set open() reads, legacy fallbacks included, so the
+            // indicator never disagrees with what the drawer ends up showing.
+            const { notesKey, reminderKey, tagsKey, legacy } = this.buildStorageKeys(key, host);
+            const requestedKeys = [notesKey, reminderKey, tagsKey];
+            if (legacy) requestedKeys.push(legacy.notesKey, legacy.reminderKey, legacy.tagsKey);
+
+            const result = await getTrackingItems(requestedKeys.filter(Boolean), { demoMode: this.demoMode });
+            const tagsValue = result[tagsKey] ?? result[legacy?.tagsKey];
+
+            return this.hasTrackedItem({
+                noteText: result[notesKey] ?? result[legacy?.notesKey] ?? '',
+                reminderValue: result[reminderKey] ?? result[legacy?.reminderKey] ?? '',
+                tagLabels: Array.isArray(tagsValue) ? tagsValue : [],
+            });
+        } catch {
+            return false;
+        }
+    },
+
     isOpen() {
         return Boolean(this.el?.classList.contains('visible'));
     },

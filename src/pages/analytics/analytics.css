@@ -549,6 +549,110 @@ body.sidebar-collapsed .sidebar-footer {
     background: #f7f8fa;
 }
 
+/* ---- Multi-select filter (status) ---- */
+.multi-select-toggle {
+    width: 100%;
+    padding: 8px 32px 8px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-sm);
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--bg-card);
+    transition: border-color 0.2s;
+    outline: none;
+    cursor: pointer;
+    text-align: left;
+    display: block;
+}
+
+.multi-select-toggle:focus-visible,
+.multi-select.open .multi-select-toggle {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.multi-select-toggle:disabled {
+    color: var(--text-sub);
+    cursor: not-allowed;
+    background: #f7f8fa;
+}
+
+.multi-select-value {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.multi-select.has-selection .multi-select-toggle {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.multi-select-dropdown {
+    padding: 4px;
+}
+
+.multi-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 8px;
+    border-radius: var(--r-sm);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.multi-option:hover {
+    background: #f2f5fb;
+}
+
+.multi-option input[type="checkbox"] {
+    accent-color: var(--primary);
+    cursor: pointer;
+    margin: 0;
+}
+
+.multi-option-label {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.multi-option-count {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-sub);
+}
+
+.multi-option-clear {
+    justify-content: center;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    margin-bottom: 4px;
+    background: none;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.multi-option-clear:disabled {
+    color: var(--text-sub);
+    cursor: not-allowed;
+    background: none;
+}
+
 .combo-dropdown {
     position: absolute;
     top: 100%;
@@ -5408,6 +5512,17 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
 .sg-ctx-item:hover { background: var(--accent); }
 
 .sg-ctx-icon { font-size: 0.85rem; }
+
+/* Dot on "Notes" when the ticket already has a note, reminder or tags. */
+.sg-ctx-item.has-note::after {
+    content: '';
+    margin-left: auto;
+    width: 6px;
+    height: 6px;
+    flex: none;
+    background: var(--primary);
+    border-radius: 50%;
+}
 
 .sg-empty-state { padding: 40px 20px; text-align: center; color: var(--text-sub); }
 .sg-footnote { font-size: 0.72rem; color: var(--text-sub); margin: 10px 0 8px; }
