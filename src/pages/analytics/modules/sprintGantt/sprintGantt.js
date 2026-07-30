@@ -654,7 +654,7 @@ function buildTimeBackgroundHtml(timelineStart, timelineEnd, pxPerDay) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     if (today >= timelineStart && today <= timelineEnd) {
         const x = dayOffset(today, timelineStart) * pxPerDay;
-        bgHtml += `<div class="sg-today-line" style="left:${x}px;"></div><div class="sg-today-flag" style="left:${x}px;">Today</div>`;
+        bgHtml += `<div class="sg-today-line" style="left:${x}px;"></div>`;
     }
     for (const sprint of sgState.selectedSprints) {
         const sd = sgState.config.sprintDates[sprint.name];
@@ -669,6 +669,15 @@ function buildTimeBackgroundHtml(timelineStart, timelineEnd, pxPerDay) {
         }
     }
     return bgHtml;
+}
+
+// Rendered inside the sticky axis header (its own padded strip) rather than
+// over the row bars, so it never gets hidden behind a task on the first row.
+function buildTodayFlagHtml(timelineStart, timelineEnd, pxPerDay, topOffset) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (today < timelineStart || today > timelineEnd) return '';
+    const x = dayOffset(today, timelineStart) * pxPerDay;
+    return `<div class="sg-today-flag" style="left:${x}px; top:${topOffset}px;">Today</div>`;
 }
 
 // Arrowheads for the dependency connectors. `auto-start-reverse` lets the
@@ -697,7 +706,8 @@ function renderGantt() {
     const showSprintAxis = sgState.selectedSprints.length > 0;
     const sprintAxisH = showSprintAxis ? 22 : 0;
     const weekAxisH = 40;
-    const axisH = weekAxisH + sprintAxisH;
+    const todayPad = 20; // dedicated strip below the date labels for the "Today" flag
+    const axisH = weekAxisH + sprintAxisH + todayPad;
 
     ganttGrid.style.gridTemplateColumns = `var(--sg-label-w) ${timelineWidth}px`;
     ganttGrid.style.gridTemplateRows = `${axisH}px repeat(${rows.length}, ${ROW_H}px)`;
@@ -712,6 +722,7 @@ function renderGantt() {
     html += `<div class="sg-axis" style="height:${axisH}px;">`;
     if (showSprintAxis) html += `<div class="sg-sprint-axis" style="height:${sprintAxisH}px;">${buildSprintAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += `<div class="sg-axis-inner" style="height:${weekAxisH}px;">${buildAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
+    html += buildTodayFlagHtml(timelineStart, timelineEnd, pxPerDay, weekAxisH + sprintAxisH);
     html += '</div>';
 
     for (const id of rows) {
@@ -736,11 +747,13 @@ function renderGantt() {
         </div>`;
     }
 
-    const bodyHeight = rows.length * ROW_H;
+    const rowsHeight = rows.length * ROW_H;
+    const boundaryPad = 20; // dedicated strip below the last row for sprint start/end labels
+    const bodyHeight = rowsHeight + boundaryPad;
     const bgHtml = buildTimeBackgroundHtml(timelineStart, timelineEnd, pxPerDay);
     html += `<div class="sg-body-layer" style="grid-row: 2 / span ${rows.length}; height:${bodyHeight}px;">
         <div class="sg-bg" style="height:${bodyHeight}px;">${bgHtml}</div>
-        <svg class="sg-connectors" width="${timelineWidth}" height="${bodyHeight}"></svg>`;
+        <svg class="sg-connectors" width="${timelineWidth}" height="${rowsHeight}"></svg>`;
 
     rows.forEach((id, i) => {
         const t = sgState.tasksById[id];
@@ -843,7 +856,8 @@ function renderWorkload() {
     const showSprintAxis = sgState.selectedSprints.length > 0;
     const sprintAxisH = showSprintAxis ? 22 : 0;
     const weekAxisH = 40;
-    const axisH = weekAxisH + sprintAxisH;
+    const todayPad = 20; // dedicated strip below the date labels for the "Today" flag
+    const axisH = weekAxisH + sprintAxisH + todayPad;
     const rowH = 40;
     const hpd = sgState.config.hoursPerDay || 8;
 
@@ -858,6 +872,7 @@ function renderWorkload() {
     html += `<div class="sg-axis" style="height:${axisH}px;">`;
     if (showSprintAxis) html += `<div class="sg-sprint-axis" style="height:${sprintAxisH}px;">${buildSprintAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
     html += `<div class="sg-axis-inner" style="height:${weekAxisH}px;">${buildAxisHtml(timelineStart, timelineEnd, pxPerDay)}</div>`;
+    html += buildTodayFlagHtml(timelineStart, timelineEnd, pxPerDay, weekAxisH + sprintAxisH);
     html += '</div>';
 
     // A live search wins over the selection: while filtering, only the search
@@ -881,8 +896,9 @@ function renderWorkload() {
     });
 
     const totalBodyHeight = assignees.reduce((s, a) => s + a.laneCount * rowH, 0);
+    const boundaryPad = 20; // dedicated strip below the last row for sprint start/end labels
     const bgHtml = buildTimeBackgroundHtml(timelineStart, timelineEnd, pxPerDay);
-    html += `<div class="sg-bg" style="grid-row: 2 / span ${assignees.length}; grid-column:2; height:${totalBodyHeight}px;">${bgHtml}</div>`;
+    html += `<div class="sg-bg" style="grid-row: 2 / span ${assignees.length}; grid-column:2; height:${totalBodyHeight + boundaryPad}px;">${bgHtml}</div>`;
 
     const startDate = sgState.scheduleResult.projectStart;
     // Bar geometry in the combined body coordinate space (all assignee rows

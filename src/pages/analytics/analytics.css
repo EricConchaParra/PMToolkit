@@ -5165,11 +5165,11 @@ body.sidebar-collapsed .sidebar-footer {
 
 /* ---------- Gantt grid ---------- */
 .sg-scroll {
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: visible;
     border: 1px solid var(--border);
     border-radius: var(--r-sm);
     background: var(--bg-card);
-    max-height: 72vh;
     position: relative;
 }
 
@@ -5277,7 +5277,6 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
 
 .sg-today-flag {
     position: absolute;
-    top: 2px;
     transform: translateX(-50%);
     background: var(--sg-today);
     color: #fff;
@@ -5575,6 +5574,7 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
     flex: 1 1 auto;
     max-height: none;
     min-height: 0;
+    overflow-y: auto;
 }
 
 #sg-content:fullscreen #sg-table-view .sg-table-wrap {
