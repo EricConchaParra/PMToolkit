@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_GANTT_SP_TABLE,
+    addWorkingDuration,
     computeSchedule,
     computeWorkload,
     formatISODateLocal,
     mapIssuesToTasks,
     parseBlockingLinks,
+    parseISODateLocal,
     spToHours,
+    subtractWorkingDuration,
 } from './ganttModel.js';
 
 const SP_FIELD_ID = 'customfield_10016';
@@ -263,6 +266,19 @@ describe('computeSchedule — sprint blocks', () => {
         expect(overflow.map(w => w.taskId)).toContain('A-3');
     });
 
+    it('re-anchors a done task from an already-finished sprint to that sprint\'s end, instead of stranding it at "today"', () => {
+        const { tasksById, order } = buildModel([
+            makeIssue('A-1', { points: 5, statusCategory: 'done' }),
+        ], { 'A-1': 'Sprint 1' });
+        // "today" (config.startDate) is now past Sprint 1's end date — without
+        // the re-anchor, a 0-duration done task floors at "today" instead of
+        // staying inside the sprint it was actually completed in.
+        const result = computeSchedule(tasksById, order, sprintConfig({ startDate: '2026-07-20' }));
+        expect(formatISODateLocal(result.schedule['A-1'].start)).toBe('2026-07-17');
+        expect(formatISODateLocal(result.schedule['A-1'].end)).toBe('2026-07-17');
+        expect(result.scheduleWarnings.filter(w => w.type === 'sprint-overflow')).toHaveLength(0);
+    });
+
     it('carries real cross-sprint dependencies forward into the later block', () => {
         const { tasksById, order } = buildModel([
             makeIssue('A-1', { points: 13 }),
@@ -279,6 +295,20 @@ describe('computeSchedule — sprint blocks', () => {
     });
 });
 
+describe('subtractWorkingDuration', () => {
+    it('round-trips with addWorkingDuration for a same-week duration', () => {
+        const start = parseISODateLocal('2026-07-06'); // Monday
+        const end = addWorkingDuration(start, 20, 9, false);
+        expect(subtractWorkingDuration(end, 20, 9, false).getTime()).toBe(start.getTime());
+    });
+
+    it('round-trips across a weekend-crossing duration', () => {
+        const start = parseISODateLocal('2026-07-06'); // Monday
+        const end = addWorkingDuration(start, 50, 9, false); // > one work week (45h)
+        expect(subtractWorkingDuration(end, 50, 9, false).getTime()).toBe(start.getTime());
+    });
+});
+
 describe('computeWorkload', () => {
     it('reports utilization, idle gaps, and excludes unassigned tasks', () => {
         const { tasksById, order } = buildModel([
@@ -287,8 +317,9 @@ describe('computeWorkload', () => {
             makeIssue('GAP', { points: 8, assignee: 'Beto' }),
             makeIssue('A-9', { points: 3 }), // unassigned
         ]);
-        const result = computeSchedule(tasksById, order, baseConfig({ oneParallelPerAssignee: true }));
-        const workload = computeWorkload(tasksById, order, result);
+        const config = baseConfig({ oneParallelPerAssignee: true });
+        const result = computeSchedule(tasksById, order, config);
+        const workload = computeWorkload(tasksById, order, result, config);
         expect(workload.unassignedCount).toBe(1);
         const ana = workload.assignees.find(a => a.name === 'Ana');
         // Ana: A-1 [0,9], then waits for Beto's 27h GAP, then A-2 [27,36].
@@ -297,13 +328,89 @@ describe('computeWorkload', () => {
         expect(ana.overbooked).toBe(false);
     });
 
+    it('surfaces done tasks as proportional bars without counting them toward workload stats', () => {
+        const { tasksById, order } = buildModel([
+            makeIssue('A-1', { points: 3, assignee: 'Ana' }),
+            makeIssue('A-2', { assignee: 'Ana', statusCategory: 'done' }), // no points -> fallback width
+            makeIssue('B-1', { assignee: 'Beto', statusCategory: 'done' }), // Beto has no other work
+        ]);
+        const config = baseConfig();
+        const result = computeSchedule(tasksById, order, config);
+        const workload = computeWorkload(tasksById, order, result, config);
+
+        const ana = workload.assignees.find(a => a.name === 'Ana');
+        expect(ana.tasks.map(t => t.id)).toEqual(['A-1']); // done task excluded from workload hours
+        expect(ana.taskCount).toBe(1);
+        expect(ana.totalHours).toBe(9);
+        const a2 = ana.doneTasks.find(t => t.id === 'A-2');
+        expect(a2).toBeTruthy(); // still surfaced, now as a real bar
+        expect(a2.start.getTime()).toBeLessThan(a2.end.getTime()); // non-zero width even with no points
+
+        // An assignee whose only work is already done still gets a row.
+        const beto = workload.assignees.find(a => a.name === 'Beto');
+        expect(beto).toBeTruthy();
+        expect(beto.doneTasks.map(t => t.id)).toEqual(['B-1']);
+        expect(beto.taskCount).toBe(0);
+    });
+
+    it('keeps unestimated-but-pending tasks as milestones, not proportional done bars', () => {
+        const { tasksById, order } = buildModel([
+            makeIssue('A-1', { points: 3, assignee: 'Ana' }),
+            makeIssue('A-2', { assignee: 'Ana' }), // no points, not done
+        ]);
+        const config = baseConfig();
+        const result = computeSchedule(tasksById, order, config);
+        const workload = computeWorkload(tasksById, order, result, config);
+        const ana = workload.assignees.find(a => a.name === 'Ana');
+        expect(ana.doneTasks).toEqual([]);
+        expect(ana.milestones.map(t => t.id)).toEqual(['A-2']);
+    });
+
+    it('packs done tasks in the same already-ended sprint backward, in dependency order, with no overlap', () => {
+        const config = baseConfig({
+            includeSprints: true,
+            sprintOrder: ['Sprint 1'],
+            sprintDates: { 'Sprint 1': { start: '2026-07-06', end: '2026-07-17' } },
+            startDate: '2026-07-20', // after Sprint 1 ended
+        });
+        const { tasksById, order } = buildModel([
+            makeIssue('A-1', { points: 3, assignee: 'Ana', statusCategory: 'done' }),
+            makeIssue('A-2', { points: 5, assignee: 'Ana', statusCategory: 'done', blockedBy: ['A-1'] }),
+        ], { 'A-1': 'Sprint 1', 'A-2': 'Sprint 1' });
+        const result = computeSchedule(tasksById, order, config);
+        const workload = computeWorkload(tasksById, order, result, config);
+        const ana = workload.assignees.find(a => a.name === 'Ana');
+        const a1 = ana.doneTasks.find(t => t.id === 'A-1');
+        const a2 = ana.doneTasks.find(t => t.id === 'A-2');
+        expect(formatISODateLocal(a2.end)).toBe('2026-07-17'); // anchored at the sprint's end
+        expect(a1.end.getTime()).toBe(a2.start.getTime()); // contiguous, no gap
+        expect(a1.start.getTime()).toBeLessThan(a1.end.getTime());
+    });
+
+    it('anchors a done task at "today" instead of the future when its sprint has not ended yet', () => {
+        const config = baseConfig({
+            includeSprints: true,
+            sprintOrder: ['Sprint 1'],
+            sprintDates: { 'Sprint 1': { start: '2026-07-06', end: '2026-07-31' } }, // ends after "today"
+            startDate: '2026-07-06',
+        });
+        const { tasksById, order } = buildModel([
+            makeIssue('A-1', { points: 3, assignee: 'Ana', statusCategory: 'done' }),
+        ], { 'A-1': 'Sprint 1' });
+        const result = computeSchedule(tasksById, order, config);
+        const workload = computeWorkload(tasksById, order, result, config);
+        const ana = workload.assignees.find(a => a.name === 'Ana');
+        expect(ana.doneTasks[0].end.getTime()).toBeLessThanOrEqual(result.projectStart.getTime());
+    });
+
     it('flags double-booking when overlapping tasks are scheduled (constraint off)', () => {
         const { tasksById, order } = buildModel([
             makeIssue('A-1', { points: 3, assignee: 'Ana' }),
             makeIssue('A-2', { points: 3, assignee: 'Ana' }),
         ]);
-        const result = computeSchedule(tasksById, order, baseConfig({ oneParallelPerAssignee: false }));
-        const workload = computeWorkload(tasksById, order, result);
+        const config = baseConfig({ oneParallelPerAssignee: false });
+        const result = computeSchedule(tasksById, order, config);
+        const workload = computeWorkload(tasksById, order, result, config);
         expect(workload.assignees[0].overbooked).toBe(true);
     });
 });

@@ -5,8 +5,8 @@
 
 import { getIssueTypeMeta } from '../../../../common/issueType.js';
 import { getTagInlineStyle, getTagObjects, hasTrackedContent } from '../../../../common/tagging.js';
-import { buildBoardColumnBuckets, resolveIssueBoardColumn, summarizeBoardBuckets } from '../boardFlow.js';
-import { escapeHtml, formatAge, formatDate, formatHours, formatTooltipDate, getColorClass, calculateETA, workingHoursBetween } from '../utils.js';
+import { buildBoardColumnBuckets, resolveIssueBoardColumn, resolveStageWeight, summarizeBoardBuckets } from '../boardFlow.js';
+import { escapeHtml, formatAge, formatDate, formatHours, formatTooltipDate, getColorClass, calculateETA, spToHours, workingHoursBetween } from '../utils.js';
 
 export function getInitialsOrImg(assignee) {
     if (!assignee) return { initials: '?', imgUrl: null };
@@ -165,6 +165,13 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
         const issueTypeHtml = issueType.iconUrl
             ? `<img class="issue-chip-type-icon" src="${escapeHtml(issueType.iconUrl)}" alt="${escapeHtml(issueType.name || 'Issue type')}" title="${escapeHtml(issueType.name || 'Issue type')}">`
             : '';
+        const issueColumn = resolveIssueBoardColumn(issue, boardFlow);
+        const issueRemainingHours = issueColumn && !issueColumn.isDone
+            ? spToHours(issue?._sp || 0, spHours) * resolveStageWeight(issueColumn, stageWeights)
+            : 0;
+        const remainingHtml = issueColumn && !issueColumn.isDone
+            ? `<span class="issue-chip-remaining" title="Estimated remaining time">⏳ ${escapeHtml(formatHours(issueRemainingHours))}</span>`
+            : '';
         return `
             <div class="issue-chip ${getIssueToneClass(issue, boardFlow)}" data-gh-key="${issue.key}" data-status="${escapeHtml(issue.fields?.status?.name || '?')}">
                 <div class="issue-chip-main">
@@ -174,6 +181,7 @@ export function renderDevCard(devData, sprintEndDate, settings, jiraHost, tracki
                             <a class="issue-chip-key" href="https://${jiraHost}/browse/${issue.key}" target="_blank">${issue.key}</a>
                             <span class="issue-chip-status">${escapeHtml(issue.fields?.status?.name || '?')}</span>
                             <span class="issue-chip-sp">${issue._sp ?? '?'} SP</span>
+                            ${remainingHtml}
                             ${timeInState ? `<span class="et-age-badge ${timeInState.className}" data-tooltip="${escapeHtml(timeInState.tooltip)}">${escapeHtml(timeInState.text)}</span>` : ''}
                         </div>
                         <div class="issue-chip-actions">

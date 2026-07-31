@@ -274,6 +274,29 @@ export function addWorkingDuration(start, hours, hoursPerDay, workWeekends) {
     }
 }
 
+// Backward mirror of addWorkingDuration: steps a Date backward by N working
+// hours. Unlike addWorkingDuration, it never re-snaps `end` to a working-day
+// boundary — every value it *returns* already lands on one, so a chain of
+// backward calls (each feeding the previous result in as the next `end`)
+// never drifts.
+export function subtractWorkingDuration(end, hours, hoursPerDay, workWeekends) {
+    const hpd = hoursPerDay > 0 ? hoursPerDay : 8;
+    let remaining = Math.max(0, hours);
+    if (remaining === 0) return end;
+    let cur = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    let available = ((end.getTime() - cur.getTime()) / 86400000) * hpd;
+    while (true) {
+        if (workWeekends || !isWeekend(cur)) {
+            if (remaining <= available) {
+                return addFractionOfDay(cur, (available - remaining) / hpd);
+            }
+            remaining -= available;
+        }
+        cur = addCalendarDays(cur, -1);
+        available = hpd;
+    }
+}
+
 // Inverse of addWorkingDuration: CPM-hours from startDate needed to reach
 // targetDate. Used to express a sprint's start date as a lower bound on the
 // same hours timeline as ES/EF.
@@ -498,6 +521,26 @@ export function computeSchedule(tasksById, order, config) {
         };
     }
 
+    // Done tasks carry 0 duration, so their CPM position is just "whenever
+    // their dependencies clear" — for a task in a sprint that already ended,
+    // that floor is today (the CPM clock can't run backward), stranding an
+    // already-finished item way outside its own sprint's column. Re-anchor
+    // those to their sprint's end date so completed work stays visible where
+    // it actually happened instead of collapsing onto "today".
+    if (config.includeSprints) {
+        for (const id of order) {
+            const t = tasksById[id];
+            if (!t.done) continue;
+            const sd = sprintDates[t.sprint];
+            if (!t.sprint || !sd || !sd.end) continue;
+            const endLimit = snapToNextWorkingDay(parseISODateLocal(sd.end), workWeekends);
+            if (schedule[id].end > endLimit) {
+                schedule[id].start = endLimit;
+                schedule[id].end = endLimit;
+            }
+        }
+    }
+
     if (config.includeSprints) {
         for (const id of order) {
             const t = tasksById[id];
@@ -537,25 +580,116 @@ function assignLanes(tasks) {
     return laneEnds.length;
 }
 
-export function computeWorkload(tasksById, order, scheduleResult) {
+function fallbackDoneHours(spTable) {
+    const keys = Object.keys(spTable || {}).map(Number);
+    if (!keys.length) return 0;
+    return spToHours(Math.min(...keys), spTable);
+}
+
+// Lays out one assignee's Done tasks as a contiguous, non-overlapping chain
+// of {start, end} ranges sized by their Story Points — "what this person
+// finished," positioned right before whatever they still have pending.
+//
+// Done tasks carry 0h in the forward CPM (computeSchedule) by design, so
+// they don't delay real work — but that also collapses them to a single
+// point in time, which is useless for a proportional Workload bar. This
+// reconstructs a plausible width/position independently, without touching
+// the shared schedule the Timeline view depends on.
+//
+// Grouped per sprint and packed backward from that sprint's end date — but
+// only for sprints that have actually ended (end date before "today"/
+// projectStart). A sprint still in progress, one with no end date, or a task
+// with no sprint at all all fall back to packing backward from "today"
+// instead, so a Done chain can never land in the future or collide with the
+// real (always today-or-later) task bars.
+function packDoneTasks(doneIds, tasksById, scheduleResult, config) {
+    const workWeekends = !!config.workWeekends;
+    const hoursPerDay = config.hoursPerDay;
+    const projectStart = scheduleResult.projectStart;
+    const sprintDates = config.sprintDates || {};
+
+    const buckets = new Map();
+    const bucketFor = (key, anchor) => {
+        if (!buckets.has(key)) buckets.set(key, { anchor, ids: [] });
+        return buckets.get(key);
+    };
+    for (const id of doneIds) {
+        const t = tasksById[id];
+        let key = '__today__';
+        let anchor = projectStart;
+        if (config.includeSprints && t.sprint) {
+            const sd = sprintDates[t.sprint];
+            if (sd && sd.end) {
+                const endLimit = snapToNextWorkingDay(parseISODateLocal(sd.end), workWeekends);
+                if (endLimit < projectStart) { key = t.sprint; anchor = endLimit; }
+            }
+        }
+        bucketFor(key, anchor).ids.push(id);
+    }
+
+    let results = [];
+    for (const { anchor, ids } of buckets.values()) {
+        const idSet = new Set(ids);
+        const sortedIds = [...ids].sort((a, b) => tasksById[a].rowIndex - tasksById[b].rowIndex);
+        const needsMap = {};
+        for (const id of sortedIds) needsMap[id] = tasksById[id].needs.filter(d => idSet.has(d));
+        const ordered = topoOrder(needsMap, sortedIds);
+
+        let cursor = anchor;
+        for (let i = ordered.length - 1; i >= 0; i--) {
+            const id = ordered[i];
+            const raw = spToHours(tasksById[id].points, config.spTable);
+            const hours = raw > 0 ? raw : fallbackDoneHours(config.spTable);
+            const end = cursor;
+            const start = subtractWorkingDuration(end, hours, hoursPerDay, workWeekends);
+            results.push({ id, start, end, hours });
+            cursor = start;
+        }
+    }
+
+    results.sort((a, b) => a.start - b.start || a.end - b.end);
+    const proxies = results.map(r => ({ esHours: r.start.getTime(), efHours: r.end.getTime() }));
+    const laneCount = proxies.length ? assignLanes(proxies) : 0;
+    results.forEach((r, i) => { r.lane = proxies[i].lane; });
+
+    return { doneTasks: results, laneCount };
+}
+
+export function computeWorkload(tasksById, order, scheduleResult, config) {
     const schedule = scheduleResult.schedule;
     const byAssignee = {};
+    const doneByAssignee = {};
+    const milestoneByAssignee = {};
     let unassignedCount = 0;
     for (const id of order) {
         const t = tasksById[id];
         const a = (t.assignee || '').trim();
         if (!a) { unassignedCount++; continue; }
         const sc = schedule[id];
-        if (!sc || sc.durationHours <= 0) continue; // done/unestimated tasks carry no workload
+        if (!sc) continue;
+        if (t.done) {
+            (doneByAssignee[a] = doneByAssignee[a] || []).push(id);
+            continue;
+        }
+        if (sc.durationHours <= 0) {
+            // Unestimated but still pending — its forward CPM position could
+            // land anywhere, so it doesn't get the Done treatment below (that
+            // relies on always sitting at/before "today"). Kept as the
+            // existing small marker.
+            (milestoneByAssignee[a] = milestoneByAssignee[a] || []).push({ id, esHours: sc.esHours, efHours: sc.efHours });
+            continue;
+        }
         (byAssignee[a] = byAssignee[a] || []).push({ id, esHours: sc.esHours, efHours: sc.efHours, hours: sc.durationHours });
     }
 
     const assignees = [];
-    for (const name in byAssignee) {
-        const tasks = byAssignee[name].sort((x, y) => x.esHours - y.esHours || x.efHours - y.efHours);
-        const laneCount = assignLanes(tasks);
+    const names = new Set([...Object.keys(byAssignee), ...Object.keys(doneByAssignee), ...Object.keys(milestoneByAssignee)]);
+    for (const name of names) {
+        const tasks = (byAssignee[name] || []).sort((x, y) => x.esHours - y.esHours || x.efHours - y.efHours);
+        const laneCount = tasks.length ? assignLanes(tasks) : 0;
 
-        // Union of busy intervals — what "idle" is measured against.
+        // Union of busy intervals — what "idle" is measured against. Real
+        // (not-done) work only — Done tasks never affect these stats.
         const merged = [];
         for (const t of tasks) {
             if (merged.length && t.esHours <= merged[merged.length - 1].end + 0.01) {
@@ -564,15 +698,33 @@ export function computeWorkload(tasksById, order, scheduleResult) {
                 merged.push({ start: t.esHours, end: t.efHours });
             }
         }
-        const spanStart = merged[0].start, spanEnd = merged[merged.length - 1].end;
+        const spanStart = merged.length ? merged[0].start : 0;
+        const spanEnd = merged.length ? merged[merged.length - 1].end : 0;
         const busyHours = merged.reduce((s, m) => s + (m.end - m.start), 0);
         const spanHours = spanEnd - spanStart;
         const idleHours = Math.max(0, spanHours - busyHours);
         const gaps = [];
         for (let i = 1; i < merged.length; i++) gaps.push({ start: merged[i - 1].end, end: merged[i].start });
 
+        // Done tasks share lane space with the real work — a Done chain
+        // always ends at/before "today" and real tasks always start at/after
+        // it, so they never overlap in time and can sit side by side instead
+        // of needing a separate stacked track.
+        const { doneTasks, laneCount: doneLaneCount } = packDoneTasks(doneByAssignee[name] || [], tasksById, scheduleResult, config);
+        const sharedLaneCount = Math.max(laneCount, doneLaneCount);
+
+        // Unestimated-but-pending markers keep their own padded lane track,
+        // stacked below everything else.
+        const hpd = config.hoursPerDay > 0 ? config.hoursPerDay : 8;
+        const milestones = (milestoneByAssignee[name] || []).sort((x, y) => x.esHours - y.esHours);
+        const donePad = hpd * 0.5;
+        const milestonePadded = milestones.map(t => ({ esHours: t.esHours, efHours: t.esHours + donePad }));
+        const milestoneLaneCount = milestonePadded.length ? assignLanes(milestonePadded) : 0;
+        milestonePadded.forEach((p, i) => { milestones[i].lane = sharedLaneCount + p.lane; });
+
         assignees.push({
-            name, tasks, laneCount, gaps, spanStart, spanEnd, idleHours,
+            name, tasks, doneTasks, milestones, laneCount: sharedLaneCount + milestoneLaneCount,
+            gaps, spanStart, spanEnd, idleHours,
             utilization: spanHours > 0 ? busyHours / spanHours : 1,
             totalHours: tasks.reduce((s, t) => s + t.hours, 0),
             taskCount: tasks.length,

@@ -200,6 +200,13 @@ const ASSIGNEE_SLOTS = ['var(--sg-series-1)', 'var(--sg-series-2)', 'var(--sg-se
 let assigneeAssignments = {};
 let assigneeCursor = 0;
 
+// Workload-view-only positions for Done bars (packDoneTasks' reconstructed
+// {start, end, hours}, keyed by task id) — separate from the canonical
+// single-point schedule[id], which the Timeline view still relies on. Reset
+// and repopulated on every renderWorkload() call; consulted by showTooltip
+// so hovering a Done bar matches what's actually drawn.
+let workloadDoneOverride = {};
+
 function colorForAssignee(name) {
     const key = (name || '').trim();
     if (!key) return null;
@@ -514,7 +521,9 @@ function renderLegend() {
     });
     html += '<span class="sg-legend-item"><span class="sg-swatch sg-swatch-critical"></span>On critical path</span>';
     html += '<span class="sg-legend-item"><span class="sg-swatch sg-swatch-milestone"></span>Unestimated</span>';
-    html += '<span class="sg-legend-item"><span class="sg-swatch sg-swatch-done">✓</span>Done (0 time)</span>';
+    html += sgState.view === 'workload'
+        ? '<span class="sg-legend-item"><span class="sg-swatch sg-swatch-done-bar"></span>Done</span>'
+        : '<span class="sg-legend-item"><span class="sg-swatch sg-swatch-done">✓</span>Done (0 time)</span>';
     legend.innerHTML = html;
 }
 
@@ -833,7 +842,8 @@ function renderWorkload() {
     if (!workloadGrid || !hasAnalysis()) return;
     // Workload never hides on search: non-matching bars/rows are dimmed
     // instead, and per-assignee stats always cover all their tasks.
-    const { assignees, unassignedCount } = computeWorkload(sgState.tasksById, sgState.order, sgState.scheduleResult);
+    workloadDoneOverride = {};
+    const { assignees, unassignedCount } = computeWorkload(sgState.tasksById, sgState.order, sgState.scheduleResult, sgState.config);
 
     if (workloadFootnote) {
         workloadFootnote.textContent = unassignedCount
@@ -884,7 +894,7 @@ function renderWorkload() {
         || (dimChain && !dimChain.all.has(id));
 
     assignees.forEach((a, i) => {
-        const rowDimmed = (filterActive() || chain) && a.tasks.every(t => barDimmed(t.id));
+        const rowDimmed = (filterActive() || chain) && [...a.tasks, ...a.doneTasks, ...a.milestones].every(t => barDimmed(t.id));
         html += `<div class="sg-workload-label ${rowDimmed ? 'sg-dimmed' : ''}" style="grid-row:${i + 2};">
             <div class="sg-workload-name">
                 <span class="sg-status-dot" style="background:${colorForAssignee(a.name) || 'var(--sg-muted)'}"></span>
@@ -931,6 +941,31 @@ function renderWorkload() {
             layerHtml += `<div class="sg-bar ${sc.critical ? 'sg-critical' : ''} ${dimmed ? 'sg-dimmed' : ''} ${chainClass(chain, t.id)}" data-task="${escapeHtml(t.id)}" style="left:${x1}px; top:${y}px; width:${Math.max(6, x2 - x1)}px; height:${barH}px; background:${taskColor(task)};">
                 <span class="sg-bar-label">${escapeHtml(task.displayId)}</span>
             </div>`;
+        });
+        // Done tasks render like real bars — proportional width, same lane
+        // space as pending work — just in the pale-green "done" treatment,
+        // so completed and upcoming work read as one continuous strip.
+        a.doneTasks.forEach(t => {
+            const task = sgState.tasksById[t.id];
+            const dimmed = barDimmed(t.id);
+            const x1 = toX(t.start);
+            const x2 = toX(t.end);
+            const barH = rowH - 10;
+            const y = t.lane * rowH + Math.round((rowH - barH) / 2);
+            geom[t.id] = { x1, x2, y: rowTop + t.lane * rowH + rowH / 2 };
+            workloadDoneOverride[t.id] = { start: t.start, end: t.end, hours: t.hours };
+            layerHtml += `<div class="sg-bar sg-bar-done ${dimmed ? 'sg-dimmed' : ''} ${chainClass(chain, t.id)}" data-task="${escapeHtml(t.id)}" style="left:${x1}px; top:${y}px; width:${Math.max(6, x2 - x1)}px; height:${barH}px;">
+                <span class="sg-bar-label">✓ ${escapeHtml(task.displayId)}</span>
+            </div>`;
+        });
+        // Unestimated-but-pending tasks keep the small diamond marker — their
+        // forward position isn't guaranteed to sit before "today" the way a
+        // Done task's does, so they don't get the proportional treatment.
+        a.milestones.forEach(t => {
+            const dimmed = barDimmed(t.id);
+            const x1 = toX(schedule[t.id].start);
+            geom[t.id] = { x1, x2: x1, y: rowTop + t.lane * rowH + rowH / 2 };
+            layerHtml += `<div class="sg-milestone ${dimmed ? 'sg-dimmed' : ''} ${chainClass(chain, t.id)}" data-task="${escapeHtml(t.id)}" style="left:${x1}px; top:${t.lane * rowH + Math.round((rowH - 14) / 2)}px;"></div>`;
         });
         html += `<div class="sg-body-layer" style="grid-row:${i + 2}; height:${a.laneCount * rowH}px;">${layerHtml}</div>`;
         rowTop += a.laneCount * rowH;
@@ -1201,8 +1236,15 @@ function wireContextMenuDismissal() {
 function showTooltip(id, evt) {
     const { tooltip } = getEls();
     const t = sgState.tasksById[id];
-    const sc = sgState.scheduleResult?.schedule[id];
-    if (!tooltip || !t || !sc || ctxMenuEl) return; // no tooltip while the context menu is open
+    const canonicalSc = sgState.scheduleResult?.schedule[id];
+    if (!tooltip || !t || !canonicalSc || ctxMenuEl) return; // no tooltip while the context menu is open
+    // In the Workload view, a Done bar is drawn at its own reconstructed
+    // {start, end, hours} (see packDoneTasks), not the canonical single-point
+    // schedule — show that instead so the hover text matches the drawing.
+    const override = sgState.view === 'workload' ? workloadDoneOverride[id] : null;
+    const sc = override
+        ? { ...canonicalSc, start: override.start, end: override.end, durationHours: override.hours, critical: false }
+        : canonicalSc;
     const depsHtml = t.needs.length
         ? t.needs.map(d => `<span class="sg-tt-chip sg-chain-up">${escapeHtml(d)}</span>`).join('')
         : '<span class="sg-tt-row">No blocking dependencies</span>';
