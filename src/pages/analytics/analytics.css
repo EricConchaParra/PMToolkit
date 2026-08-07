@@ -5026,11 +5026,17 @@ body.sidebar-collapsed .sidebar-footer {
     --sg-series-6: #e34948;
     --sg-series-7: #e87ba4;
     --sg-series-8: #eb6834;
-    --sg-good: #0ca30c;
-    --sg-good-bg: rgba(12, 163, 12, 0.12);
+    --sg-good: #57d9a3;
+    --sg-good-bg: rgba(43, 179, 128, 0.15);
     --sg-warn: #fab219;
     --sg-bad: #d03b3b;
     --sg-muted: #898781;
+    /* Status palette — Timeline + Workload task color-coding */
+    --sg-status-todo: #97a0af;
+    --sg-status-progress: #2684ff;
+    --sg-status-fixing: #ffc400;
+    --sg-status-review: #ff8b00;
+    --sg-status-qa: #6554c0;
     --sg-gridline: #e8eaee;
     --sg-baseline: #c3c2b7;
     --sg-weekend-fill: rgba(9, 30, 66, 0.045);
@@ -5381,7 +5387,7 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
     font-size: 0.68rem;
     font-weight: 600;
     color: var(--sg-good);
-    background: rgba(12, 163, 12, 0.12);
+    background: var(--sg-good-bg);
     border: 1px solid var(--sg-good);
     white-space: nowrap;
     z-index: 3;
@@ -5438,7 +5444,7 @@ a.sg-label-id:hover { color: var(--primary); text-decoration: underline; }
 
 .sg-dot { width: 7px; height: 7px; border-radius: 50%; }
 .sg-badge-critical { background: rgba(208, 59, 59, 0.12); color: var(--sg-bad); }
-.sg-badge-done { margin-left: 5px; background: rgba(12, 163, 12, 0.12); color: var(--sg-good); }
+.sg-badge-done { margin-left: 5px; background: var(--sg-good-bg); color: var(--sg-good); }
 .sg-util-good { background: rgba(12, 163, 12, 0.15); color: #216e4e; }
 .sg-util-warn { background: rgba(250, 178, 25, 0.22); color: #7a5200; }
 .sg-util-bad { background: rgba(208, 59, 59, 0.12); color: var(--sg-bad); }

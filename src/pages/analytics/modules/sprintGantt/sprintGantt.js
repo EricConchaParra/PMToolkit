@@ -167,12 +167,17 @@ function loadPrefs() {
  * ========================================================================= */
 
 const STATUS_NAME_COLORS = {
+    'to do': 'var(--sg-status-todo)',
+    'in progress': 'var(--sg-status-progress)',
     'blocked': 'var(--sg-bad)',
-    'in review': 'var(--sg-series-3)',
-    'code review': 'var(--sg-series-3)',
-    'ready for qa': 'var(--sg-series-5)',
-    'qa': 'var(--sg-series-5)',
-    'in qa': 'var(--sg-series-5)',
+    'needs fixing': 'var(--sg-status-fixing)',
+    'changes required': 'var(--sg-status-fixing)',
+    'change required': 'var(--sg-status-fixing)',
+    'in review': 'var(--sg-status-review)',
+    'code review': 'var(--sg-status-review)',
+    'ready for qa': 'var(--sg-status-qa)',
+    'qa': 'var(--sg-status-qa)',
+    'in qa': 'var(--sg-status-qa)',
 };
 const FALLBACK_SLOTS = ['var(--sg-series-4)', 'var(--sg-series-6)', 'var(--sg-series-7)', 'var(--sg-series-8)'];
 let fallbackAssignments = {};
@@ -182,8 +187,8 @@ function colorForStatus(status, statusCategory) {
     const key = (status || '').trim().toLowerCase();
     if (STATUS_NAME_COLORS[key]) return STATUS_NAME_COLORS[key];
     if (statusCategory === 'done') return 'var(--sg-good)';
-    if (statusCategory === 'indeterminate') return 'var(--sg-series-2)';
-    if (statusCategory === 'new') return 'var(--sg-series-1)';
+    if (statusCategory === 'indeterminate') return 'var(--sg-status-progress)';
+    if (statusCategory === 'new') return 'var(--sg-status-todo)';
     if (!key) return 'var(--sg-muted)';
     if (!fallbackAssignments[key]) {
         fallbackAssignments[key] = FALLBACK_SLOTS[fallbackCursor % FALLBACK_SLOTS.length];
