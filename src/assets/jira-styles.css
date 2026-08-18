@@ -497,6 +497,15 @@ td.summary>.et-age-badge {
     z-index: 9999;
 }
 
+/* Jira's board redesign made the platform card footer `flex-wrap: nowrap`.
+   Our injected icon row uses flex-basis:100% to sit on its own line below
+   the native key/avatar cell; without wrap it instead shares that line and
+   squeezes the issue key down to a sliver. Force wrap only where our row
+   is present. */
+[data-testid="platform-card.ui.card.card-content.footer"]:has(.et-board-shared-row) {
+    flex-wrap: wrap !important;
+}
+
 /* ---- Story Points Column in Gadgets (Feature 9) ---- */
 .et-sp-header {
     color: #0052cc !important;
